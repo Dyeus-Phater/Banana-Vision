@@ -113,11 +113,44 @@ const Preview: React.FC<PreviewProps> = ({
       const container = textRef.current;
       const measureContainer = measureRef.current;
       const maxWidth = settings.textWrapWidth;
+      const { bitmapFont } = settings;
+      const isBitmapFontActive = bitmapFont.enabled && bitmapFont.fontImage;
 
-      const measureText = (text: string): number => {
+      // Função para medir texto com fonte bitmap
+      const measureBitmapText = (text: string): number => {
+        // Calcula a largura total baseada nas configurações da fonte bitmap
+        const zoomFactor = bitmapFont.zoomFactor || 1;
+        const charWidth = bitmapFont.tileWidth * zoomFactor;
+        const charSpacing = bitmapFont.spacing * zoomFactor;
+        
+        // Calcula a largura total somando a largura de cada caractere
+        let totalWidth = 0;
+        for (let i = 0; i < text.length; i++) {
+          // Verifica se o caractere existe na fonte bitmap
+          if (bitmapFont.characters.includes(text[i])) {
+            totalWidth += charWidth + charSpacing;
+          } else {
+            // Para caracteres não encontrados, usa uma largura padrão
+            totalWidth += charWidth;
+          }
+        }
+        
+        // Subtrai o espaçamento extra do último caractere
+        if (text.length > 0) {
+          totalWidth -= charSpacing;
+        }
+        
+        return totalWidth;
+      };
+
+      // Função para medir texto com fonte normal
+      const measureNormalText = (text: string): number => {
         measureContainer.textContent = text;
         return measureContainer.getBoundingClientRect().width;
       };
+
+      // Escolhe a função de medição apropriada
+      const measureText = isBitmapFontActive ? measureBitmapText : measureNormalText;
 
       const strings = block.content.split('\n').map(str => removeTags(str));
       let hasOverflow = false;
@@ -146,7 +179,7 @@ const Preview: React.FC<PreviewProps> = ({
         setLastOverflowText('');
       }
     }
-  }, [block?.content, settings.textWrapWidth, settings.fontSize, settings.textX, settings.scaleX, settings.hideTags, onOverflowChange, lastOverflowText]);
+  }, [block?.content, settings.textWrapWidth, settings.fontSize, settings.textX, settings.scaleX, settings.hideTags, settings.bitmapFont, onOverflowChange, lastOverflowText]);
 
   const textShadow = settings.textShadow || {
     offsetX: 2,
@@ -188,14 +221,17 @@ const Preview: React.FC<PreviewProps> = ({
 
   return (
     <>
-      <div className="relative bg-white rounded-lg overflow-hidden mb-4"
+      <div className="relative bg-white rounded-lg mb-4"
            ref={previewRef}
+           data-preview-container // Added for html2canvas
            style={{
-             width: imageSize.width || '100%',
-             height: imageSize.height || 'auto',
-             maxWidth: '100%',
+             width: imageSize.width ? `${imageSize.width}px` : '100%', // Use fixed width if available
+             height: imageSize.height ? `${imageSize.height}px` : 'auto', // Use fixed height if available
+             aspectRatio: imageSize.width && imageSize.height ? `${imageSize.width} / ${imageSize.height}` : undefined, // Maintain aspect ratio
+             maxWidth: '100%', // Ensure it doesn't overflow parent
              display: 'flex',
              alignItems: verticalAlignStyles[settings.verticalAlign],
+             overflow: 'hidden', // Prevent content from expanding the container
            }}>
         {backgroundImage && (
           <img
@@ -206,6 +242,7 @@ const Preview: React.FC<PreviewProps> = ({
         )}
         <div
           ref={textRef}
+          data-text-container
           className="relative whitespace-pre-wrap w-full"
           style={{
             fontFamily: settings.fontFamily,
@@ -221,7 +258,8 @@ const Preview: React.FC<PreviewProps> = ({
             margin: '0 auto',
             fontWeight: settings.isBold ? 'bold' : 'normal',
             WebkitTextStroke: getTextStrokeStyle(),
-            textShadow: getTextShadowWithStroke()
+            textShadow: getTextShadowWithStroke(),
+            overflow: 'hidden' // Prevent text from expanding beyond container
           }}
         >
           {block && <TextProcessor text={block.content} settings={settings} />}

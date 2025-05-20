@@ -149,15 +149,46 @@ const Index = () => {
       try {
         const response = await fetch('/src/data/default-script/default script.txt');
         const content = await response.text();
-        const blocks = content
-          .split(settings.useCustomBlockSeparator ? new RegExp(settings.blockSeparator) : /\n\s*\n/)
+        let blocks: string[] = [content];
+        
+        if (settings.useCustomBlockSeparator && settings.blockSeparators.length > 0) {
+          // Apply each separator in sequence, but preserve the separators
+          for (const separator of settings.blockSeparators) {
+            const regex = new RegExp(`(${separator})`);
+            blocks = blocks.flatMap(block => {
+              const parts = block.split(regex);
+              // Recombine parts to preserve separators
+              const result: string[] = [];
+              for (let i = 0; i < parts.length; i++) {
+                if (i % 2 === 0) { // Content part
+                  if (parts[i].trim() !== '') {
+                    result.push(parts[i]);
+                  }
+                } else { // Separator part
+                  // Add separator to the previous block if it exists
+                  if (result.length > 0) {
+                    result[result.length - 1] += parts[i] + '\n'; // Add newline after separator
+                  } else if (parts[i].trim() !== '') {
+                    // If there's no previous block, create a new one with just the separator
+                    result.push(parts[i] + '\n'); // Add newline after separator
+                  }
+                }
+              }
+              return result;
+            });
+          }
+        } else {
+          blocks = content.split(/\n\s*\n/);
+        }
+        
+        const textBlocks: TextBlock[] = blocks
           .filter(block => block.trim() !== "")
           .map((block, index) => ({
             content: block.trim(),
             index,
           }));
-        setTextBlocks(blocks);
-        setCurrentBlock(blocks[0] || null);
+        setTextBlocks(textBlocks);
+        setCurrentBlock(textBlocks[0] || null);
       } catch (error) {
         console.error('Error loading default script:', error);
       }
@@ -242,15 +273,46 @@ const Index = () => {
         }
       }
       
-      const blocks = content
-        .split(settings.useCustomBlockSeparator ? new RegExp(settings.blockSeparator) : /\n\s*\n/)
+      let blocks = [content];
+      
+      if (settings.useCustomBlockSeparator && settings.blockSeparators.length > 0) {
+        // Apply each separator in sequence, but preserve the separators
+        for (const separator of settings.blockSeparators) {
+          const regex = new RegExp(`(${separator})`);
+          blocks = blocks.flatMap(block => {
+            const parts = block.split(regex);
+            // Recombine parts to preserve separators
+            const result = [];
+            for (let i = 0; i < parts.length; i++) {
+              if (i % 2 === 0) { // Content part
+                if (parts[i].trim() !== '') {
+                  result.push(parts[i]);
+                }
+              } else { // Separator part
+                // Add separator to the previous block if it exists
+                if (result.length > 0) {
+                  result[result.length - 1] += parts[i] + '\n'; // Add newline after separator
+                } else if (parts[i].trim() !== '') {
+                  // If there's no previous block, create a new one with just the separator
+                  result.push(parts[i] + '\n'); // Add newline after separator
+                }
+              }
+            }
+            return result;
+          });
+        }
+      } else {
+        blocks = content.split(/\n\s*\n/);
+      }
+      
+      const textBlocks = blocks
         .filter(block => block.trim() !== "")
         .map((block, index) => ({
           content: block.trim(),
           index,
         }));
-      setTextBlocks(blocks);
-      setCurrentBlock(blocks[0] || null);
+      setTextBlocks(textBlocks);
+      setCurrentBlock(textBlocks[0] || null);
       toast("Text file loaded successfully");
     };
     reader.readAsArrayBuffer(file);
@@ -346,7 +408,17 @@ const Index = () => {
   };
 
   const handleSave = () => {
-    const content = textBlocks.map((block) => block.content).join("\n\n");
+    let content;
+    
+    if (settings.useCustomBlockSeparator && settings.blockSeparators.length > 0) {
+      // When using custom separators, we need to ensure each block ends with a newline
+      // to preserve formatting after separators
+      content = textBlocks.map((block) => block.content.endsWith('\n') ? block.content : block.content + '\n').join("");
+    } else {
+      // Default behavior: join blocks with double newlines
+      content = textBlocks.map((block) => block.content).join("\n\n");
+    }
+    
     const blob = new Blob([content], { type: "text/plain" });
     const url = URL.createObjectURL(blob);
     const a = document.createElement("a");
@@ -434,8 +506,10 @@ const Index = () => {
               onSettingsChange={setSettings}
             />
 
-            <div className="grid grid-cols-1 md:grid-cols-2 gap-8">
-              <Card className="p-6">
+            <div className="grid grid-cols-1 md:grid-cols-2 gap-8 transition-all duration-300" style={{
+              gridTemplateColumns: settings.isConfigMinimized ? "80px 1fr" : "1fr 1fr"
+            }}>
+              <Card className={`p-6 transition-all duration-300 overflow-hidden ${settings.isConfigMinimized ? "minimized-config" : ""}`}>
                 <Settings
                   settings={settings}
                   onSettingsChange={setSettings}
@@ -451,7 +525,7 @@ const Index = () => {
                 />
               </Card>
 
-              <Card className="p-6 space-y-6">
+              <Card className="p-6 space-y-6 transition-all duration-300">
                 <div className="flex justify-between items-center">
                   <h2 className="text-2xl font-semibold">Text Preview</h2>
                   <div className="flex gap-2">

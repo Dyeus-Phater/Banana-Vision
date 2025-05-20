@@ -1,6 +1,6 @@
 # 🍌 Banana Vision
 
-Banana Vision is a powerful and flexible text preview tool designed for game developers and content creators. It allows you to visualize and style text blocks with various effects, supporting both system fonts and bitmap fonts.
+Banana Vision is a powerful and flexible text preview tool designed for Romhacking. It allows you to visualize and style text blocks with various effects, supporting both system fonts and bitmap fonts.
 
 ![Banana Vision Preview](public/og-image.png)
 

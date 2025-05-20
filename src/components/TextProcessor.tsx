@@ -78,10 +78,19 @@ export const processText = (text: string, settings: PreviewSettings): React.Reac
 
   // Remove tags if hideTags is enabled
   if (settings.hideTags) {
+    // Remove regular tags
     settings.tagPatterns.forEach(pattern => {
       const regex = new RegExp(pattern, "g");
       processedText = processedText.replace(regex, "");
     });
+    
+    // Also remove block separators if custom block separators are enabled
+    if (settings.useCustomBlockSeparator && settings.blockSeparators.length > 0) {
+      settings.blockSeparators.forEach(separator => {
+        const regex = new RegExp(separator, "g");
+        processedText = processedText.replace(regex, "");
+      });
+    }
   }
 
   // Apply color segments

@@ -70,7 +70,7 @@ export interface PreviewSettings {
   textStrokeColor: string;
   isBold: boolean;
   useCustomBlockSeparator?: boolean;
-  blockSeparator?: string;
+  blockSeparators: string[];
   bitmapFont: BitmapFontSettings;
 }
 
@@ -123,7 +123,7 @@ export const defaultSettings: PreviewSettings = {
   textStrokeColor: "#000000",
   isBold: false,
   useCustomBlockSeparator: false,
-  blockSeparator: "\n\s*\n",
+  blockSeparators: ["\n\s*\n"],
   bitmapFont: {
     colorTolerance: 0,
     enabled: false,

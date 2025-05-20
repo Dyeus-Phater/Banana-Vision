@@ -50,35 +50,66 @@ const Settings: React.FC<SettingsProps> = ({
   const [isPositionScaleExpanded, setIsPositionScaleExpanded] = useState(false);
   const [isEffectsExpanded, setIsEffectsExpanded] = useState(false);
   const [isBitmapFontExpanded, setIsBitmapFontExpanded] = useState(false);
+  const [isFileOperationsExpanded, setIsFileOperationsExpanded] = useState(true);
   const [fontImageLoadError, setFontImageLoadError] = useState<string | null>(null);
   const [isFontImageLoading, setIsFontImageLoading] = useState(false);
 
   return (
     <div className="space-y-6">
-      <div className="flex justify-between items-center">
+      <div className="flex justify-between items-center relative">
         <h2 className="text-2xl font-semibold">Controls</h2>
         <div className="flex gap-2">
           <Button 
             variant="destructive" 
             onClick={onClearFiles}
-            className="text-sm"
+            className={`text-sm ${settings.isConfigMinimized ? 'hidden' : ''}`}
           >
             Clear Files
           </Button>
           <Button 
             variant="outline" 
             onClick={onToggleMinimize}
-            className="text-sm"
+            className="text-sm transition-opacity duration-300"
+            aria-label={settings.isConfigMinimized ? "Expand" : "Minimize"}
+            size={settings.isConfigMinimized ? "icon" : "default"}
           >
-            {settings.isConfigMinimized ? "Expand" : "Minimize"}
+            {settings.isConfigMinimized ? <ChevronRight className="h-4 w-4" /> : "Minimize"}
           </Button>
         </div>
       </div>
 
-      <div className={`space-y-8 transition-all duration-300 ${settings.isConfigMinimized ? 'hidden' : ''}`}>
+      <div className={`space-y-4 transition-all duration-300 ${settings.isConfigMinimized ? 'opacity-0 pointer-events-none' : 'opacity-100'}`}>
         <div className="space-y-4 border rounded-lg p-4">
-          <h3 className="text-lg font-medium">File Operations</h3>
-          <div className="grid gap-4 sm:grid-cols-2">
+          <h3 className="text-lg font-medium">Display Mode</h3>
+          <div className="flex gap-2">
+            <Button
+              variant={settings.displayMode === 'single' ? "default" : "outline"}
+              onClick={() => onSettingsChange({ ...settings, displayMode: 'single' })}
+              className="flex-1"
+            >
+              Single Block
+            </Button>
+            <Button
+              variant={settings.displayMode === 'all' ? "default" : "outline"}
+              onClick={() => onSettingsChange({ ...settings, displayMode: 'all' })}
+              className="flex-1"
+            >
+              All Blocks
+            </Button>
+          </div>
+        </div>
+
+        <div className="space-y-4 border rounded-lg p-4">
+          <button
+            onClick={() => setIsFileOperationsExpanded(!isFileOperationsExpanded)}
+            className="flex items-center w-full text-left"
+          >
+            <span className="mr-2">
+              {isFileOperationsExpanded ? <ChevronDown className="w-4 h-4" /> : <ChevronRight className="w-4 h-4" />}
+            </span>
+            <h3 className="text-lg font-medium">File Operations</h3>
+          </button>
+          <div className={`grid gap-4 sm:grid-cols-2 ${isFileOperationsExpanded ? '' : 'hidden'}`}>
             <div>
               <Label htmlFor="textFile">Text File</Label>
               <Input
@@ -126,26 +157,6 @@ const Settings: React.FC<SettingsProps> = ({
                 Export
               </Button>
             </div>
-          </div>
-        </div>
-
-        <div className="space-y-4 border rounded-lg p-4">
-          <h3 className="text-lg font-medium">Display Mode</h3>
-          <div className="flex gap-2">
-            <Button
-              variant={settings.displayMode === 'single' ? "default" : "outline"}
-              onClick={() => onSettingsChange({ ...settings, displayMode: 'single' })}
-              className="flex-1"
-            >
-              Single Block
-            </Button>
-            <Button
-              variant={settings.displayMode === 'all' ? "default" : "outline"}
-              onClick={() => onSettingsChange({ ...settings, displayMode: 'all' })}
-              className="flex-1"
-            >
-              All Blocks
-            </Button>
           </div>
         </div>
 
@@ -234,11 +245,11 @@ const Settings: React.FC<SettingsProps> = ({
             </div>
 
             <div>
-              <Label title="Adjusts the spacing between text lines">Line Height: {settings.lineHeight}</Label>
+              <Label title="Adjusts the spacing between text lines (negative values create overlapping effects)">Line Height: {settings.lineHeight}</Label>
               <Slider
                 value={[settings.lineHeight * 10]}
                 onValueChange={(value) => onSettingsChange({ ...settings, lineHeight: value[0] / 10 })}
-                min={10}
+                min={-10}
                 max={30}
                 step={1}
                 className="mt-2"
@@ -697,7 +708,7 @@ const Settings: React.FC<SettingsProps> = ({
                     spacing: value[0]
                   }
                 })}
-                min={0}
+                min={-6}
                 max={32}
                 step={1}
                 className="mt-2"
@@ -791,14 +802,40 @@ const Settings: React.FC<SettingsProps> = ({
             <Label>Use Custom Block Separator</Label>
           </div>
           {settings.useCustomBlockSeparator && (
-            <div>
-              <Label>Block Separator</Label>
-              <Input
-                value={settings.blockSeparator}
-                onChange={(e) => onSettingsChange({ ...settings, blockSeparator: e.target.value })}
-                placeholder="Default: \n\s*\n"
-                className="mt-2"
-              />
+            <div className="space-y-4">
+              <Label>Block Separators</Label>
+              {settings.blockSeparators.map((separator, index) => (
+                <div key={index} className="flex gap-2">
+                  <Input
+                    value={separator}
+                    onChange={(e) => {
+                      const newSeparators = [...settings.blockSeparators];
+                      newSeparators[index] = e.target.value;
+                      onSettingsChange({ ...settings, blockSeparators: newSeparators });
+                    }}
+                    placeholder="Enter separator pattern"
+                    className="flex-1"
+                  />
+                  <Button
+                    variant="destructive"
+                    onClick={() => {
+                      const newSeparators = settings.blockSeparators.filter((_, i) => i !== index);
+                      onSettingsChange({ ...settings, blockSeparators: newSeparators });
+                    }}
+                  >
+                    Remove
+                  </Button>
+                </div>
+              ))}
+              <Button
+                onClick={() => {
+                  const newSeparators = [...settings.blockSeparators, "\\n\\s*\\n"];
+                  onSettingsChange({ ...settings, blockSeparators: newSeparators });
+                }}
+                className="w-full"
+              >
+                Add Separator
+              </Button>
             </div>
           )}
         </div>
