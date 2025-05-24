@@ -889,11 +889,11 @@ const Settings: React.FC<SettingsProps> = ({
               onChange={(e) => onSettingsChange({ ...settings, useCustomBlockSeparator: e.target.checked })}
               className="w-4 h-4"
             />
-            <Label>Use Custom Block Separator</Label>
+            <Label>Use Custom Dialog Separator</Label>
           </div>
           {settings.useCustomBlockSeparator && (
-            <div className="space-y-4">
-              <Label>Block Separators</Label>
+            <div className="space-y-4" data-tutorial="dialog-separator">
+              <Label>Dialog Separators</Label>
               {settings.blockSeparators.map((separator, index) => (
                 <div key={index} className="flex gap-2">
                   <Input

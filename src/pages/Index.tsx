@@ -14,6 +14,7 @@ import { ThemeProvider, useTheme } from 'next-themes';
 import VirtualizedBlocks from '@/components/VirtualizedBlocks';
 import Celebration from '@/components/Celebration';
 import { QRCodeSVG } from 'qrcode.react';
+import Tutorial from "@/components/Tutorial";
 
 const BananaIcon = () => (
   <svg viewBox="0 0 24 24" fill="none" className="w-4 h-4">
@@ -127,6 +128,7 @@ const ThemeToggle = () => {
 const BLOCKS_PER_PAGE = 5;
 
 const Index = () => {
+  const [isTutorialOpen, setIsTutorialOpen] = useState(true);
   const [textBlocks, setTextBlocks] = useState<TextBlock[]>([]);
   const [currentBlock, setCurrentBlock] = useState<TextBlock | null>(null);
   const [backgroundImage, setBackgroundImage] = useState<string>("");
@@ -482,7 +484,8 @@ const Index = () => {
               </div>
             </div>
 
-            <ConfigGallery 
+            <div data-tutorial="profiles">
+              <ConfigGallery 
               onSelectConfig={(newSettings) => {
                 setSettings(prev => ({
                   ...newSettings,
@@ -505,11 +508,12 @@ const Index = () => {
               settings={settings}
               onSettingsChange={setSettings}
             />
+            </div>
 
             <div className="grid grid-cols-1 md:grid-cols-2 gap-8 transition-all duration-300" style={{
               gridTemplateColumns: settings.isConfigMinimized ? "80px 1fr" : "1fr 1fr"
             }}>
-              <Card className={`p-6 transition-all duration-300 overflow-hidden ${settings.isConfigMinimized ? "minimized-config" : ""}`}>
+              <Card className={`p-6 transition-all duration-300 overflow-hidden ${settings.isConfigMinimized ? "minimized-config" : ""}`} data-tutorial="font-settings">
                 <Settings
                   settings={settings}
                   onSettingsChange={setSettings}
@@ -525,7 +529,7 @@ const Index = () => {
                 />
               </Card>
 
-              <Card className="p-6 space-y-6 transition-all duration-300">
+              <Card className="p-6 space-y-6 transition-all duration-300" data-tutorial="preview">
                 <div className="flex justify-between items-center">
                   <h2 className="text-2xl font-semibold">Text Preview</h2>
                   <div className="flex gap-2">
@@ -594,6 +598,11 @@ const Index = () => {
           </div>
         </div>
         <ScrollToTop />
+        <Tutorial 
+          isOpen={isTutorialOpen}
+          onClose={() => setIsTutorialOpen(false)}
+          onComplete={() => setIsTutorialOpen(false)}
+        />
       </div>
     </ThemeProvider>
   );

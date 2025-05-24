@@ -57,63 +57,42 @@ const ConfigGallery: React.FC<ConfigGalleryProps> = ({ onSelectConfig, settings,
   // Função para salvar um novo perfil
   const saveProfile = () => {
     if (!profileName.trim()) {
-      alert('Por favor, insira um nome para o perfil');
       return;
     }
     
-    // Verificar se já existe um perfil com este nome
-    const profileExists = savedProfiles.some(profile => profile.name === profileName);
-    if (profileExists) {
-      if (!confirm(`Já existe um perfil com o nome "${profileName}". Deseja substituí-lo?`)) {
-        return;
-      }
-    }
-    
-    // Criamos uma cópia completa das configurações, garantindo que a imagem de fundo e a fonte bitmap sejam incluídas
     const newProfile: SavedProfile = {
       name: profileName,
       settings: { 
         ...settings,
-        // Garantimos que a imagem de fundo seja incluída
         backgroundImage: settings.backgroundImage,
-        // Garantimos que todas as configurações de fonte bitmap sejam incluídas
         bitmapFont: { 
           ...settings.bitmapFont,
           fontImage: settings.bitmapFont.fontImage
         },
-        // Salvamos a imagem de preview como thumbnail
         previewImage: settings.backgroundImage || '/Banana.png'
       },
       createdAt: new Date().toISOString()
     };
     
-    // Atualizar a lista de perfis (substituindo se já existir)
-    const updatedProfiles = profileExists
-      ? savedProfiles.map(p => p.name === profileName ? newProfile : p)
-      : [...savedProfiles, newProfile];
+    const updatedProfiles = savedProfiles.map(p => p.name === profileName ? newProfile : p);
+    if (!updatedProfiles.find(p => p.name === profileName)) {
+      updatedProfiles.push(newProfile);
+    }
     
-    // Salvar no localStorage
     localStorage.setItem('banana-vision-profiles', JSON.stringify(updatedProfiles));
     setSavedProfiles(updatedProfiles);
     setProfileName('');
     setShowSaveForm(false);
-    alert(`Perfil "${profileName}" salvo com sucesso!`);
   };
   
-  // Função para carregar um perfil
   const loadProfile = (profile: SavedProfile) => {
-    if (confirm(`Deseja carregar o perfil "${profile.name}"? Isso substituirá suas configurações atuais.`)) {
-      onSelectConfig(profile.settings);
-    }
+    onSelectConfig(profile.settings);
   };
   
-  // Função para excluir um perfil
   const deleteProfile = (profileName: string) => {
-    if (confirm(`Tem certeza que deseja excluir o perfil "${profileName}"?`)) {
-      const updatedProfiles = savedProfiles.filter(p => p.name !== profileName);
-      localStorage.setItem('banana-vision-profiles', JSON.stringify(updatedProfiles));
-      setSavedProfiles(updatedProfiles);
-    }
+    const updatedProfiles = savedProfiles.filter(p => p.name !== profileName);
+    localStorage.setItem('banana-vision-profiles', JSON.stringify(updatedProfiles));
+    setSavedProfiles(updatedProfiles);
   };
 
   const getRandomPlaceholderImage = (isUserProfile: boolean = false) => {
