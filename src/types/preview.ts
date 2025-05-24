@@ -55,6 +55,7 @@ export interface PreviewSettings {
   hideTags: boolean;
   tagPatterns: string[];
   backgroundImage: string | null;
+  previewImage?: string | null;
   fontFamily: string;
   textColor: string;
   textAlign: 'left' | 'center' | 'right';
@@ -85,6 +86,7 @@ export const defaultSettings: PreviewSettings = {
   hideTags: false,
   tagPatterns: ["\\{[^}]*\\}", "<[^>]*>", "\\[[^\\]]*\\]"],
   backgroundImage: null,
+  previewImage: null,
   fontFamily: "monospace",
   textColor: "#FFFFFF",
   textAlign: 'left',
@@ -128,7 +130,7 @@ export const defaultSettings: PreviewSettings = {
     colorTolerance: 0,
     enabled: false,
     fontImage: null,
-    characters: "ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789.,;:!?-_+*/=()",
+    characters: " !\"#$%&'()*+,-./0123456789:;<=>?@ABCDEFGHIJKLMNOPQRSTUVWXYZ[\\]^_`abcdefghijklmnopqrstuvwxyz{|}~∎",
     tileWidth: 8,
     tileHeight: 8,
     offsetX: 0,

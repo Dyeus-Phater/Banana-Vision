@@ -1,4 +1,4 @@
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
 import { Input } from "@/components/ui/input";
 import { Button } from "@/components/ui/button";
 import { Slider } from "@/components/ui/slider";
@@ -31,6 +31,13 @@ const shadowColorPresets = [
   { name: "Green", color: "#22C55E" }
 ];
 
+// Interface para os perfis salvos no localStorage
+interface SavedProfile {
+  name: string;
+  settings: PreviewSettings;
+  createdAt: string;
+}
+
 const Settings: React.FC<SettingsProps> = ({
   settings,
   onSettingsChange,
@@ -51,8 +58,89 @@ const Settings: React.FC<SettingsProps> = ({
   const [isEffectsExpanded, setIsEffectsExpanded] = useState(false);
   const [isBitmapFontExpanded, setIsBitmapFontExpanded] = useState(false);
   const [isFileOperationsExpanded, setIsFileOperationsExpanded] = useState(true);
+  const [isUserProfilesExpanded, setIsUserProfilesExpanded] = useState(true);
   const [fontImageLoadError, setFontImageLoadError] = useState<string | null>(null);
   const [isFontImageLoading, setIsFontImageLoading] = useState(false);
+  
+  // Estado para gerenciar perfis salvos
+  const [savedProfiles, setSavedProfiles] = useState<SavedProfile[]>([]);
+  const [profileName, setProfileName] = useState('');
+  
+  // Carregar perfis salvos do localStorage ao iniciar
+  useEffect(() => {
+    const loadSavedProfiles = () => {
+      const savedProfilesJson = localStorage.getItem('banana-vision-profiles');
+      if (savedProfilesJson) {
+        try {
+          const profiles = JSON.parse(savedProfilesJson) as SavedProfile[];
+          setSavedProfiles(profiles);
+        } catch (error) {
+          console.error('Erro ao carregar perfis salvos:', error);
+        }
+      }
+    };
+    
+    loadSavedProfiles();
+  }, []);
+  
+  // Função para salvar um novo perfil
+  const saveProfile = () => {
+    if (!profileName.trim()) {
+      alert('Por favor, insira um nome para o perfil');
+      return;
+    }
+    
+    // Verificar se já existe um perfil com este nome
+    const profileExists = savedProfiles.some(profile => profile.name === profileName);
+    if (profileExists) {
+      if (!confirm(`Já existe um perfil com o nome "${profileName}". Deseja substituí-lo?`)) {
+        return;
+      }
+    }
+    
+    // Criamos uma cópia completa das configurações, garantindo que a imagem de fundo e a fonte bitmap sejam incluídas
+    const newProfile: SavedProfile = {
+      name: profileName,
+      settings: { 
+        ...settings,
+        // Garantimos que a imagem de fundo seja incluída
+        backgroundImage: settings.backgroundImage,
+        // Garantimos que todas as configurações de fonte bitmap sejam incluídas
+        bitmapFont: { 
+          ...settings.bitmapFont,
+          fontImage: settings.bitmapFont.fontImage
+        }
+      },
+      createdAt: new Date().toISOString()
+    };
+    
+    // Atualizar a lista de perfis (substituindo se já existir)
+    const updatedProfiles = profileExists
+      ? savedProfiles.map(p => p.name === profileName ? newProfile : p)
+      : [...savedProfiles, newProfile];
+    
+    // Salvar no localStorage
+    localStorage.setItem('banana-vision-profiles', JSON.stringify(updatedProfiles));
+    setSavedProfiles(updatedProfiles);
+    setProfileName('');
+    alert(`Perfil "${profileName}" salvo com sucesso!`);
+  };
+  
+  // Função para carregar um perfil
+  const loadProfile = (profile: SavedProfile) => {
+    if (confirm(`Deseja carregar o perfil "${profile.name}"? Isso substituirá suas configurações atuais.`)) {
+      onSettingsChange(profile.settings);
+    }
+  };
+  
+  // Função para excluir um perfil
+  const deleteProfile = (profileName: string) => {
+    if (confirm(`Tem certeza que deseja excluir o perfil "${profileName}"?`)) {
+      const updatedProfiles = savedProfiles.filter(p => p.name !== profileName);
+      localStorage.setItem('banana-vision-profiles', JSON.stringify(updatedProfiles));
+      setSavedProfiles(updatedProfiles);
+    }
+  };
 
   return (
     <div className="space-y-6">
@@ -79,27 +167,29 @@ const Settings: React.FC<SettingsProps> = ({
       </div>
 
       <div className={`space-y-4 transition-all duration-300 ${settings.isConfigMinimized ? 'opacity-0 pointer-events-none' : 'opacity-100'}`}>
-        <div className="space-y-4 border rounded-lg p-4">
+        <div className="space-y-4 border rounded-lg p-2 md:p-4">
           <h3 className="text-lg font-medium">Display Mode</h3>
-          <div className="flex gap-2">
+          <div className="flex flex-wrap gap-2">
             <Button
               variant={settings.displayMode === 'single' ? "default" : "outline"}
               onClick={() => onSettingsChange({ ...settings, displayMode: 'single' })}
-              className="flex-1"
+              className="flex-1 min-w-[120px]"
             >
               Single Block
             </Button>
             <Button
               variant={settings.displayMode === 'all' ? "default" : "outline"}
               onClick={() => onSettingsChange({ ...settings, displayMode: 'all' })}
-              className="flex-1"
+              className="flex-1 min-w-[120px]"
             >
               All Blocks
             </Button>
           </div>
         </div>
 
-        <div className="space-y-4 border rounded-lg p-4">
+
+        
+        <div className="space-y-4 border rounded-lg p-2 md:p-4">
           <button
             onClick={() => setIsFileOperationsExpanded(!isFileOperationsExpanded)}
             className="flex items-center w-full text-left"
@@ -143,7 +233,7 @@ const Settings: React.FC<SettingsProps> = ({
               />
             </div>
 
-            <div className="flex gap-2 items-end">
+            <div className="flex flex-wrap gap-2 items-end">
               <div className="flex-1">
                 <Label>Configs</Label>
                 <Input
@@ -160,7 +250,7 @@ const Settings: React.FC<SettingsProps> = ({
           </div>
         </div>
 
-        <div className="space-y-4 border rounded-lg p-4">
+        <div className="space-y-4 border rounded-lg p-2 md:p-4">
           <button
             onClick={() => setIsTextStylingExpanded(!isTextStylingExpanded)}
             className="flex items-center w-full text-left"
@@ -182,50 +272,50 @@ const Settings: React.FC<SettingsProps> = ({
 
             <div className="space-y-2">
               <Label title="Altera o alinhamento horizontal do texto">Horizontal Alignment</Label>
-              <div className="flex gap-2">
+              <div className="flex flex-wrap gap-2">
                 <Button
                   variant={settings.textAlign === 'left' ? "default" : "outline"}
                   onClick={() => onSettingsChange({ ...settings, textAlign: 'left' })}
-                  className="flex-1"
+                  className="flex-1 min-w-[70px]"
                 >
                   Left
                 </Button>
                 <Button
                   variant={settings.textAlign === 'center' ? "default" : "outline"}
                   onClick={() => onSettingsChange({ ...settings, textAlign: 'center' })}
-                  className="flex-1"
+                  className="flex-1 min-w-[70px]"
                 >
                   Center
                 </Button>
                 <Button
                   variant={settings.textAlign === 'right' ? "default" : "outline"}
                   onClick={() => onSettingsChange({ ...settings, textAlign: 'right' })}
-                  className="flex-1"
+                  className="flex-1 min-w-[70px]"
                 >
                   Right
                 </Button>
               </div>
 
               <Label className="mt-4">Vertical Alignment</Label>
-              <div className="flex gap-2">
+              <div className="flex flex-wrap gap-2">
                 <Button
                   variant={settings.verticalAlign === 'top' ? "default" : "outline"}
                   onClick={() => onSettingsChange({ ...settings, verticalAlign: 'top' })}
-                  className="flex-1"
+                  className="flex-1 min-w-[70px]"
                 >
                   Top
                 </Button>
                 <Button
                   variant={settings.verticalAlign === 'center' ? "default" : "outline"}
                   onClick={() => onSettingsChange({ ...settings, verticalAlign: 'center' })}
-                  className="flex-1"
+                  className="flex-1 min-w-[70px]"
                 >
                   Center
                 </Button>
                 <Button
                   variant={settings.verticalAlign === 'bottom' ? "default" : "outline"}
                   onClick={() => onSettingsChange({ ...settings, verticalAlign: 'bottom' })}
-                  className="flex-1"
+                  className="flex-1 min-w-[70px]"
                 >
                   Bottom
                 </Button>
@@ -302,7 +392,7 @@ const Settings: React.FC<SettingsProps> = ({
           </div>
         </div>
 
-        <div className="space-y-4 border rounded-lg p-4">
+        <div className="space-y-4 border rounded-lg p-2 md:p-4">
           <button
             onClick={() => setIsPositionScaleExpanded(!isPositionScaleExpanded)}
             className="flex items-center w-full text-left"
@@ -363,7 +453,7 @@ const Settings: React.FC<SettingsProps> = ({
           </div>
         </div>
 
-        <div className="space-y-4 border rounded-lg p-4">
+        <div className="space-y-4 border rounded-lg p-2 md:p-4">
           <button
             onClick={() => setIsEffectsExpanded(!isEffectsExpanded)}
             className="flex items-center w-full text-left"
@@ -431,7 +521,7 @@ const Settings: React.FC<SettingsProps> = ({
 
             <div>
               <Label title="Adds an outline effect to the text">Text Stroke</Label>
-              <div className="grid grid-cols-2 gap-4">
+              <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
                 <div>
                   <ColorInput
                     label="Color"
@@ -461,7 +551,7 @@ const Settings: React.FC<SettingsProps> = ({
             </div>
           </div>
         </div>
-        <div className="space-y-4 border rounded-lg p-4">
+        <div className="space-y-4 border rounded-lg p-2 md:p-4">
           <button
             onClick={() => setIsBitmapFontExpanded(!isBitmapFontExpanded)}
             className="flex items-center w-full text-left"
@@ -791,7 +881,7 @@ const Settings: React.FC<SettingsProps> = ({
             </div>
           </div>
         </div>
-        <div className="space-y-4 border rounded-lg p-4">
+        <div className="space-y-4 border rounded-lg p-2 md:p-4">
           <div className="flex items-center space-x-2 mb-2">
             <Input
               type="checkbox"

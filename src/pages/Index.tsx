@@ -1,4 +1,5 @@
 import { useState, useEffect, useMemo } from "react";
+import defaultScript from "@/data/default-script/default script.txt?raw";
 import { toast } from "sonner";
 import { Card } from "@/components/ui/card";
 import { Textarea } from "@/components/ui/textarea";
@@ -147,8 +148,7 @@ const Index = () => {
   useEffect(() => {
     const loadDefaultScript = async () => {
       try {
-        const response = await fetch('/src/data/default-script/default script.txt');
-        const content = await response.text();
+        const content = defaultScript;
         let blocks: string[] = [content];
         
         if (settings.useCustomBlockSeparator && settings.blockSeparators.length > 0) {
