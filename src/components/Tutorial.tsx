@@ -29,16 +29,8 @@ const tutorialSteps: TutorialStep[] = [
     id: 'dialog-separator',
     title: 'Custom Dialog Separator',
     content: 'If your text file uses a specific tag or character sequence to separate dialogue lines, you can define it here. This helps the tool process your text correctly. Do this process before opening any script, or the script will not open correctly, right?',
-    targetSelector: '[data-tutorial="font-settings"]',
+    targetSelector: '[data-tutorial="dialog-separator-checkbox"]',
     position: 'right',
-    highlight: true
-  },
-  {
-    id: 'text-input',
-    title: 'Enter Your Text',
-    content: 'Start by opening your script in "Text File" or typing the text you want to preview in the text area. You can enter multiple lines and see them rendered in real-time!',
-    targetSelector: 'textarea',
-    position: 'top',
     highlight: true
   },
   {
@@ -49,6 +41,15 @@ const tutorialSteps: TutorialStep[] = [
     position: 'right',
     highlight: true
   },
+  {
+    id: 'text-input',
+    title: 'Enter Your Text',
+    content: 'Start by opening your script in "Text File" or typing the text you want to preview in the text area. You can enter multiple lines and see them rendered in real-time!',
+    targetSelector: 'textarea',
+    position: 'left',
+    highlight: true
+  },
+
   {
     id: 'font-settings',
     title: 'Configure Font Settings',
@@ -177,11 +178,16 @@ const Tutorial: React.FC<TutorialProps> = ({ isOpen, onClose, onComplete }) => {
           setTooltipPosition({ x: finalX, y: finalY });
 
           // Highlight target element
-          if (step.highlight) {
+          if (step.highlight && target) {
             target.style.position = 'relative';
             target.style.zIndex = '1001';
             target.style.boxShadow = '0 0 0 4px rgba(59, 130, 246, 0.5), 0 0 0 8px rgba(59, 130, 246, 0.2)';
             target.style.borderRadius = '8px';
+            target.style.backgroundColor = 'rgba(255, 255, 255, 0.9)';
+            target.style.transition = 'all 0.3s ease-in-out';
+            
+            // Scroll to the target element
+            target.scrollIntoView({ behavior: 'smooth', block: 'center' });
           }
         }
       }
@@ -203,6 +209,8 @@ const Tutorial: React.FC<TutorialProps> = ({ isOpen, onClose, onComplete }) => {
           target.style.zIndex = '';
           target.style.boxShadow = '';
           target.style.borderRadius = '';
+          target.style.backgroundColor = '';
+          target.style.transition = '';
         }
       }
     };
@@ -237,6 +245,8 @@ const Tutorial: React.FC<TutorialProps> = ({ isOpen, onClose, onComplete }) => {
           target.style.zIndex = '';
           target.style.boxShadow = '';
           target.style.borderRadius = '';
+          target.style.backgroundColor = '';
+          target.style.transition = '';
         }
       }
     });
@@ -279,7 +289,7 @@ const Tutorial: React.FC<TutorialProps> = ({ isOpen, onClose, onComplete }) => {
           <div className="flex items-start gap-3 mb-3">
             <div className="flex-shrink-0">
               <img 
-                src="./dancing-banana-happy.gif" 
+                src="/dancing-banana-happy.gif" 
                 alt="Banana Mascot" 
                 className="w-12 h-12 rounded-full border-2 border-yellow-400"
               />

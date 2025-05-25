@@ -881,7 +881,7 @@ const Settings: React.FC<SettingsProps> = ({
             </div>
           </div>
         </div>
-        <div className="space-y-4 border rounded-lg p-2 md:p-4">
+        <div className="space-y-4 border rounded-lg p-2 md:p-4" data-tutorial="dialog-separator-checkbox">
           <div className="flex items-center space-x-2 mb-2">
             <Input
               type="checkbox"

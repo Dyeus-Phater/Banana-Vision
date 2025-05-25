@@ -68,7 +68,8 @@ const ConfigGallery: React.FC<ConfigGalleryProps> = ({ onSelectConfig, settings,
         bitmapFont: { 
           ...settings.bitmapFont,
           fontImage: settings.bitmapFont.fontImage
-        }
+        },
+        previewImage: settings.backgroundImage || '/Banana.png'
       },
       createdAt: new Date().toISOString()
     };
@@ -118,7 +119,7 @@ const ConfigGallery: React.FC<ConfigGalleryProps> = ({ onSelectConfig, settings,
     // Adicionar presets do sistema com thumbnail padrão se necessário
     const systemPresets = presets.map(preset => ({
       ...preset,
-      thumbnail: preset.thumbnail === '/Banana.png' ? '/Banana.png' : (preset.thumbnail || getRandomPlaceholderImage(false)),
+      thumbnail: preset.thumbnail || getRandomPlaceholderImage(false),
       isUserProfile: false,
       createdAt: new Date().toISOString()
     }));

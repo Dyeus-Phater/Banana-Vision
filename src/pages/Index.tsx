@@ -15,6 +15,7 @@ import VirtualizedBlocks from '@/components/VirtualizedBlocks';
 import Celebration from '@/components/Celebration';
 import { QRCodeSVG } from 'qrcode.react';
 import Tutorial from "@/components/Tutorial";
+import defaultPreviewSettings from "@/data/preview_settings.json";
 
 const BananaIcon = () => (
   <svg viewBox="0 0 24 24" fill="none" className="w-4 h-4">
@@ -131,17 +132,24 @@ const Index = () => {
   const [isTutorialOpen, setIsTutorialOpen] = useState(true);
   const [textBlocks, setTextBlocks] = useState<TextBlock[]>([]);
   const [currentBlock, setCurrentBlock] = useState<TextBlock | null>(null);
-  const [backgroundImage, setBackgroundImage] = useState<string>("");
+  const [backgroundImage, setBackgroundImage] = useState<string>(() => defaultPreviewSettings.backgroundImage || "");
   const [imageSize, setImageSize] = useState<{ width: number; height: number }>({ width: 0, height: 0 });
+
+  useEffect(() => {
+    if (defaultPreviewSettings.backgroundImage) {
+      const img = new Image();
+      img.onload = () => {
+        setImageSize({
+          width: img.width,
+          height: img.height,
+        });
+      };
+      img.src = defaultPreviewSettings.backgroundImage;
+    }
+  }, []);
   const [originalFilename, setOriginalFilename] = useState<string>("modified_text.txt");
   const [settings, setSettings] = useState<PreviewSettings>(() => ({
-    ...defaultSettings,
-    textShadow: {
-      offsetX: 0,
-      offsetY: 0,
-      blur: 0,
-      color: "#000000"
-    }
+    ...defaultPreviewSettings
   }));
   const [showOnlyOverflow, setShowOnlyOverflow] = useState(false);
   const [overflowingBlocks, setOverflowingBlocks] = useState<Set<number>>(new Set());

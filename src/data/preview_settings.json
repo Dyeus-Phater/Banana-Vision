@@ -1,0 +1,76 @@
+{
+  "fontSize": 27,
+  "lineHeight": 1.5,
+  "letterSpacing": 0,
+  "textX": -23,
+  "textY": 37,
+  "scaleX": 1,
+  "scaleY": 1,
+  "hideTags": true,
+  "tagPatterns": [
+    "\\{[^}]*\\}",
+    "<[^>]*>",
+    "\\[[^\\]]*\\]"
+  ],
+  "backgroundImage": "data:image/png;base64,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",
+  "previewImage": null,
+  "fontFamily": "monospace",
+  "textColor": "#545454",
+  "textAlign": "left",
+  "verticalAlign": "top",
+  "displayMode": "single",
+  "isConfigMinimized": false,
+  "isPresetsMinimized": true,
+  "textWrapWidth": 380,
+  "colorTags": [
+    {
+      "pattern": "\\[red\\](.*?)\\[/red\\]",
+      "color": "#FF0000",
+      "type": "enclosed",
+      "openTag": "[red]",
+      "closeTag": "[/red]"
+    },
+    {
+      "pattern": "\\[blue\\].*",
+      "color": "#0000FF",
+      "type": "free"
+    }
+  ],
+  "replacementTags": [
+    {
+      "pattern": "<nome>",
+      "replacement": "jogador"
+    }
+  ],
+  "textShadow": {
+    "offsetX": 0,
+    "offsetY": 0,
+    "blur": 0,
+    "color": "#000000"
+  },
+  "textStrokeWidth": 0,
+  "textStrokeColor": "#000000",
+  "isBold": false,
+  "useCustomBlockSeparator": false,
+  "blockSeparators": [
+    "\ns*\n"
+  ],
+  "bitmapFont": {
+    "colorTolerance": 0,
+    "enabled": false,
+    "fontImage": null,
+    "characters": " !\"#$%&'()*+,-./0123456789:;<=>?@ABCDEFGHIJKLMNOPQRSTUVWXYZ[\\]^_`abcdefghijklmnopqrstuvwxyz{|}~∎",
+    "tileWidth": 8,
+    "tileHeight": 8,
+    "offsetX": 0,
+    "offsetY": 0,
+    "separationX": 0,
+    "separationY": 0,
+    "baselineX": 0,
+    "baselineY": 0,
+    "spacing": 1,
+    "fontColor": "#FFFFFF",
+    "zoomFactor": 1,
+    "backgroundColor": "#333333"
+  }
+}
