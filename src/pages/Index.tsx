@@ -558,15 +558,17 @@ const Index = () => {
                 
                 {settings.displayMode === 'single' ? (
                   <>
-                    <Preview
-                      block={currentBlock}
-                      settings={settings}
-                      backgroundImage={backgroundImage}
-                      imageSize={imageSize}
-                      onOverflowChange={isOverflowing => 
-                        currentBlock && handleOverflowChange(currentBlock.index, isOverflowing)
-                      }
-                    />
+                    <div style={isTutorialOpen ? undefined : { position: 'sticky', top: 32, zIndex: 10 }}>
+                      <Preview
+                        block={currentBlock}
+                        settings={settings}
+                        backgroundImage={backgroundImage}
+                        imageSize={imageSize}
+                        onOverflowChange={isOverflowing => 
+                          currentBlock && handleOverflowChange(currentBlock.index, isOverflowing)
+                        }
+                      />
+                    </div>
                     <div className="space-y-4">
                       <Textarea
                         value={currentBlock?.content || ""}
