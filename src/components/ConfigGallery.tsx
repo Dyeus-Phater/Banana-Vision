@@ -69,7 +69,7 @@ const ConfigGallery: React.FC<ConfigGalleryProps> = ({ onSelectConfig, settings,
           ...settings.bitmapFont,
           fontImage: settings.bitmapFont.fontImage
         },
-        previewImage: settings.backgroundImage || '/Banana.png'
+        previewImage: settings.backgroundImage || './Banana.png'
       },
       createdAt: new Date().toISOString()
     };
@@ -97,7 +97,7 @@ const ConfigGallery: React.FC<ConfigGalleryProps> = ({ onSelectConfig, settings,
 
   const getRandomPlaceholderImage = (isUserProfile: boolean = false) => {
     if (isUserProfile) {
-      return '/Banana.png';
+      return './Banana.png';
     }
     const colors = ['FF6B6B', '4ECDC4', '45B7D1', '96CEB4', 'FFEEAD', 'D4A5A5', 'A8E6CF', 'FFD3B6'];
     const randomColor = colors[Math.floor(Math.random() * colors.length)];

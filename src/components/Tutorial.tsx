@@ -279,7 +279,7 @@ const Tutorial: React.FC<TutorialProps> = ({ isOpen, onClose, onComplete }) => {
           <div className="flex items-start gap-3 mb-3">
             <div className="flex-shrink-0">
               <img 
-                src="/dancing-banana-happy.gif" 
+                src="./dancing-banana-happy.gif" 
                 alt="Banana Mascot" 
                 className="w-12 h-12 rounded-full border-2 border-yellow-400"
               />
