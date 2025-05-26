@@ -16,6 +16,8 @@ import Celebration from '@/components/Celebration';
 import { QRCodeSVG } from 'qrcode.react';
 import Tutorial from "@/components/Tutorial";
 import defaultPreviewSettings from "@/data/preview_settings.json";
+import LanguageSelector from "@/components/LanguageSelector";
+import { useTranslation } from 'react-i18next';
 
 const BananaIcon = () => (
   <svg viewBox="0 0 24 24" fill="none" className="w-4 h-4">
@@ -64,7 +66,6 @@ const HelpButton = () => {
         <Button
           variant="outline"
           size="icon"
-          className="fixed top-4 right-20"
         >
           <HelpCircle className="h-4 w-4" />
         </Button>
@@ -117,7 +118,6 @@ const ThemeToggle = () => {
       variant="outline"
       size="icon"
       onClick={cycleTheme}
-      className="fixed top-4 right-4"
     >
       {theme === 'light' && <SunIcon className="h-4 w-4" />}
       {theme === 'dark' && <MoonIcon className="h-4 w-4" />}
@@ -129,6 +129,7 @@ const ThemeToggle = () => {
 const BLOCKS_PER_PAGE = 5;
 
 const Index = () => {
+  const { t } = useTranslation();
   const [isTutorialOpen, setIsTutorialOpen] = useState(true);
   const [textBlocks, setTextBlocks] = useState<TextBlock[]>([]);
   const [currentBlock, setCurrentBlock] = useState<TextBlock | null>(null);
@@ -479,17 +480,17 @@ const Index = () => {
   };
 
   return (
-    <ThemeProvider themes={['light', 'dark', 'banana']}>
-      <div className="min-h-screen bg-background text-foreground transition-colors duration-200">
-        <Celebration isActive={allOverflowsFixed} />
-        <div className="p-8">
-          <div className="max-w-6xl mx-auto space-y-8">
-            <div className="flex justify-between items-center">
-              <h1 className="text-3xl font-bold">🍌Banana Vision</h1>
-              <div className="flex gap-2">
-                <HelpButton />
-                <ThemeToggle />
-              </div>
+    <ThemeProvider themes={['light', 'dark', 'banana']} defaultTheme="light">
+      <div className="min-h-screen p-8 space-y-8">
+        <div className="fixed top-4 right-4 flex gap-2">
+          <ThemeToggle />
+          <LanguageSelector />
+          <HelpButton />
+        </div>
+        <div className="container mx-auto space-y-8">
+          <div className="space-y-8">
+            <div className="flex flex-col md:flex-row justify-between items-start md:items-center gap-4">
+              <h1 className="text-4xl font-bold">🍌Banana Vision</h1>
             </div>
 
             <div data-tutorial="profiles">
@@ -539,19 +540,19 @@ const Index = () => {
 
               <Card className="p-6 space-y-6 transition-all duration-300" data-tutorial="preview">
                 <div className="flex justify-between items-center">
-                  <h2 className="text-2xl font-semibold">Text Preview</h2>
+                  <h2 className="text-2xl font-semibold">{t('textPreview')}</h2>
                   <div className="flex gap-2">
                     <Button
                       variant="outline"
                       size="icon"
                       onClick={() => setShowOnlyOverflow(!showOnlyOverflow)}
                       className={showOnlyOverflow ? "bg-primary text-primary-foreground" : ""}
-                      title={showOnlyOverflow ? "Show all blocks" : "Show only overflowing blocks"}
+                      title={showOnlyOverflow ? t('showAllBlocks') : t('showOnlyOverflowing')}
                     >
                       <FilterIcon className="h-4 w-4" />
                     </Button>
                     <Button onClick={handleSave}>
-                      Save Changes
+                      {t('saveChanges')}
                     </Button>
                   </div>
                 </div>
@@ -582,13 +583,13 @@ const Index = () => {
                           onClick={handlePreviousBlock}
                           disabled={!currentBlock || currentBlock.index === textBlocks[0]?.index}
                         >
-                          Previous Block
+                          {t('previousBlock')}
                         </Button>
                         <Button
                           onClick={handleNextBlock}
                           disabled={!currentBlock || currentBlock.index === textBlocks[textBlocks.length - 1]?.index}
                         >
-                          Next Block
+                          {t('nextBlock')}
                         </Button>
                       </div>
                     </div>

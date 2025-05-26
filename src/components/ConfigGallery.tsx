@@ -5,6 +5,7 @@ import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { PreviewSettings } from '@/types/preview';
 import { ChevronLeft, ChevronRight, Plus, Save, User } from 'lucide-react';
+import { useTranslation } from 'react-i18next';
 
 interface ConfigPreset {
   name: string;
@@ -32,6 +33,7 @@ const presetModules = import.meta.glob('../data/gallery-configs/*.json', { eager
 const presets: ConfigPreset[] = Object.values(presetModules).map(module => (module as any).default);
 
 const ConfigGallery: React.FC<ConfigGalleryProps> = ({ onSelectConfig, settings, onSettingsChange }) => {
+  const { t } = useTranslation();
   const [currentIndex, setCurrentIndex] = useState(0);
   const [showSaveForm, setShowSaveForm] = useState(false);
   const [profileName, setProfileName] = useState('');
@@ -109,7 +111,7 @@ const ConfigGallery: React.FC<ConfigGalleryProps> = ({ onSelectConfig, settings,
     // Converter perfis salvos para o formato de preset
     const userPresets = savedProfiles.map(profile => ({
       name: profile.name,
-      description: `User profile created on ${new Date(profile.createdAt).toLocaleDateString()}`,
+      description: `${t('userProfileCreatedOn')} ${new Date(profile.createdAt).toLocaleDateString()}`,
       thumbnail: profile.settings.previewImage || getRandomPlaceholderImage(true),
       settings: profile.settings,
       isUserProfile: true,
@@ -149,7 +151,7 @@ const ConfigGallery: React.FC<ConfigGalleryProps> = ({ onSelectConfig, settings,
       {/* Seção de Style Presets */}
       <div>
         <div className="flex justify-between items-center mb-4">
-          <h2 className="text-2xl font-semibold">Style Presets</h2>
+          <h2 className="text-2xl font-semibold">{t('stylePresets')}</h2>
           <div className="flex gap-2">
             <Button 
               variant="outline" 
@@ -158,14 +160,15 @@ const ConfigGallery: React.FC<ConfigGalleryProps> = ({ onSelectConfig, settings,
               className="flex items-center gap-1"
             >
               <Save className="w-4 h-4" />
-              Save Profile
+              {t('saveProfile')}
             </Button>
             <Button 
               variant="outline" 
+              size="sm"
               onClick={() => onSettingsChange({ ...settings, isPresetsMinimized: !settings.isPresetsMinimized })}
               className="text-sm"
             >
-              {settings.isPresetsMinimized ? "Expand" : "Minimize"}
+              {settings.isPresetsMinimized ? t("expand") : t("minimize")}
             </Button>
           </div>
         </div>
@@ -175,16 +178,16 @@ const ConfigGallery: React.FC<ConfigGalleryProps> = ({ onSelectConfig, settings,
           <div className="mb-4 p-3 border rounded-md bg-muted/20">
             <div className="flex gap-2">
               <Input
-                placeholder="Profile name"
+                placeholder={t('profileNamePlaceholder')}
                 value={profileName}
                 onChange={(e) => setProfileName(e.target.value)}
                 className="flex-1"
               />
-              <Button onClick={saveProfile}>Save</Button>
+              <Button onClick={saveProfile}>{t('save')}</Button>
               <Button variant="outline" onClick={() => {
                 setShowSaveForm(false);
                 setProfileName('');
-              }}>Cancel</Button>
+              }}>{t('cancel')}</Button>
             </div>
           </div>
         )}
@@ -239,15 +242,16 @@ const ConfigGallery: React.FC<ConfigGalleryProps> = ({ onSelectConfig, settings,
                       </div>
                       <p className="text-xs text-gray-500">{preset.description}</p>
                       <Button 
+                        variant="secondary"
                         onClick={() => preset.isUserProfile ? loadProfile({
                           name: preset.name,
                           settings: preset.settings,
                           createdAt: preset.createdAt
                         }) : onSelectConfig(preset.settings)}
-                        className="mt-auto text-sm"
+                        className="w-full mt-auto text-sm"
                         size="sm"
                       >
-                        Select Profile
+                        {t('selectProfile')}
                       </Button>
                     </Card>
                   </div>

@@ -7,6 +7,7 @@ import { ColorInput } from "@/components/ui/color-input";
 import { PreviewSettings, defaultSettings } from '@/types/preview';
 import { ChevronDown, ChevronRight, Pipette } from 'lucide-react';
 import BitmapFontRenderer from './BitmapFontRenderer';
+import { useTranslation } from 'react-i18next';
 
 interface SettingsProps {
   settings: PreviewSettings;
@@ -46,6 +47,7 @@ const Settings: React.FC<SettingsProps> = ({
   onExportSettings,
   onToggleMinimize
 }) => {
+  const { t } = useTranslation();
   const textShadow = settings.textShadow || {
     offsetX: 0,
     offsetY: 0,
@@ -145,44 +147,44 @@ const Settings: React.FC<SettingsProps> = ({
   return (
     <div className="space-y-6">
       <div className="flex justify-between items-center relative">
-        <h2 className="text-2xl font-semibold">Controls</h2>
+        <h2 className="text-2xl font-semibold">{t('controls')}</h2>
         <div className="flex gap-2">
           <Button 
             variant="destructive" 
             onClick={onClearFiles}
             className={`text-sm ${settings.isConfigMinimized ? 'hidden' : ''}`}
           >
-            Clear Files
+            {t('clearAllFiles')}
           </Button>
           <Button 
             variant="outline" 
             onClick={onToggleMinimize}
             className="text-sm transition-opacity duration-300"
-            aria-label={settings.isConfigMinimized ? "Expand" : "Minimize"}
+            aria-label={settings.isConfigMinimized ? t("expand") : t("minimize")}
             size={settings.isConfigMinimized ? "icon" : "default"}
           >
-            {settings.isConfigMinimized ? <ChevronRight className="h-4 w-4" /> : "Minimize"}
+            {settings.isConfigMinimized ? <ChevronRight className="h-4 w-4" /> : t("minimize")}
           </Button>
         </div>
       </div>
 
       <div className={`space-y-4 transition-all duration-300 ${settings.isConfigMinimized ? 'opacity-0 pointer-events-none' : 'opacity-100'}`}>
         <div className="space-y-4 border rounded-lg p-2 md:p-4">
-          <h3 className="text-lg font-medium">Display Mode</h3>
+          <h3 className="text-lg font-medium">{t('displayMode')}</h3>
           <div className="flex flex-wrap gap-2">
             <Button
               variant={settings.displayMode === 'single' ? "default" : "outline"}
               onClick={() => onSettingsChange({ ...settings, displayMode: 'single' })}
               className="flex-1 min-w-[120px]"
             >
-              Single Block
+              {t('singleBlock')}
             </Button>
             <Button
               variant={settings.displayMode === 'all' ? "default" : "outline"}
               onClick={() => onSettingsChange({ ...settings, displayMode: 'all' })}
               className="flex-1 min-w-[120px]"
             >
-              All Blocks
+              {t('allBlocks')}
             </Button>
           </div>
         </div>
@@ -197,57 +199,31 @@ const Settings: React.FC<SettingsProps> = ({
             <span className="mr-2">
               {isFileOperationsExpanded ? <ChevronDown className="w-4 h-4" /> : <ChevronRight className="w-4 h-4" />}
             </span>
-            <h3 className="text-lg font-medium">File Operations</h3>
+            {t('fileOperations')}
           </button>
-          <div className={`grid gap-4 sm:grid-cols-2 ${isFileOperationsExpanded ? '' : 'hidden'}`}>
-            <div>
-              <Label htmlFor="textFile">Text File</Label>
-              <Input
-                id="textFile"
-                type="file"
-                accept=".txt"
-                onChange={onFileUpload.text}
-                className="mt-1"
-              />
-            </div>
-
-            <div>
-              <Label htmlFor="backgroundImage">Background Image</Label>
-              <Input
-                id="backgroundImage"
-                type="file"
-                accept=".png"
-                onChange={onFileUpload.background}
-                className="mt-1"
-              />
-            </div>
-
-            <div>
-              <Label htmlFor="fontFile">Font File</Label>
-              <Input
-                id="fontFile"
-                type="file"
-                accept=".ttf,.otf"
-                onChange={onFileUpload.font}
-                className="mt-1"
-              />
-            </div>
-
-            <div className="flex flex-wrap gap-2 items-end">
-              <div className="flex-1">
-                <Label>Configs</Label>
-                <Input
-                  type="file"
-                  accept=".json"
-                  onChange={onFileUpload.settings}
-                  className="mt-1"
-                />
+          {isFileOperationsExpanded && (
+            <div className="space-y-4">
+              <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                <div className="space-y-2">
+                  <Label htmlFor="text-file">{t('textFileInputLabel')}</Label>
+                  <Input id="text-file" type="file" onChange={onFileUpload.text} />
+                </div>
+                <div className="space-y-2">
+                  <Label htmlFor="font-file">{t('fontFileInputLabel')}</Label>
+                  <Input id="font-file" type="file" onChange={onFileUpload.font} />
+                </div>
+                <div className="space-y-2">
+                  <Label htmlFor="background-image">{t('backgroundImageInputLabel')}</Label>
+                  <Input id="background-image" type="file" onChange={onFileUpload.background} />
+                </div>
+                <div className="space-y-2">
+                  <Label htmlFor="settings-file">{t('importSettings')}</Label>
+                  <Input id="settings-file" type="file" onChange={onFileUpload.settings} accept=".json" />
+                </div>
               </div>
-              <Button onClick={onExportSettings}>
-                Export
-              </Button>
+              <Button onClick={onExportSettings} className="w-full md:w-auto">{t('exportButtonLabel')}</Button>
             </div>
-          </div>
+          )}
         </div>
 
         <div className="space-y-4 border rounded-lg p-2 md:p-4">
@@ -258,72 +234,72 @@ const Settings: React.FC<SettingsProps> = ({
             <span className="mr-2">
               {isTextStylingExpanded ? <ChevronDown className="w-4 h-4" /> : <ChevronRight className="w-4 h-4" />}
             </span>
-            <h3 className="text-lg font-medium">Text Styling</h3>
+            <h3 className="text-lg font-medium">{t('textStyling')}</h3>
           </button>
           <div className={`space-y-4 ${isTextStylingExpanded ? '' : 'hidden'}`}>
             <div>
               <ColorInput
                 id="textColor"
-                label="Text Color"
+                label={t('textColor')}
                 value={settings.textColor}
                 onChange={(value) => onSettingsChange({ ...settings, textColor: value })}
               />
             </div>
 
             <div className="space-y-2">
-              <Label title="Altera o alinhamento horizontal do texto">Horizontal Alignment</Label>
+              <Label title={t('horizontalAlignmentTitle')}>{t('horizontalAlignmentTitle')}</Label>
               <div className="flex flex-wrap gap-2">
                 <Button
                   variant={settings.textAlign === 'left' ? "default" : "outline"}
                   onClick={() => onSettingsChange({ ...settings, textAlign: 'left' })}
                   className="flex-1 min-w-[70px]"
                 >
-                  Left
+                  {t('left')}
                 </Button>
                 <Button
                   variant={settings.textAlign === 'center' ? "default" : "outline"}
                   onClick={() => onSettingsChange({ ...settings, textAlign: 'center' })}
                   className="flex-1 min-w-[70px]"
                 >
-                  Center
+                  {t('center')}
                 </Button>
                 <Button
                   variant={settings.textAlign === 'right' ? "default" : "outline"}
                   onClick={() => onSettingsChange({ ...settings, textAlign: 'right' })}
                   className="flex-1 min-w-[70px]"
                 >
-                  Right
+                  {t('right')}
                 </Button>
               </div>
 
-              <Label className="mt-4">Vertical Alignment</Label>
+              <Label className="mt-4" title={t('verticalAlignmentTitle')}>{t('verticalAlignmentTitle')}</Label>
               <div className="flex flex-wrap gap-2">
                 <Button
                   variant={settings.verticalAlign === 'top' ? "default" : "outline"}
                   onClick={() => onSettingsChange({ ...settings, verticalAlign: 'top' })}
                   className="flex-1 min-w-[70px]"
                 >
-                  Top
+                  {t('top')}
                 </Button>
                 <Button
                   variant={settings.verticalAlign === 'center' ? "default" : "outline"}
                   onClick={() => onSettingsChange({ ...settings, verticalAlign: 'center' })}
                   className="flex-1 min-w-[70px]"
                 >
-                  Center
+                  {t('center')}
                 </Button>
                 <Button
                   variant={settings.verticalAlign === 'bottom' ? "default" : "outline"}
                   onClick={() => onSettingsChange({ ...settings, verticalAlign: 'bottom' })}
                   className="flex-1 min-w-[70px]"
                 >
-                  Bottom
+                  {t('bottom')}
                 </Button>
               </div>
             </div>
 
             <div>
-              <Label title="Adjusts the text font size">Font Size: {settings.fontSize}px</Label>
+              <Label title={t('fontSizeDescription')}>{t('fontSize')}: {settings.fontSize}px</Label>
               <Slider
                 value={[settings.fontSize]}
                 onValueChange={(value) => onSettingsChange({ ...settings, fontSize: value[0] })}
@@ -335,7 +311,7 @@ const Settings: React.FC<SettingsProps> = ({
             </div>
 
             <div>
-              <Label title="Adjusts the spacing between text lines (negative values create overlapping effects)">Line Height: {settings.lineHeight}</Label>
+              <Label title={t('lineHeightDescription')}>{t('lineHeight')}: {settings.lineHeight}</Label>
               <Slider
                 value={[settings.lineHeight * 10]}
                 onValueChange={(value) => onSettingsChange({ ...settings, lineHeight: value[0] / 10 })}
@@ -347,7 +323,7 @@ const Settings: React.FC<SettingsProps> = ({
             </div>
 
             <div>
-              <Label title="Adjusts the spacing between letters">Letter Spacing: {settings.letterSpacing}px</Label>
+              <Label title={t('letterSpacingDescription')}>{t('letterSpacing')}: {settings.letterSpacing}px</Label>
               <Slider
                 value={[settings.letterSpacing]}
                 onValueChange={(value) => onSettingsChange({ ...settings, letterSpacing: value[0] })}
@@ -359,7 +335,7 @@ const Settings: React.FC<SettingsProps> = ({
             </div>
 
             <div>
-              <Label title="Defines the maximum width the text can occupy before wrapping to the next line">Text Wrap Width: {settings.textWrapWidth}px</Label>
+              <Label title={t('textWrapWidthDescription')}>{t('textWrapWidth')}: {settings.textWrapWidth}px</Label>
               <Slider
                 value={[settings.textWrapWidth]}
                 onValueChange={(value) => onSettingsChange({ ...settings, textWrapWidth: value[0] })}
@@ -377,7 +353,7 @@ const Settings: React.FC<SettingsProps> = ({
                 onChange={(e) => onSettingsChange({ ...settings, isBold: e.target.checked })}
                 className="w-4 h-4"
               />
-              <Label title="Applies bold formatting to the text">Bold Text</Label>
+              <Label title={t('boldTextLabel')}>{t('boldTextLabel')}</Label>
             </div>
 
             <div className="flex items-center space-x-2">
@@ -387,7 +363,7 @@ const Settings: React.FC<SettingsProps> = ({
                 onChange={(e) => onSettingsChange({ ...settings, hideTags: e.target.checked })}
                 className="w-4 h-4"
               />
-              <Label title="Hides formatting tags in the text">Hide Tags</Label>
+              <Label title={t('hideTagsLabel')}>{t('hideTagsLabel')}</Label>
             </div>
           </div>
         </div>
@@ -400,11 +376,11 @@ const Settings: React.FC<SettingsProps> = ({
             <span className="mr-2">
               {isPositionScaleExpanded ? <ChevronDown className="w-4 h-4" /> : <ChevronRight className="w-4 h-4" />}
             </span>
-            <h3 className="text-lg font-medium">Position & Scale</h3>
+            <h3 className="text-lg font-medium">{t('positionScale')}</h3>
           </button>
           <div className={`space-y-4 ${isPositionScaleExpanded ? '' : 'hidden'}`}>
             <div>
-              <Label title="Adjusts the horizontal position of the text">Text X Position: {settings.textX}px</Label>
+              <Label title={t('textX')}>{t('textX')}: {settings.textX}px</Label>
               <Slider
                 value={[settings.textX]}
                 onValueChange={(value) => onSettingsChange({ ...settings, textX: value[0] })}
@@ -416,7 +392,7 @@ const Settings: React.FC<SettingsProps> = ({
             </div>
 
             <div>
-              <Label title="Adjusts the vertical position of the text">Text Y Position: {settings.textY}px</Label>
+              <Label title={t('textY')}>{t('textY')}: {settings.textY}px</Label>
               <Slider
                 value={[settings.textY]}
                 onValueChange={(value) => onSettingsChange({ ...settings, textY: value[0] })}
@@ -428,7 +404,7 @@ const Settings: React.FC<SettingsProps> = ({
             </div>
 
             <div>
-              <Label title="Adjusts the horizontal scale of the text">Horizontal Scale: {settings.scaleX}x</Label>
+              <Label title={t('scaleX')}>{t('scaleX')}: {settings.scaleX}x</Label>
               <Slider
                 value={[settings.scaleX * 100]}
                 onValueChange={(value) => onSettingsChange({ ...settings, scaleX: value[0] / 100 })}
@@ -440,7 +416,7 @@ const Settings: React.FC<SettingsProps> = ({
             </div>
 
             <div>
-              <Label title="Adjusts the vertical scale of the text">Vertical Scale: {settings.scaleY}x</Label>
+              <Label title={t('scaleY')}>{t('scaleY')}: {settings.scaleY}x</Label>
               <Slider
                 value={[settings.scaleY * 100]}
                 onValueChange={(value) => onSettingsChange({ ...settings, scaleY: value[0] / 100 })}
@@ -461,16 +437,16 @@ const Settings: React.FC<SettingsProps> = ({
             <span className="mr-2">
               {isEffectsExpanded ? <ChevronDown className="w-4 h-4" /> : <ChevronRight className="w-4 h-4" />}
             </span>
-            <h3 className="text-lg font-medium">Effects</h3>
+            <h3 className="text-lg font-medium">{t('effects')}</h3>
           </button>
           <div className={`space-y-4 ${isEffectsExpanded ? '' : 'hidden'}`}>
             <div>
-              <Label title="Adds a shadow effect to the text">Text Shadow</Label>
+              <Label title={t('textShadowDescription')}>{t('textShadow')}</Label>
               <div className="space-y-4">
                 <div>
                   <ColorInput
-                    label="Shadow Color"
-                    title="Sets the color of the text shadow"
+                    label={t('shadowColorLabel')}
+                    title={t('shadowColorLabel')}
                     value={textShadow.color}
                     onChange={(value) => onSettingsChange({
                       ...settings,
@@ -482,7 +458,7 @@ const Settings: React.FC<SettingsProps> = ({
                   />
                 </div>
                 <div>
-                  <Label title="Controls the horizontal and vertical distance of the shadow from the text">Offset ({textShadow.offsetX}px)</Label>
+                  <Label title={t('offsetDescription')}>{t('offset')} ({textShadow.offsetX}px)</Label>
                   <Slider
                     value={[textShadow.offsetX]}
                     onValueChange={(value) => onSettingsChange({
@@ -500,7 +476,7 @@ const Settings: React.FC<SettingsProps> = ({
                   />
                 </div>
                 <div>
-                  <Label title="Adjusts the softness of the shadow effect">Blur ({textShadow.blur}px)</Label>
+                  <Label title={t('blurDescription')}>{t('blur')} ({textShadow.blur}px)</Label>
                   <Slider
                     value={[textShadow.blur]}
                     onValueChange={(value) => onSettingsChange({
@@ -520,12 +496,12 @@ const Settings: React.FC<SettingsProps> = ({
             </div>
 
             <div>
-              <Label title="Adds an outline effect to the text">Text Stroke</Label>
+              <Label title={t('textStrokeDescription')}>{t('textStroke')}</Label>
               <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
                 <div>
                   <ColorInput
-                    label="Color"
-                    title="Sets the color of the text outline"
+                    label={t('strokeColorLabel')}
+                    title={t('strokeColorLabel')}
                     value={settings.textStrokeColor}
                     onChange={(value) => onSettingsChange({
                       ...settings,
@@ -534,7 +510,7 @@ const Settings: React.FC<SettingsProps> = ({
                   />
                 </div>
                 <div>
-                  <Label title="Controls the thickness of the text outline">Width ({settings.textStrokeWidth}px)</Label>
+                  <Label title={t('strokeWidthLabel')}>{t('strokeWidthLabel')} ({settings.textStrokeWidth}px)</Label>
                   <Slider
                     value={[settings.textStrokeWidth]}
                     onValueChange={(value) => onSettingsChange({
@@ -559,7 +535,7 @@ const Settings: React.FC<SettingsProps> = ({
             <span className="mr-2">
               {isBitmapFontExpanded ? <ChevronDown className="w-4 h-4" /> : <ChevronRight className="w-4 h-4" />}
             </span>
-            <h3 className="text-lg font-medium">Bitmap Font</h3>
+            <h3 className="text-lg font-medium">{t('bitmapFont')}</h3>
           </button>
           <div className={`space-y-4 ${isBitmapFontExpanded ? '' : 'hidden'}`}>
             <div className="flex items-center space-x-2 mb-2">
@@ -575,7 +551,7 @@ const Settings: React.FC<SettingsProps> = ({
                 })}
                 className="w-4 h-4"
               />
-              <Label title="Enables the use of bitmap font rendering instead of system fonts">Enable Bitmap Font</Label>
+              <Label title={t('Enable Bitmap Font')}>{t('Enable Bitmap Font')}</Label>
             </div>
             
             {fontImageLoadError && (
@@ -583,11 +559,11 @@ const Settings: React.FC<SettingsProps> = ({
             )}
             
             {isFontImageLoading && (
-              <div className="text-blue-500 text-sm">Loading font image...</div>
+              <div className="text-blue-500 text-sm">{t('loadingFontImage')}</div>
             )}
             
             <div>
-              <Label htmlFor="bitmapFontImage" title="Upload a PNG image containing the bitmap font characters">Bitmap Font Image</Label>
+              <Label htmlFor="Bitmap Font Image" title={t('Bitmap Font Image')}>{t('Bitmap Font Image')}</Label>
               <Input
                 id="bitmapFontImage"
                 type="file"
@@ -629,7 +605,7 @@ const Settings: React.FC<SettingsProps> = ({
             </div>
             
             <div>
-              <Label title="The sequence of characters in the bitmap font image, in order of appearance">Character Sequence</Label>
+              <Label title={t('Character Sequence')}>{t('Character Sequence')}</Label>
               <Input
                 value={settings.bitmapFont.characters}
                 onChange={(e) => onSettingsChange({
@@ -644,7 +620,7 @@ const Settings: React.FC<SettingsProps> = ({
             </div>
             
             <div>
-              <Label title="Width of each character tile in the bitmap font image">Tile Width ({settings.bitmapFont.tileWidth}px)</Label>
+              <Label title={t('Tile Width')}>{t('Tile Width')} ({settings.bitmapFont.tileWidth}px)</Label>
               <Slider
                 value={[settings.bitmapFont.tileWidth]}
                 onValueChange={(value) => onSettingsChange({
@@ -662,7 +638,7 @@ const Settings: React.FC<SettingsProps> = ({
             </div>
             
             <div>
-              <Label title="Height of each character tile in the bitmap font image">Tile Height ({settings.bitmapFont.tileHeight}px)</Label>
+              <Label title={t('Tile Height')}>{t('Tile Height')} ({settings.bitmapFont.tileHeight}px)</Label>
               <Slider
                 value={[settings.bitmapFont.tileHeight]}
                 onValueChange={(value) => onSettingsChange({
@@ -680,7 +656,7 @@ const Settings: React.FC<SettingsProps> = ({
             </div>
             
             <div>
-              <Label title="Horizontal offset from the left edge of the bitmap font image to the first character">Offset X ({settings.bitmapFont.offsetX}px)</Label>
+              <Label title={t('Bitmap Offset X')}>{t('Bitmap Offset X')} ({settings.bitmapFont.offsetX}px)</Label>
               <Slider
                 value={[settings.bitmapFont.offsetX]}
                 onValueChange={(value) => onSettingsChange({
@@ -698,7 +674,7 @@ const Settings: React.FC<SettingsProps> = ({
             </div>
             
             <div>
-              <Label title="Vertical offset from the top edge of the bitmap font image to the first character">Offset Y ({settings.bitmapFont.offsetY}px)</Label>
+              <Label title={t('Bitmap Offset Y')}>{t('Bitmap Offset Y')} ({settings.bitmapFont.offsetY}px)</Label>
               <Slider
                 value={[settings.bitmapFont.offsetY]}
                 onValueChange={(value) => onSettingsChange({
@@ -716,7 +692,7 @@ const Settings: React.FC<SettingsProps> = ({
             </div>
             
             <div>
-              <Label title="Horizontal spacing between character tiles in the bitmap font image">Separation X ({settings.bitmapFont.separationX}px)</Label>
+              <Label title={t('Separation X')}>{t('Separation X')} ({settings.bitmapFont.separationX}px)</Label>
               <Slider
                 value={[settings.bitmapFont.separationX]}
                 onValueChange={(value) => onSettingsChange({
@@ -734,7 +710,7 @@ const Settings: React.FC<SettingsProps> = ({
             </div>
             
             <div>
-              <Label title="Vertical spacing between character tiles in the bitmap font image">Separation Y ({settings.bitmapFont.separationY}px)</Label>
+              <Label title={t('Separation Y')}>{t('Separation Y')} ({settings.bitmapFont.separationY}px)</Label>
               <Slider
                 value={[settings.bitmapFont.separationY]}
                 onValueChange={(value) => onSettingsChange({
@@ -752,7 +728,7 @@ const Settings: React.FC<SettingsProps> = ({
             </div>
             
             <div>
-              <Label title="Horizontal baseline adjustment for character positioning">Baseline X ({settings.bitmapFont.baselineX}px)</Label>
+              <Label title={t('Baseline X')}>{t('Baseline X')} ({settings.bitmapFont.baselineX}px)</Label>
               <Slider
                 value={[settings.bitmapFont.baselineX]}
                 onValueChange={(value) => onSettingsChange({
@@ -770,7 +746,7 @@ const Settings: React.FC<SettingsProps> = ({
             </div>
             
             <div>
-              <Label title="Vertical baseline adjustment for character positioning">Baseline Y ({settings.bitmapFont.baselineY}px)</Label>
+              <Label title={t('Baseline Y')}>{t('Baseline Y')} ({settings.bitmapFont.baselineY}px)</Label>
               <Slider
                 value={[settings.bitmapFont.baselineY]}
                 onValueChange={(value) => onSettingsChange({
@@ -788,7 +764,7 @@ const Settings: React.FC<SettingsProps> = ({
             </div>
             
             <div>
-              <Label title="Spacing between characters when rendered">Spacing ({settings.bitmapFont.spacing}px)</Label>
+              <Label title={t('Spacing')}>{t('Spacing')} ({settings.bitmapFont.spacing}px)</Label>
               <Slider
                 value={[settings.bitmapFont.spacing]}
                 onValueChange={(value) => onSettingsChange({
@@ -806,7 +782,7 @@ const Settings: React.FC<SettingsProps> = ({
             </div>
             
             <div>
-              <Label title="Color of the font characters">Font Color</Label>
+              <Label title={t('bitmapFontColorLabel')}>{t('bitmapFontColorLabel')}</Label>
               <ColorInput
                 value={settings.bitmapFont.fontColor}
                 onChange={(value) => onSettingsChange({
@@ -820,7 +796,7 @@ const Settings: React.FC<SettingsProps> = ({
             </div>
             
             <div>
-              <Label title="Scaling factor applied to the bitmap font when rendered">Zoom Factor ({settings.bitmapFont.zoomFactor}x)</Label>
+              <Label title={t('Zoom Factor')}>{t('Zoom Factor')} ({settings.bitmapFont.zoomFactor}x)</Label>
               <Slider
                 value={[settings.bitmapFont.zoomFactor]}
                 onValueChange={(value) => onSettingsChange({
@@ -838,10 +814,10 @@ const Settings: React.FC<SettingsProps> = ({
             </div>
             
             <div className="space-y-2">
-              <Label title="Test your bitmap font configuration with sample text">Sample Text Preview</Label>
+              <Label title={t('Sample Text Preview')}>{t('Sample Text Preview')}</Label>
               <Input
                 type="text"
-                placeholder="Type some text to preview"
+                placeholder={t('typeSomeTextToPreview')}
                 value={settings.bitmapFont.sampleText || ''}
                 onChange={(e) => onSettingsChange({
                   ...settings,
@@ -853,7 +829,7 @@ const Settings: React.FC<SettingsProps> = ({
                 className="mt-1"
               />
               <div>
-                <Label title="Background color for the sample text preview">Background Color</Label>
+                <Label title={t('Background Color')}>{t('Background Color')}</Label>
                 <ColorInput
                   value={settings.bitmapFont.backgroundColor || '#333333'}
                   onChange={(value) => onSettingsChange({
@@ -875,7 +851,7 @@ const Settings: React.FC<SettingsProps> = ({
                     settings={settings}
                   />
                 ) : (
-                  <span className="text-gray-500">Enable bitmap font and upload an image to see preview</span>
+                  <span className="text-gray-500">{t('Enable Bitmap Font And Upload Image Preview')}</span>
                 )}
               </div>
             </div>
@@ -889,11 +865,11 @@ const Settings: React.FC<SettingsProps> = ({
               onChange={(e) => onSettingsChange({ ...settings, useCustomBlockSeparator: e.target.checked })}
               className="w-4 h-4"
             />
-            <Label>Use Custom Dialog Separator</Label>
+            <Label>{t('useCustomDialogSeparator')}</Label>
           </div>
           {settings.useCustomBlockSeparator && (
             <div className="space-y-4" data-tutorial="dialog-separator">
-              <Label>Dialog Separators</Label>
+              <Label>{t('dialogSeparators')}</Label>
               {settings.blockSeparators.map((separator, index) => (
                 <div key={index} className="flex gap-2">
                   <Input
@@ -903,7 +879,7 @@ const Settings: React.FC<SettingsProps> = ({
                       newSeparators[index] = e.target.value;
                       onSettingsChange({ ...settings, blockSeparators: newSeparators });
                     }}
-                    placeholder="Enter separator pattern"
+                    placeholder={t('enterSeparatorPattern')}
                     className="flex-1"
                   />
                   <Button
@@ -913,7 +889,7 @@ const Settings: React.FC<SettingsProps> = ({
                       onSettingsChange({ ...settings, blockSeparators: newSeparators });
                     }}
                   >
-                    Remove
+                    {t('remove')}
                   </Button>
                 </div>
               ))}
@@ -924,7 +900,7 @@ const Settings: React.FC<SettingsProps> = ({
                 }}
                 className="w-full"
               >
-                Add Separator
+                {t('addSeparator')}
               </Button>
             </div>
           )}

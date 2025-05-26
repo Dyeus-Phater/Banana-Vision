@@ -87,7 +87,9 @@ export const processText = (text: string, settings: PreviewSettings): React.Reac
     // Also remove block separators if custom block separators are enabled
     if (settings.useCustomBlockSeparator && settings.blockSeparators.length > 0) {
       settings.blockSeparators.forEach(separator => {
-        const regex = new RegExp(separator, "g");
+        // Escape special characters in the separator string
+        const escapedSeparator = separator.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+        const regex = new RegExp(escapedSeparator, "g");
         processedText = processedText.replace(regex, "");
       });
     }
