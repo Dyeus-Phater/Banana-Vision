@@ -67,34 +67,33 @@ interface SectionProps {
   isOpen: boolean;
   onToggle: () => void;
   id?: string;
+  onDragStartButton?: React.DragEventHandler<HTMLButtonElement>;
+  onDragEndButton?: React.DragEventHandler<HTMLButtonElement>;
 }
 
 const DraggableSectionWrapper: React.FC<React.PropsWithChildren<{
-  // draggable prop removed, div will always have draggable="true"
-  onDragStart?: React.DragEventHandler<HTMLDivElement>;
   onDragEnter?: React.DragEventHandler<HTMLDivElement>;
   onDragOver?: React.DragEventHandler<HTMLDivElement>;
   onDragLeave?: React.DragEventHandler<HTMLDivElement>;
   onDrop?: React.DragEventHandler<HTMLDivElement>;
-  onDragEnd?: React.DragEventHandler<HTMLDivElement>;
   isDragging?: boolean;
   isDragOver?: boolean;
 }>> = ({ children, isDragging, isDragOver, ...dragProps }) => {
   return (
     <div
-      draggable={true} // The wrapper is always draggable, but drag start is conditional
-      onDragStart={dragProps.onDragStart}
+      // draggable={true} // Removed: Wrapper is no longer draggable itself
+      // onDragStart={dragProps.onDragStart} // Removed
       onDragEnter={dragProps.onDragEnter}
       onDragOver={dragProps.onDragOver}
       onDragLeave={dragProps.onDragLeave}
       onDrop={dragProps.onDrop}
-      onDragEnd={dragProps.onDragEnd}
+      // onDragEnd={dragProps.onDragEnd} // Removed
       className={`
         draggable-section-wrapper
         transition-all duration-150 ease-in-out
         ${isDragging ? 'opacity-50 scale-98 shadow-2xl cursor-grabbing' : 'opacity-100 scale-100'}
         ${isDragOver ? 'ring-2 ring-yellow-500 ring-offset-2 ring-offset-yellow-100 dark:ring-offset-gray-800' : ''}
-        my-1 rounded-lg
+        my-1 rounded-lg 
       `}
     >
       {children}
@@ -102,13 +101,16 @@ const DraggableSectionWrapper: React.FC<React.PropsWithChildren<{
   );
 };
 
-export const Section: React.FC<SectionProps> = ({ title, children, isOpen, onToggle, id }) => {
+export const Section: React.FC<SectionProps> = ({ title, children, isOpen, onToggle, id, onDragStartButton, onDragEndButton }) => {
   return (
     <div className="mb-4 p-3 border border-yellow-400 dark:border-yellow-600 rounded-lg bg-yellow-50 dark:bg-gray-800 shadow-sm" id={id}>
       <div className="flex justify-between items-center mb-2">
         <button
           className="drag-handle-button text-lg font-semibold text-yellow-700 dark:text-yellow-300 w-full text-left flex items-center cursor-grab"
           onClick={onToggle}
+          draggable={true} // Added: This button is the draggable handle
+          onDragStart={onDragStartButton} // Added
+          onDragEnd={onDragEndButton} // Added
           aria-expanded={isOpen}
           aria-controls={id ? `${id}-content` : undefined}
           aria-roledescription="drag handle for section reordering"
@@ -235,13 +237,6 @@ const ControlsPanel: React.FC<ControlsPanelProps> = (props) => {
     reader.readAsDataURL(file);
   };
 
-  const handleBlockSeparatorsChange = (value: string) => {
-    onSettingsChange('blockSeparators', value.split(',').map(s => s.trim()).filter(s => s.length > 0));
-  };
-
-  const handleTagPatternsChange = (value: string) => {
-    onSettingsChange('tagPatternsToHide', value.split('\n').map(s => s.trim()).filter(s => s.length > 0));
-  };
 
   const handleFontFileSelected = (files: FileList) => {
     if (files && files.length > 0) {
@@ -271,6 +266,16 @@ const ControlsPanel: React.FC<ControlsPanelProps> = (props) => {
 
   const getPanelSectionsConfig = useCallback((currentProps: ControlsPanelProps): PanelSectionItem[] => {
     const { settings, onSettingsChange, onNestedSettingsChange, ...restOfProps } = currentProps; // Destructure to avoid stale closures
+
+    // Corrected function:
+    const handleTagPatternsChange = (value: string) => {
+      onSettingsChange('tagPatternsToHide', value.split('\n'));
+    };
+    
+    const handleBlockSeparatorsChange = (value: string) => {
+      onSettingsChange('blockSeparators', value.split(',').map(s => s.trim()).filter(s => s.length > 0));
+    };
+
 
     return [
       {
@@ -425,7 +430,7 @@ const ControlsPanel: React.FC<ControlsPanelProps> = (props) => {
           <>
             <LabelInputContainer label="Hide Tags in Preview" htmlFor="hideTagsInPreview" inline><input type="checkbox" id="hideTagsInPreview" checked={settings.hideTagsInPreview} onChange={(e) => onSettingsChange('hideTagsInPreview', e.target.checked)} className="h-5 w-5 text-yellow-500 border-gray-300 rounded focus:ring-yellow-400" /></LabelInputContainer>
             <LabelInputContainer label="Tag Patterns to Hide:" htmlFor="tagPatternsToHide" subText="Enter RegEx patterns, one per line. Applied if 'Hide Tags' is enabled.">
-              <TextAreaInput id="tagPatternsToHide" value={settings.tagPatternsToHide.join('\n')} onChange={(e) => handleTagPatternsChange(e.target.value)} rows={3} placeholder="e.g. <[^>]*>\n\\[[^\\]]*\\]" />
+              <TextAreaInput id="tagPatternsToHide" value={settings.tagPatternsToHide.join('\n')} onChange={(e) => handleTagPatternsChange(e.target.value)} rows={6} placeholder="e.g. <[^>]*>\n\\[[^\\]]*\\]" />
             </LabelInputContainer>
           </>
         )
@@ -546,17 +551,40 @@ const ControlsPanel: React.FC<ControlsPanelProps> = (props) => {
 
 
   useEffect(() => {
-    const initialOpenState: Record<string, boolean> = {};
-    panelSections.forEach(section => {
-      // For 'Overflow Settings', its open state is controlled by `overflowSettingsPanelOpen` prop.
-      if (section.id === 'overflow-settings-section') {
-        initialOpenState[section.id] = overflowSettingsPanelOpen;
-      } else {
-        initialOpenState[section.id] = section.defaultOpen !== undefined ? section.defaultOpen : true;
+    // This effect now preserves existing open states and only initializes new ones or syncs specific ones.
+    setOpenSections(prevOpenSections => {
+      const newOpenSectionsState = { ...prevOpenSections };
+      let hasChanges = false;
+
+      panelSections.forEach(section => {
+        if (section.id === 'overflow-settings-section') {
+          // Always sync 'overflow-settings-section' with its prop
+          if (newOpenSectionsState[section.id] !== overflowSettingsPanelOpen) {
+            newOpenSectionsState[section.id] = overflowSettingsPanelOpen;
+            hasChanges = true;
+          }
+        } else {
+          // For other sections, initialize if not already present in state
+          if (newOpenSectionsState[section.id] === undefined) {
+            newOpenSectionsState[section.id] = section.defaultOpen !== undefined ? section.defaultOpen : true;
+            hasChanges = true;
+          }
+        }
+      });
+      
+      // Clean up sections that might no longer exist if panelSections structure could change
+      // (Currently, panelSections structure is static, so this might not be strictly necessary)
+      const currentSectionIds = new Set(panelSections.map(s => s.id));
+      for (const idInState in newOpenSectionsState) {
+        if (!currentSectionIds.has(idInState)) {
+          delete newOpenSectionsState[idInState];
+          hasChanges = true;
+        }
       }
+
+      return hasChanges ? newOpenSectionsState : prevOpenSections;
     });
-    setOpenSections(initialOpenState);
-  }, [panelSections, overflowSettingsPanelOpen]); // Depend on panelSections and the external prop for overflow
+  }, [panelSections, overflowSettingsPanelOpen]);
 
   const toggleSectionOpen = (sectionId: string) => {
     if (sectionId === 'overflow-settings-section') {
@@ -566,18 +594,8 @@ const ControlsPanel: React.FC<ControlsPanelProps> = (props) => {
     }
   };
 
-  const handleDragStart = (e: React.DragEvent<HTMLDivElement>, index: number) => {
-    const currentTargetDiv = e.currentTarget as HTMLDivElement;
-    // Find the .drag-handle-button within the current DraggableSectionWrapper
-    const handleButton = currentTargetDiv.querySelector('.drag-handle-button');
-
-    // Check if the actual mousedown target (e.target) is the handleButton or one of its children
-    if (!handleButton || !(handleButton === e.target || handleButton.contains(e.target as Node))) {
-      e.preventDefault(); // Cancel the drag
-      return;
-    }
-
-    // If drag is allowed (started on the handle or its child):
+  const handleDragStart = (e: React.DragEvent<HTMLButtonElement>, index: number) => {
+    // Drag initiated from the button itself
     e.dataTransfer.effectAllowed = 'move';
     e.dataTransfer.setData('text/plain', index.toString()); // Required for Firefox and good practice
     setDraggingItemIndex(index);
@@ -616,6 +634,7 @@ const ControlsPanel: React.FC<ControlsPanelProps> = (props) => {
   };
 
   const handleDragEnd = () => {
+    // Called when the drag operation on the button ends
     setDraggingItemIndex(null);
     setDragOverItemIndex(null);
   };
@@ -626,12 +645,12 @@ const ControlsPanel: React.FC<ControlsPanelProps> = (props) => {
       {panelSections.map((section, index) => (
          <DraggableSectionWrapper
             key={section.id}
-            onDragStart={(e) => handleDragStart(e, index)}
+            // onDragStart no longer on wrapper
             onDragEnter={() => handleDragEnter(index)}
             onDragOver={handleDragOver}
             onDragLeave={handleDragLeave}
             onDrop={() => handleDrop(index)}
-            onDragEnd={handleDragEnd}
+            // onDragEnd no longer on wrapper
             isDragging={draggingItemIndex === index}
             isDragOver={dragOverItemIndex === index && draggingItemIndex !== null && draggingItemIndex !== index}
         >
@@ -640,6 +659,8 @@ const ControlsPanel: React.FC<ControlsPanelProps> = (props) => {
             isOpen={openSections[section.id] === undefined ? true : openSections[section.id]}
             onToggle={() => toggleSectionOpen(section.id)}
             id={section.id}
+            onDragStartButton={(e) => handleDragStart(e, index)} // Pass to button
+            onDragEndButton={handleDragEnd} // Pass to button
           >
             {section.content}
           </Section>

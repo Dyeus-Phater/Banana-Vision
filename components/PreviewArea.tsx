@@ -35,24 +35,31 @@ const processTextForPreview = (
 
   if (hideTags && tagPatterns.length > 0) {
     tagPatterns.forEach(patternStr => {
+      const trimmedPattern = patternStr.trim();
+      if (trimmedPattern.length === 0) return; // Skip empty patterns
+
       try {
-        const regex = new RegExp(patternStr, 'g');
+        const regex = new RegExp(trimmedPattern, 'g');
         processedText = processedText.replace(regex, '');
       } catch (error) {
-        console.error(`Invalid regex pattern for tags: ${patternStr}`, error);
+        if (error instanceof SyntaxError) {
+            console.warn(`Skipping invalid regex tag pattern (likely during typing): "${trimmedPattern}"`, error.message);
+        } else {
+            console.warn(`Error processing tag pattern: "${trimmedPattern}"`, error);
+        }
       }
     });
   }
 
   if (hideTags && useCustomBlockSeparator && blockSeparatorsToHide.length > 0) {
     blockSeparatorsToHide.forEach(separator => {
-      if (separator.trim().length > 0) {
+      if (separator.trim().length > 0) { // Separators are usually predefined, less likely to be empty
         try {
           const escapedSeparator = separator.replace(/[-\/\\^$*+?.()|[\]{}]/g, '\\$&');
           const regex = new RegExp(escapedSeparator, 'g');
           processedText = processedText.replace(regex, '');
         } catch (error) {
-          console.error(`Invalid regex pattern for block separator: ${separator}`, error);
+          console.warn(`Invalid regex pattern for block separator: ${separator}`, error);
         }
       }
     });
@@ -81,25 +88,27 @@ const getCleanTextForCounting = (
 
   if (tagPatterns && tagPatterns.length > 0) {
     tagPatterns.forEach(patternStr => {
-      if (patternStr.trim().length === 0) return;
+      const trimmedPattern = patternStr.trim();
+      if (trimmedPattern.length === 0) return;
       try {
-        const regex = new RegExp(patternStr, 'g');
+        const regex = new RegExp(trimmedPattern, 'g'); // Use trimmed pattern
         cleanText = cleanText.replace(regex, '');
       } catch (error) {
-        console.warn(`Invalid regex pattern during char count (tags): ${patternStr}`, error);
+        console.warn(`Invalid regex pattern during char count (tags): "${trimmedPattern}"`, error instanceof Error ? error.message : error);
       }
     });
   }
 
   if (useCustomBlockSeparator && blockSeparators && blockSeparators.length > 0) {
     blockSeparators.forEach(separator => {
-      if (separator.trim().length > 0) {
+      const trimmedSeparator = separator.trim(); // Trim separators too for safety
+      if (trimmedSeparator.length > 0) {
         try {
-          const escapedSeparator = separator.replace(/[-\/\\^$*+?.()|[\]{}]/g, '\\$&');
+          const escapedSeparator = trimmedSeparator.replace(/[-\/\\^$*+?.()|[\]{}]/g, '\\$&');
           const regex = new RegExp(escapedSeparator, 'g');
           cleanText = cleanText.replace(regex, '');
         } catch (error) {
-          console.warn(`Invalid regex for block separator during char count: ${separator}`, error);
+          console.warn(`Invalid regex for block separator during char count: "${trimmedSeparator}"`, error instanceof Error ? error.message : error);
         }
       }
     });
