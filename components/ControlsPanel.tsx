@@ -67,12 +67,10 @@ interface SectionProps {
   isOpen: boolean;
   onToggle: () => void;
   id?: string;
-  isDragging?: boolean;
-  dragHandleProps?: React.HTMLAttributes<HTMLButtonElement>;
 }
 
 const DraggableSectionWrapper: React.FC<React.PropsWithChildren<{
-  draggable: boolean;
+  // draggable prop removed, div will always have draggable="true"
   onDragStart?: React.DragEventHandler<HTMLDivElement>;
   onDragEnter?: React.DragEventHandler<HTMLDivElement>;
   onDragOver?: React.DragEventHandler<HTMLDivElement>;
@@ -81,10 +79,10 @@ const DraggableSectionWrapper: React.FC<React.PropsWithChildren<{
   onDragEnd?: React.DragEventHandler<HTMLDivElement>;
   isDragging?: boolean;
   isDragOver?: boolean;
-}>> = ({ children, draggable, isDragging, isDragOver, ...dragProps }) => {
+}>> = ({ children, isDragging, isDragOver, ...dragProps }) => {
   return (
     <div
-      draggable={draggable}
+      draggable={true} // The wrapper is always draggable, but drag start is conditional
       onDragStart={dragProps.onDragStart}
       onDragEnter={dragProps.onDragEnter}
       onDragOver={dragProps.onDragOver}
@@ -94,7 +92,7 @@ const DraggableSectionWrapper: React.FC<React.PropsWithChildren<{
       className={`
         draggable-section-wrapper
         transition-all duration-150 ease-in-out
-        ${isDragging ? 'opacity-50 scale-98 shadow-2xl' : 'opacity-100 scale-100'}
+        ${isDragging ? 'opacity-50 scale-98 shadow-2xl cursor-grabbing' : 'opacity-100 scale-100'}
         ${isDragOver ? 'ring-2 ring-yellow-500 ring-offset-2 ring-offset-yellow-100 dark:ring-offset-gray-800' : ''}
         my-1 rounded-lg
       `}
@@ -104,17 +102,19 @@ const DraggableSectionWrapper: React.FC<React.PropsWithChildren<{
   );
 };
 
-export const Section: React.FC<SectionProps> = ({ title, children, isOpen, onToggle, id, dragHandleProps }) => {
+export const Section: React.FC<SectionProps> = ({ title, children, isOpen, onToggle, id }) => {
   return (
     <div className="mb-4 p-3 border border-yellow-400 dark:border-yellow-600 rounded-lg bg-yellow-50 dark:bg-gray-800 shadow-sm" id={id}>
       <div className="flex justify-between items-center mb-2">
         <button
-          className="text-lg font-semibold text-yellow-700 dark:text-yellow-300 w-full text-left flex items-center"
+          className="drag-handle-button text-lg font-semibold text-yellow-700 dark:text-yellow-300 w-full text-left flex items-center cursor-grab"
           onClick={onToggle}
           aria-expanded={isOpen}
           aria-controls={id ? `${id}-content` : undefined}
+          aria-roledescription="drag handle for section reordering"
+          title={`Drag to reorder section: ${title}. Click to ${isOpen ? 'collapse' : 'expand'}.`}
         >
-          <span {...dragHandleProps} className="cursor-grab mr-2 text-yellow-500 dark:text-yellow-400 hover:text-yellow-700 dark:hover:text-yellow-200" title="Drag to reorder section">☰</span>
+          <span className="mr-2 text-yellow-500 dark:text-yellow-400 hover:text-yellow-700 dark:hover:text-yellow-200" aria-hidden="true">☰</span>
           {title}
         </button>
         <button
@@ -122,6 +122,7 @@ export const Section: React.FC<SectionProps> = ({ title, children, isOpen, onTog
           aria-expanded={isOpen}
           aria-controls={id ? `${id}-content` : undefined}
           className="text-yellow-700 dark:text-yellow-300"
+          aria-label={isOpen ? `Collapse ${title} section` : `Expand ${title} section`}
         >
           <span>{isOpen ? '▲' : '▼'}</span>
         </button>
@@ -566,8 +567,19 @@ const ControlsPanel: React.FC<ControlsPanelProps> = (props) => {
   };
 
   const handleDragStart = (e: React.DragEvent<HTMLDivElement>, index: number) => {
+    const currentTargetDiv = e.currentTarget as HTMLDivElement;
+    // Find the .drag-handle-button within the current DraggableSectionWrapper
+    const handleButton = currentTargetDiv.querySelector('.drag-handle-button');
+
+    // Check if the actual mousedown target (e.target) is the handleButton or one of its children
+    if (!handleButton || !(handleButton === e.target || handleButton.contains(e.target as Node))) {
+      e.preventDefault(); // Cancel the drag
+      return;
+    }
+
+    // If drag is allowed (started on the handle or its child):
     e.dataTransfer.effectAllowed = 'move';
-    // e.dataTransfer.setData('text/plain', index.toString()); // Not strictly necessary for this impl
+    e.dataTransfer.setData('text/plain', index.toString()); // Required for Firefox and good practice
     setDraggingItemIndex(index);
   };
 
@@ -577,11 +589,10 @@ const ControlsPanel: React.FC<ControlsPanelProps> = (props) => {
   };
 
   const handleDragOver = (event: React.DragEvent<HTMLDivElement>) => {
-    event.preventDefault();
+    event.preventDefault(); // Necessary to allow dropping
   };
 
   const handleDragLeave = (e: React.DragEvent<HTMLDivElement>) => {
-    // Basic leave, could be improved if nested draggables were an issue
      if (e.currentTarget.contains(e.relatedTarget as Node)) {
         return;
     }
@@ -609,15 +620,12 @@ const ControlsPanel: React.FC<ControlsPanelProps> = (props) => {
     setDragOverItemIndex(null);
   };
   
-  const dragHandleRef = React.useRef<HTMLButtonElement>(null);
-
 
   return (
     <div className="space-y-0"> {/* Reduced space-y for tighter packing of draggable items */}
       {panelSections.map((section, index) => (
          <DraggableSectionWrapper
             key={section.id}
-            draggable={true}
             onDragStart={(e) => handleDragStart(e, index)}
             onDragEnter={() => handleDragEnter(index)}
             onDragOver={handleDragOver}
@@ -632,16 +640,6 @@ const ControlsPanel: React.FC<ControlsPanelProps> = (props) => {
             isOpen={openSections[section.id] === undefined ? true : openSections[section.id]}
             onToggle={() => toggleSectionOpen(section.id)}
             id={section.id}
-            dragHandleProps={{
-              // This makes the icon the drag handle.
-              // Draggability is on the DraggableSectionWrapper.
-              // The handle is mostly for visual cue and ARIA.
-              role: 'button',
-              'aria-roledescription': 'drag handle',
-              tabIndex: 0, // Make it focusable
-               // To prevent drag start when clicking the handle to toggle, if Section itself is not draggable
-              // However, since the wrapper is draggable, this is fine.
-            }}
           >
             {section.content}
           </Section>
