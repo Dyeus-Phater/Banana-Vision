@@ -51,6 +51,9 @@ export const importSettingsFromJson = (file: File): Promise<AppSettings> => {
             ...DEFAULT_SETTINGS.pixelOverflowMargins,
             ...(parsedSettings.pixelOverflowMargins || {}),
           },
+          customColorTags: Array.isArray(parsedSettings.customColorTags) 
+            ? parsedSettings.customColorTags 
+            : DEFAULT_SETTINGS.customColorTags,
           // Ensure boolean fields that might be missing are defaulted
           showSecondaryBackgroundImage: typeof parsedSettings.showSecondaryBackgroundImage === 'boolean' 
               ? parsedSettings.showSecondaryBackgroundImage 

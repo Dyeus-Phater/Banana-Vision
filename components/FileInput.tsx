@@ -2,11 +2,11 @@
 import React, { useRef } from 'react';
 
 interface FileInputProps {
-  onChange: (files: FileList) => void; // Changed from File to FileList
+  onChange: (files: FileList) => void;
   accept?: string;
   buttonLabel?: string;
   buttonClassName?: string;
-  multiple?: boolean; // New prop
+  multiple?: boolean;
 }
 
 const FileInput: React.FC<FileInputProps> = ({ 
@@ -14,15 +14,14 @@ const FileInput: React.FC<FileInputProps> = ({
   accept, 
   buttonLabel = "Upload File", 
   buttonClassName,
-  multiple = false // Default to single file selection
+  multiple = false 
 }) => {
   const inputRef = useRef<HTMLInputElement>(null);
 
   const handleFileChange = (event: React.ChangeEvent<HTMLInputElement>) => {
     const files = event.target.files;
     if (files && files.length > 0) {
-      onChange(files); // Pass the whole FileList
-      // Reset input value to allow uploading the same file(s) again
+      onChange(files);
       if (inputRef.current) {
         inputRef.current.value = ""; 
       }
@@ -33,6 +32,12 @@ const FileInput: React.FC<FileInputProps> = ({
     inputRef.current?.click();
   };
 
+  // Default button styling using CSS variables if no custom class is provided
+  const defaultButtonClass = `px-3 py-1.5 border border-[var(--bv-input-border)] rounded-md shadow-sm 
+                            text-sm font-medium text-[var(--bv-input-text)] 
+                            bg-[var(--bv-input-background)] hover:opacity-80
+                            focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-[var(--bv-input-focus-ring)]`;
+
   return (
     <>
       <input
@@ -41,12 +46,12 @@ const FileInput: React.FC<FileInputProps> = ({
         onChange={handleFileChange}
         accept={accept}
         className="hidden"
-        multiple={multiple} // Use the new prop
+        multiple={multiple}
       />
       <button
         type="button"
         onClick={handleClick}
-        className={buttonClassName || "px-3 py-1.5 border border-gray-300 dark:border-gray-600 rounded-md shadow-sm text-sm font-medium text-gray-700 dark:text-gray-200 bg-white dark:bg-gray-700 hover:bg-gray-50 dark:hover:bg-gray-600 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-yellow-500"}
+        className={buttonClassName || defaultButtonClass}
       >
         {buttonLabel}
       </button>

@@ -1,12 +1,23 @@
 
 import React, { useState, useCallback, useRef, useEffect, useLayoutEffect, useMemo } from 'react';
-import { AppSettings, Theme, Block, NestedAppSettingsObjectKeys, ScriptFile } from './types';
-import { DEFAULT_SETTINGS } from './constants';
+import JSZip from 'jszip';
+import { Octokit } from '@octokit/rest';
+import { 
+  AppSettings, Block, NestedAppSettingsObjectKeys, ScriptFile, GitHubSettings, Profile, MainViewMode,
+  ThemeKey, CustomThemeColors, AppThemeSettings, ResolvedThemeColors
+} from './types';
+import { DEFAULT_SETTINGS, DEFAULT_GITHUB_SETTINGS, ALL_THEME_DEFINITIONS, DEFAULT_CUSTOM_THEME_TEMPLATE } from './constants';
 import ControlsPanel from './components/ControlsPanel';
 import PreviewArea, { PreviewAreaProps } from './components/PreviewArea';
 import Toolbar from './components/Toolbar';
+import ProfilesGalleryPage from './components/ProfilesGalleryPage';
+import SpecialSettingsMenu from './components/SpecialSettingsMenu';
+import TutorialModal from './components/TutorialModal';
 import { exportSettingsAsJson, importSettingsFromJson } from './services/fileService';
 import { exportToPng } from './services/exportService';
+import * as profileService from './services/profileService';
+import * as themeService from './services/themeService';
+
 
 interface LoadedCustomFontInfo {
   name: string;
@@ -35,10 +46,12 @@ export interface FindResultSummaryItem {
 
 const ESTIMATED_BLOCK_CELL_HEIGHT_PX = 350;
 const OBSERVER_MARGIN_ITEM_COUNT = 2;
+const TUTORIAL_COMPLETED_KEY = 'bananaVision_tutorialCompleted_v1';
+
 
 interface BlockCellProps {
   block: Block;
-  theme: Theme;
+  activeThemeKey: ThemeKey; // Changed from theme: Theme
   appSettings: AppSettings;
   isFullyVisible: boolean;
   placeholderHeight: number;
@@ -46,7 +59,7 @@ interface BlockCellProps {
   onBlockContentChange: (blockOriginalIndex: number, newContent: string) => void;
   onBlockOverflowChange: (blockOriginalIndex: number, isOverflowing: boolean) => void;
   onNestedSettingsChange: PreviewAreaProps['onNestedSettingsChange'];
-  comparisonOriginalContent: string | null; // Content of the corresponding block from the matched original script
+  comparisonOriginalContent: string | null;
   overflowSettingsPanelOpen: boolean;
   simplifiedRender: boolean;
   onVisibilityChange: (blockOriginalIndex: number, isVisible: boolean) => void;
@@ -56,7 +69,7 @@ interface BlockCellProps {
 
 const BlockCell: React.FC<BlockCellProps> = ({
   block,
-  theme,
+  activeThemeKey,
   appSettings,
   isFullyVisible,
   placeholderHeight,
@@ -125,14 +138,9 @@ const BlockCell: React.FC<BlockCellProps> = ({
   return (
     <div
       ref={cellRef}
-      className={`block-cell p-4 rounded-lg shadow-md border ${
-      theme === 'banana' ? 'bg-yellow-50/70 border-yellow-300' :
-      theme === 'dark' ? 'bg-gray-800/70 border-gray-700' :
-      'bg-gray-50/70 border-gray-300'
-    }`}>
-      <h3 className={`text-md font-semibold mb-2 flex justify-between items-center ${
-        theme === 'banana' ? 'text-yellow-800' : theme === 'dark' ? 'text-yellow-300' : 'text-gray-800'
-      }`}>
+      className="block-cell p-4 rounded-lg shadow-md border bg-[var(--bv-element-background-secondary)] border-[var(--bv-border-color)]"
+    >
+      <h3 className="text-md font-semibold mb-2 flex justify-between items-center text-[var(--bv-text-primary)]">
         Block {block.index + 1}
         {block.isOverflowing && (
           <span className="ml-2 bg-red-500 text-white text-xs px-2 py-0.5 rounded-full">Overflow!</span>
@@ -145,7 +153,7 @@ const BlockCell: React.FC<BlockCellProps> = ({
         {isFullyVisible ? (
          <PreviewArea
           ref={previewComponentRef}
-          key={`preview-cell-${block.index}`} // Consider adding active script ID to key if necessary
+          key={`preview-cell-${block.index}`}
           baseSettings={appSettings}
           textOverride={block.content}
           simplifiedRender={simplifiedRender}
@@ -153,10 +161,11 @@ const BlockCell: React.FC<BlockCellProps> = ({
           onNestedSettingsChange={onNestedSettingsChange}
           showPixelMarginGuides={appSettings.pixelOverflowMargins.enabled && overflowSettingsPanelOpen}
           isReadOnlyPreview={false}
+          activeThemeKey={activeThemeKey}
         />
         ) : (
           <div
-            className="flex items-center justify-center border border-dashed border-gray-400 dark:border-gray-600 bg-gray-100 dark:bg-gray-750 text-gray-500 dark:text-gray-400 text-sm italic"
+            className="flex items-center justify-center border border-dashed border-[var(--bv-border-color-light)] bg-[var(--bv-element-background)] text-[var(--bv-text-secondary)] text-sm italic"
             style={{
               height: `${placeholderHeight}px`,
               width: `${placeholderWidth}px`,
@@ -173,23 +182,20 @@ const BlockCell: React.FC<BlockCellProps> = ({
         aria-label={`Content for block ${block.index + 1}`}
         value={block.content}
         onChange={(e) => onBlockContentChange(blockOriginalIndex, e.target.value)}
-        className={`w-full p-2 border rounded-md shadow-sm sm:text-sm resize-y min-h-[80px] mb-2
-                    ${ theme === 'banana' ? 'bg-yellow-50 border-yellow-400 focus:ring-yellow-500 focus:border-yellow-500'
-                                        : theme === 'dark' ? 'bg-gray-600 border-gray-500 focus:ring-yellow-500 focus:border-yellow-500 text-gray-100'
-                                        : 'bg-white border-gray-300 focus:ring-yellow-500 focus:border-yellow-500'}`}
+        className="w-full p-2 border rounded-md shadow-sm sm:text-sm resize-y min-h-[80px] mb-2
+                   bg-[var(--bv-input-background)] border-[var(--bv-input-border)] text-[var(--bv-input-text)]
+                   focus:ring-[var(--bv-input-focus-ring)] focus:border-[var(--bv-input-focus-ring)]"
       />
       {appSettings.comparisonModeEnabled && comparisonOriginalContent !== null && (
         <div>
-          <h4 className={`text-sm font-medium mt-2 mb-1 ${
-             theme === 'banana' ? 'text-yellow-700' : theme === 'dark' ? 'text-yellow-400' : 'text-gray-700'
-          }`}>Original Text (Block {block.index + 1})</h4>
+          <h4 className="text-sm font-medium mt-2 mb-1 text-[var(--bv-text-secondary)]">Original Text (Block {block.index + 1})</h4>
           <textarea
             aria-label={`Original content for block ${block.index + 1}`}
             readOnly
             value={comparisonOriginalContent}
-            className={`w-full p-2 border rounded-md shadow-sm sm:text-sm resize-y min-h-[60px]
-                        bg-gray-100 dark:bg-gray-800 border-gray-300 dark:border-gray-700 text-gray-500 dark:text-gray-400
-                        cursor-not-allowed`}
+            className="w-full p-2 border rounded-md shadow-sm sm:text-sm resize-y min-h-[60px]
+                       bg-[var(--bv-element-background-secondary)] border-[var(--bv-border-color-light)] text-[var(--bv-text-secondary)]
+                       cursor-not-allowed"
           />
         </div>
       )}
@@ -202,16 +208,20 @@ const MemoizedBlockCell = React.memo(BlockCell);
 
 const App: React.FC = () => {
   const [settings, setSettings] = useState<AppSettings>(DEFAULT_SETTINGS);
-  const [theme, setTheme] = useState<Theme>('banana');
   const previewRef = useRef<HTMLDivElement>(null);
   const previewContainerRef = useRef<HTMLDivElement>(null);
   const mainTextAreaRef = useRef<HTMLTextAreaElement>(null);
+
+  // Theme state
+  const [appThemeSettings, setAppThemeSettings] = useState<AppThemeSettings>(themeService.loadThemeSettings());
+  const [isSpecialSettingsMenuOpen, setIsSpecialSettingsMenuOpen] = useState<boolean>(false);
+
 
   const [mainScripts, setMainScripts] = useState<ScriptFile[]>([]);
   const [activeMainScriptId, setActiveMainScriptId] = useState<string | null>(null);
   const [originalScripts, setOriginalScripts] = useState<ScriptFile[]>([]);
 
-  const [currentBlockIndex, setCurrentBlockIndex] = useState<number | null>(0); // Index within active script's blocks
+  const [currentBlockIndex, setCurrentBlockIndex] = useState<number | null>(0);
   const [showOnlyOverflowingBlocks, setShowOnlyOverflowingBlocks] = useState<boolean>(false);
 
   const [loadedCustomFontInfo, setLoadedCustomFontInfo] = useState<LoadedCustomFontInfo | null>(null);
@@ -220,11 +230,13 @@ const App: React.FC = () => {
   const [matchedOriginalScript, setMatchedOriginalScript] = useState<ScriptFile | null>(null);
 
   const [viewMode, setViewMode] = useState<ViewMode>('single');
+  const [currentMainView, setCurrentMainView] = useState<MainViewMode>('editor');
+
+  const [isControlsPanelCollapsed, setIsControlsPanelCollapsed] = useState<boolean>(false);
 
   const [fullyVisibleBlockOriginalIndices, setFullyVisibleBlockOriginalIndices] = useState<Set<number>>(new Set());
   const [scrollRootElement, setScrollRootElement] = useState<HTMLDivElement | null>(null);
 
-  // Find and Replace State
   const [findText, setFindText] = useState<string>("");
   const [replaceText, setReplaceText] = useState<string>("");
   const [findIsCaseSensitive, setFindIsCaseSensitive] = useState<boolean>(false);
@@ -239,6 +251,126 @@ const App: React.FC = () => {
   } | null>(null);
   const [findResultSummary, setFindResultSummary] = useState<FindResultSummaryItem[]>([]);
 
+  const [gitHubSettings, setGitHubSettings] = useState<GitHubSettings>(DEFAULT_GITHUB_SETTINGS);
+  const [isGitHubLoading, setIsGitHubLoading] = useState<boolean>(false);
+  const [gitHubStatusMessage, setGitHubStatusMessage] = useState<string>("");
+
+  const [profiles, setProfiles] = useState<Profile[]>([]);
+
+  // Tutorial State
+  const [showTutorial, setShowTutorial] = useState<boolean>(false);
+  const [currentTutorialStep, setCurrentTutorialStep] = useState<number>(0);
+
+  useEffect(() => {
+    const tutorialCompleted = localStorage.getItem(TUTORIAL_COMPLETED_KEY);
+    if (tutorialCompleted !== 'true') {
+      setShowTutorial(true);
+      setCurrentTutorialStep(0);
+    }
+  }, []);
+
+  const handleStartTutorial = () => {
+    setCurrentTutorialStep(0);
+    setShowTutorial(true);
+  };
+
+  const handleCloseTutorial = (markAsCompleted: boolean) => {
+    setShowTutorial(false);
+    if (markAsCompleted) {
+      localStorage.setItem(TUTORIAL_COMPLETED_KEY, 'true');
+    }
+  };
+
+
+  // Effect to manage the dedicated scrollbar style tag
+  useEffect(() => {
+    const styleTagId = 'dynamic-scrollbar-styles';
+    let styleTag = document.getElementById(styleTagId) as HTMLStyleElement | null;
+    if (!styleTag) {
+      styleTag = document.createElement('style');
+      styleTag.id = styleTagId;
+      document.head.appendChild(styleTag);
+    }
+  }, []);
+
+  // Apply theme via CSS variables
+  useEffect(() => {
+    const resolvedColors = themeService.getResolvedThemeColors(appThemeSettings.activeThemeKey, appThemeSettings.customColors);
+    const root = document.documentElement;
+    
+    Object.entries(resolvedColors).forEach(([key, value]) => {
+      if (value) { 
+        const cssVarName = `--bv-${key.replace(/([A-Z])/g, '-$1').toLowerCase()}`;
+        root.style.setProperty(cssVarName, value);
+      }
+    });
+    
+    const { scrollbarTrack, scrollbarThumb, scrollbarThumbHover } = resolvedColors;
+    const scrollbarStyleTag = document.getElementById('dynamic-scrollbar-styles') as HTMLStyleElement | null;
+    
+    if (scrollbarStyleTag) {
+      let scrollbarCss = `
+        ::-webkit-scrollbar { width: 8px; height: 8px; }
+      `;
+      if (scrollbarTrack) {
+        scrollbarCss += `::-webkit-scrollbar-track { background: ${scrollbarTrack}; border-radius: 10px; }\n`;
+      } else {
+        scrollbarCss += `::-webkit-scrollbar-track { background: var(--bv-scrollbar-track-fallback, #f1f1f1); border-radius: 10px; }\n`; 
+      }
+      if (scrollbarThumb) {
+        scrollbarCss += `::-webkit-scrollbar-thumb { background: ${scrollbarThumb}; border-radius: 10px; }\n`;
+      } else {
+        scrollbarCss += `::-webkit-scrollbar-thumb { background: var(--bv-scrollbar-thumb-fallback, #888); border-radius: 10px; }\n`;
+      }
+      if (scrollbarThumbHover) {
+        scrollbarCss += `::-webkit-scrollbar-thumb:hover { background: ${scrollbarThumbHover}; }\n`;
+      } else {
+        scrollbarCss += `::-webkit-scrollbar-thumb:hover { background: var(--bv-scrollbar-thumb-hover-fallback, #555); }\n`;
+      }
+      scrollbarStyleTag.textContent = scrollbarCss;
+    }
+
+    document.body.style.backgroundColor = resolvedColors.pageBackground;
+    document.body.style.color = resolvedColors.textPrimary;
+    document.body.className = 'font-sans'; 
+    
+  }, [appThemeSettings]);
+
+  const handleThemeSettingsChange = useCallback((newSettings: Partial<AppThemeSettings>) => {
+    setAppThemeSettings(prev => {
+      const updatedSettings = { ...prev, ...newSettings };
+      if (newSettings.customColors) {
+        updatedSettings.customColors = { ...prev.customColors, ...newSettings.customColors };
+      }
+      themeService.saveThemeSettings(updatedSettings);
+      return updatedSettings;
+    });
+  }, []);
+
+  const handleCustomColorChange = useCallback((colorName: keyof CustomThemeColors, value: string) => {
+    setAppThemeSettings(prev => {
+      const newCustomColors = { ...prev.customColors, [colorName]: value };
+      const updatedSettings = { ...prev, customColors: newCustomColors };
+      if (prev.activeThemeKey === 'custom') {
+        themeService.saveThemeSettings(updatedSettings);
+      }
+      return updatedSettings;
+    });
+  }, []);
+
+  const saveCustomTheme = useCallback(() => {
+    themeService.saveThemeSettings(appThemeSettings); 
+    alert("Custom theme settings saved!");
+  }, [appThemeSettings]);
+
+  const resetCustomTheme = useCallback(() => {
+    handleThemeSettingsChange({ customColors: { ...DEFAULT_CUSTOM_THEME_TEMPLATE } });
+    if (appThemeSettings.activeThemeKey === 'custom') {
+        themeService.saveThemeSettings({ ...appThemeSettings, customColors: { ...DEFAULT_CUSTOM_THEME_TEMPLATE } });
+    }
+  }, [appThemeSettings, handleThemeSettingsChange]);
+
+  const toggleSpecialSettingsMenu = () => setIsSpecialSettingsMenuOpen(prev => !prev);
 
   const allBlocksScrollContainerRefCallback = useCallback((node: HTMLDivElement | null) => {
     setScrollRootElement(node);
@@ -253,13 +385,148 @@ const App: React.FC = () => {
 
   const activeScriptBlocks = useMemo(() => activeMainScript?.blocks || [], [activeMainScript]);
 
+  const parseTextToBlocksInternal = useCallback((rawText: string, useCustomSep: boolean, separators: string[]): Block[] => {
+    let parsedBlocksContent: { content: string, originalContent: string }[] = [];
+    if (useCustomSep && separators.length > 0 && separators.some(s => s.trim().length > 0)) {
+        const validSeparators = separators.filter(s => s.trim().length > 0);
+        const mainSeparatorRegex = new RegExp(
+            '(' + validSeparators
+                .map(s => s.replace(/[-\/\\^$*+?.()|[\]{}]/g, '\\$&'))
+                .join('|') +
+            ')'
+        );
+
+        const segments = rawText.split(mainSeparatorRegex).filter(s => s !== undefined);
+        let blockBuilder = "";
+        for (const segment of segments) {
+            if (validSeparators.includes(segment)) {
+                blockBuilder += segment;
+                if (blockBuilder.trim() !== "") {
+                   parsedBlocksContent.push({ content: blockBuilder, originalContent: blockBuilder });
+                }
+                blockBuilder = "";
+            } else {
+                blockBuilder += segment;
+            }
+        }
+        if (blockBuilder.trim() !== "" || (segments.length === 1 && blockBuilder !== "")) {
+            parsedBlocksContent.push({ content: blockBuilder, originalContent: blockBuilder });
+        }
+        parsedBlocksContent = parsedBlocksContent.filter(b => b.content.trim().length > 0);
+
+    } else {
+        parsedBlocksContent = rawText.split(/\n\s*\n/).map(b => b.trim()).filter(b => b.length > 0)
+            .map(b => ({ content: b, originalContent: b }));
+    }
+
+    return parsedBlocksContent.map((blockData, index) => ({
+        content: blockData.content,
+        originalContent: blockData.originalContent,
+        index,
+        isOverflowing: false,
+    }));
+  }, []);
+
   useEffect(() => {
-    // Determine matched original script for comparison
+    setProfiles(profileService.getProfiles());
+  }, []);
+
+
+  const handleSettingsChange = useCallback(<K extends keyof AppSettings, V extends AppSettings[K]>(
+    key: K,
+    value: V
+  ) => {
+    setSettings(prev => ({ ...prev, [key]: value }));
+  }, []);
+
+  const resetAppStateForNewSettings = useCallback(() => {
+    setMainScripts([]);
+    setActiveMainScriptId(null);
+    setOriginalScripts([]);
+    setMatchedOriginalScript(null);
+    setCurrentBlockIndex(null);
+    setFullyVisibleBlockOriginalIndices(new Set());
+    setFindText("");
+    setReplaceText("");
+    setFindResultsMessage("");
+    setCurrentFindMatch(null);
+    setLastSearchIterationDetails(null);
+    setFindResultSummary([]);
+
+    if (loadedCustomFontInfo?.styleElement) {
+      document.head.removeChild(loadedCustomFontInfo.styleElement);
+      setLoadedCustomFontInfo(null);
+    }
+  }, [loadedCustomFontInfo]);
+
+  const handleApplyNewSettings = useCallback((newSettings: AppSettings, scriptNamePrefix: string) => {
+    setSettings(newSettings);
+    resetAppStateForNewSettings();
+
+    if (newSettings.text && newSettings.text !== DEFAULT_SETTINGS.text) {
+      const initialBlocks = parseTextToBlocksInternal(newSettings.text, newSettings.useCustomBlockSeparator, newSettings.blockSeparators);
+      const defaultScript: ScriptFile = {
+        id: `${scriptNamePrefix}-${Date.now()}`,
+        name: `${scriptNamePrefix} Script`,
+        blocks: initialBlocks,
+        rawText: newSettings.text,
+        parsedWithCustomSeparators: newSettings.useCustomBlockSeparator,
+      };
+      setMainScripts([defaultScript]);
+      setActiveMainScriptId(defaultScript.id);
+      setCurrentBlockIndex(initialBlocks.length > 0 ? 0 : null);
+    } else {
+      if (viewMode === 'single') {
+        handleSettingsChange('text', DEFAULT_SETTINGS.text);
+      }
+      setCurrentBlockIndex(null);
+    }
+  }, [resetAppStateForNewSettings, parseTextToBlocksInternal, viewMode, handleSettingsChange]);
+
+  const handleSaveProfile = useCallback((profileName: string, settingsToSave: AppSettings) => {
+    if (!profileName.trim()) {
+      alert("Please enter a name for the profile.");
+      return;
+    }
+    try {
+      const updatedProfiles = profileService.saveProfile(profileName, settingsToSave);
+      setProfiles(updatedProfiles);
+      alert(`Profile "${profileName}" saved successfully!`);
+    } catch (error) {
+      console.error("Error saving profile:", error);
+      alert(`Failed to save profile: ${error instanceof Error ? error.message : String(error)}`);
+    }
+  }, []);
+
+  const handleLoadProfile = useCallback((profileId: string) => {
+    const profileToLoad = profileService.getProfileById(profileId);
+    if (profileToLoad) {
+      handleApplyNewSettings(profileToLoad.settings, `Profile-${profileToLoad.name}`);
+      setCurrentMainView('editor'); 
+      alert(`Profile "${profileToLoad.name}" loaded successfully!`);
+    } else {
+      alert("Profile not found.");
+    }
+  }, [handleApplyNewSettings]);
+
+  const handleDeleteProfile = useCallback((profileId: string) => {
+    if (window.confirm("Are you sure you want to delete this profile? This action cannot be undone.")) {
+      try {
+        const updatedProfiles = profileService.deleteProfile(profileId);
+        setProfiles(updatedProfiles);
+        alert("Profile deleted successfully.");
+      } catch (error) {
+        console.error("Error deleting profile:", error);
+        alert(`Failed to delete profile: ${error instanceof Error ? error.message : String(error)}`);
+      }
+    }
+  }, []);
+
+
+  useEffect(() => {
     if (activeMainScript && settings.comparisonModeEnabled) {
       let match: ScriptFile | null = null;
-      // 1. Try to match by name
       match = originalScripts.find(os => os.name === activeMainScript.name) || null;
-      // 2. If no name match, try to match by index (order of upload)
       if (!match) {
         const activeMainIndex = mainScripts.findIndex(ms => ms.id === activeMainScript.id);
         if (activeMainIndex !== -1 && originalScripts[activeMainIndex]) {
@@ -289,14 +556,6 @@ const App: React.FC = () => {
   }, []);
 
 
-  const handleSettingsChange = useCallback(<K extends keyof AppSettings, V extends AppSettings[K]>(
-    key: K,
-    value: V
-  ) => {
-    setSettings(prev => ({ ...prev, [key]: value }));
-  }, []);
-
-  // Sync settings.text with current block of active script
   useEffect(() => {
     if (viewMode === 'single') {
       if (activeScriptBlocks.length > 0 && currentBlockIndex !== null && activeScriptBlocks[currentBlockIndex]) {
@@ -304,7 +563,7 @@ const App: React.FC = () => {
           handleSettingsChange('text', activeScriptBlocks[currentBlockIndex].content);
         }
       } else if (activeScriptBlocks.length > 0 && currentBlockIndex === null) {
-        setCurrentBlockIndex(0); // This will trigger another effect run
+        setCurrentBlockIndex(0);
       } else if (activeScriptBlocks.length === 0) {
         if (settings.text !== DEFAULT_SETTINGS.text) {
           handleSettingsChange('text', DEFAULT_SETTINGS.text);
@@ -336,70 +595,26 @@ const App: React.FC = () => {
     exportSettingsAsJson(settings, 'banana-vision-settings.json');
   }, [settings]);
 
-  const handleImportJson = useCallback(async (files: FileList) => { // Takes FileList
+  const handleImportJson = useCallback(async (files: FileList) => { 
     if (!files || files.length === 0) return;
-    const file = files[0]; // Assuming settings import is always single file
+    const file = files[0]; 
     try {
       const newSettings = await importSettingsFromJson(file);
-      setSettings(newSettings);
-      setMainScripts([]);
-      setActiveMainScriptId(null);
-      setOriginalScripts([]);
-      setMatchedOriginalScript(null);
-      setCurrentBlockIndex(null);
-      setFullyVisibleBlockOriginalIndices(new Set());
-
-      // Reset find/replace state on import
-      setFindText("");
-      setReplaceText("");
-      setFindResultsMessage("");
-      setCurrentFindMatch(null);
-      setLastSearchIterationDetails(null);
-      setFindResultSummary([]);
-
-
-      if (loadedCustomFontInfo?.styleElement) {
-        document.head.removeChild(loadedCustomFontInfo.styleElement);
-        setLoadedCustomFontInfo(null);
-      }
-
-      // If imported settings have text, treat it as a single default script
-      if (newSettings.text && newSettings.text !== DEFAULT_SETTINGS.text) {
-          const initialBlocks = parseTextToBlocksInternal(newSettings.text, newSettings.useCustomBlockSeparator, newSettings.blockSeparators);
-          const defaultScript: ScriptFile = {
-            id: `settings-import-${Date.now()}`,
-            name: "Imported Settings Script",
-            blocks: initialBlocks,
-            rawText: newSettings.text,
-            parsedWithCustomSeparators: newSettings.useCustomBlockSeparator,
-          };
-          setMainScripts([defaultScript]);
-          setActiveMainScriptId(defaultScript.id);
-          if (initialBlocks.length > 0) {
-              setCurrentBlockIndex(0);
-          } else {
-              setCurrentBlockIndex(null);
-          }
-      } else {
-         if (viewMode === 'single') {
-            handleSettingsChange('text', DEFAULT_SETTINGS.text);
-         }
-      }
-
+      handleApplyNewSettings(newSettings, "Imported-JSON");
     } catch (error) {
       console.error("Failed to import JSON:", error);
       alert("Error importing settings. Make sure it's a valid JSON file.");
     }
-  }, [loadedCustomFontInfo, handleSettingsChange, viewMode]);
+  }, [handleApplyNewSettings]);
 
   const handleExportPng = useCallback(() => {
-    const targetElement = previewRef.current;
+    const targetElement = currentMainView === 'editor' && viewMode === 'single' ? previewRef.current : null;
     if (targetElement) {
       exportToPng(targetElement, `banana-vision-preview-${Date.now()}.png`);
     } else {
-        alert("Preview area not found for PNG export. Ensure you are in 'Single Block View' or a block is focused.");
+        alert("PNG export is available for the 'Single Block View' in the editor.");
     }
-  }, []);
+  }, [previewRef, currentMainView, viewMode]);
 
   const handleSaveScript = useCallback(() => {
     if (!activeMainScript) {
@@ -409,7 +624,7 @@ const App: React.FC = () => {
 
     let scriptContent = "";
     if (activeMainScript.blocks.length === 0) {
-        scriptContent = ""; // Handle saving an empty script
+        scriptContent = ""; 
     } else if (activeMainScript.parsedWithCustomSeparators) {
       scriptContent = activeMainScript.blocks.map(block => block.content).join('');
     } else {
@@ -427,26 +642,93 @@ const App: React.FC = () => {
     URL.revokeObjectURL(url);
   }, [activeMainScript]);
 
+  const handleSaveAllChangedScripts = useCallback(async () => {
+    const zip = new JSZip();
+    const changedScriptsData: { name: string, content: string }[] = [];
+    const usedNamesInZip = new Set<string>();
 
-  useEffect(() => {
-    document.documentElement.classList.remove('light', 'dark', 'banana');
-    document.documentElement.classList.add(theme);
-    if (theme === 'banana') {
-      document.body.className = 'bg-yellow-50 text-gray-800 font-sans';
-    } else if (theme === 'dark') {
-      document.body.className = 'bg-gray-900 text-gray-100 font-sans';
-    } else {
-      document.body.className = 'bg-white text-gray-900 font-sans';
-    }
-  }, [theme]);
+    mainScripts.forEach(script => {
+      let currentSerializedContent = "";
+      if (script.blocks.length === 0) {
+        currentSerializedContent = "";
+      } else if (script.parsedWithCustomSeparators) {
+        currentSerializedContent = script.blocks.map(block => block.content).join('');
+      } else {
+        currentSerializedContent = script.blocks.map(block => block.content).join('\n\n');
+      }
 
-  const toggleTheme = () => {
-    setTheme(prev => {
-      if (prev === 'light') return 'dark';
-      if (prev === 'dark') return 'banana';
-      return 'light';
+      if (currentSerializedContent !== script.rawText) {
+        changedScriptsData.push({
+          name: script.name || `script-${script.id}.txt`,
+          content: currentSerializedContent
+        });
+      }
     });
+
+    if (changedScriptsData.length === 0) {
+      alert("No scripts have been modified.");
+      return;
+    }
+
+    changedScriptsData.forEach(sData => {
+      let baseName = (sData.name || 'untitled_script').replace(/[<>:"/\\|?*]+/g, '_').replace(/^\.+$/, '_');
+      let extension = '';
+      const dotIndex = baseName.lastIndexOf('.');
+      if (dotIndex > 0 && dotIndex < baseName.length -1) { 
+        extension = baseName.substring(dotIndex); 
+        baseName = baseName.substring(0, dotIndex);
+      }
+      
+      let finalName = baseName + extension;
+      if (!extension && finalName) { 
+          finalName += ".txt"; 
+      } else if (!finalName) { 
+          finalName = `script-${Date.now()}.txt`
+      }
+
+      if (usedNamesInZip.has(finalName)) {
+        let count = 1;
+        const nameWithoutExt = baseName;
+        do {
+          finalName = `${nameWithoutExt}_${count}${extension || '.txt'}`;
+          count++;
+        } while (usedNamesInZip.has(finalName));
+      }
+      usedNamesInZip.add(finalName);
+      zip.file(finalName, sData.content);
+    });
+
+    try {
+      const zipContent = await zip.generateAsync({ type: "blob" });
+      const url = URL.createObjectURL(zipContent);
+      const a = document.createElement('a');
+      a.href = url;
+      a.download = `banana-vision-changed-scripts-${Date.now()}.zip`;
+      document.body.appendChild(a);
+      a.click();
+      document.body.removeChild(a);
+      URL.revokeObjectURL(url);
+    } catch (err) {
+      console.error("Error generating zip file:", err);
+      alert(`Error generating zip file: ${err instanceof Error ? err.message : String(err)}`);
+    }
+  }, [mainScripts]);
+
+  const toggleLegacyTheme = () => { 
+    const currentKey = appThemeSettings.activeThemeKey;
+    let nextKey: ThemeKey;
+    if (currentKey === 'light') nextKey = 'dark';
+    else if (currentKey === 'dark') nextKey = 'banana';
+    else if (currentKey === 'banana') nextKey = 'custom'; 
+    else nextKey = 'light'; 
+
+    if (nextKey === 'custom' && JSON.stringify(appThemeSettings.customColors) === JSON.stringify(ALL_THEME_DEFINITIONS.banana)) {
+      nextKey = 'light';
+    }
+    
+    handleThemeSettingsChange({ activeThemeKey: nextKey });
   };
+
 
   const readFileAsText = (fileToRead: File, encoding: string): Promise<string> => {
     return new Promise((resolve, reject) => {
@@ -457,50 +739,10 @@ const App: React.FC = () => {
     });
   };
 
-  const parseTextToBlocksInternal = (rawText: string, useCustomSep: boolean, separators: string[]): Block[] => {
-    let parsedBlocksContent: { content: string, originalContent: string }[] = [];
-    if (useCustomSep && separators.length > 0 && separators.some(s => s.trim().length > 0)) {
-        const validSeparators = separators.filter(s => s.trim().length > 0);
-        const mainSeparatorRegex = new RegExp(
-            '(' + validSeparators
-                .map(s => s.replace(/[-\/\\^$*+?.()|[\]{}]/g, '\\$&'))
-                .join('|') +
-            ')'
-        );
-
-        const segments = rawText.split(mainSeparatorRegex).filter(s => s !== undefined);
-        let blockBuilder = "";
-        for (const segment of segments) {
-            if (validSeparators.includes(segment)) {
-                blockBuilder += segment;
-                if (blockBuilder.trim() !== "") {
-                   parsedBlocksContent.push({ content: blockBuilder, originalContent: blockBuilder });
-                }
-                blockBuilder = "";
-            } else {
-                blockBuilder += segment;
-            }
-        }
-        if (blockBuilder.trim() !== "" || (segments.length === 1 && blockBuilder !== "")) {
-            parsedBlocksContent.push({ content: blockBuilder, originalContent: blockBuilder });
-        }
-        parsedBlocksContent = parsedBlocksContent.filter(b => b.content.trim().length > 0);
-    } else {
-        parsedBlocksContent = rawText.split(/\n\s*\n/).map(b => b.trim()).filter(b => b.length > 0)
-            .map(b => ({ content: b, originalContent: b }));
-    }
-
-    return parsedBlocksContent.map((blockData, index) => ({
-        content: blockData.content,
-        originalContent: blockData.originalContent,
-        index,
-        isOverflowing: false,
-    }));
-  };
-
   const processAndAddFiles = async (
     files: FileList,
-    isMainScript: boolean
+    isMainScript: boolean,
+    sourceNamePrefix: string = ""
   ): Promise<void> => {
     const currentUseCustomSep = settings.useCustomBlockSeparator;
     const currentBlockSeps = [...settings.blockSeparators];
@@ -508,22 +750,21 @@ const App: React.FC = () => {
     const scriptFilePromises = Array.from(files).map(async (file, i) => {
       try {
         let rawText = await readFileAsText(file, 'UTF-8');
-        // Basic check for mojibake, might need more sophisticated detection
         if (rawText.includes('\uFFFD')) { 
-          rawText = await readFileAsText(file, 'Windows-1252'); // Try Windows-1252 as a common fallback
+          rawText = await readFileAsText(file, 'Windows-1252'); 
         }
         const blocks = parseTextToBlocksInternal(rawText, currentUseCustomSep, currentBlockSeps);
         return {
-          id: `${file.name}-${Date.now()}-${i}`,
-          name: file.name,
+          id: `${sourceNamePrefix}${file.name}-${Date.now()}-${i}`,
+          name: `${sourceNamePrefix}${file.name}`,
           blocks,
           rawText,
           parsedWithCustomSeparators: currentUseCustomSep,
-        } as ScriptFile; // Assert type here as we handle null below
+        } as ScriptFile; 
       } catch (error) {
         console.error(`Error processing file ${file.name}:`, error);
         alert(`Error processing file ${file.name}. It will be skipped.`);
-        return null; // Return null for failed files
+        return null; 
       }
     });
 
@@ -540,18 +781,18 @@ const App: React.FC = () => {
       } else {
         setOriginalScripts(prev => [...prev, ...newScriptFiles]);
       }
-      setFullyVisibleBlockOriginalIndices(new Set()); // Reset visibility on new scripts
+      setFullyVisibleBlockOriginalIndices(new Set()); 
     }
   };
 
 
   const handleTextFileUpload = useCallback(async (files: FileList) => {
     await processAndAddFiles(files, true);
-  }, [settings.useCustomBlockSeparator, settings.blockSeparators, activeMainScriptId]); 
+  }, [settings.useCustomBlockSeparator, settings.blockSeparators, activeMainScriptId, parseTextToBlocksInternal]); 
 
   const handleOriginalScriptUpload = useCallback(async (files: FileList) => {
     await processAndAddFiles(files, false);
-  }, [settings.useCustomBlockSeparator, settings.blockSeparators]);
+  }, [settings.useCustomBlockSeparator, settings.blockSeparators, parseTextToBlocksInternal]);
 
 
   const handleClearMainScripts = useCallback(() => {
@@ -584,7 +825,6 @@ const App: React.FC = () => {
     setFindResultsMessage("");
     setCurrentFindMatch(null);
     setLastSearchIterationDetails(null);
-    // Summary will be updated by useEffect on findScope/findText or by explicit call
   }, [mainScripts, handleSettingsChange]);
 
 
@@ -606,10 +846,8 @@ const App: React.FC = () => {
         return script;
       })
     );
-    // When user types, invalidate current find match and potentially summary
     setCurrentFindMatch(null);
     setFindResultsMessage("");
-    // setFindResultSummary([]); // Optionally clear summary on typing, or let it be stale until next find op
   }, [activeMainScript, currentBlockIndex, handleSettingsChange]);
 
   const displayedBlocksForView = useMemo(() => {
@@ -638,7 +876,6 @@ const App: React.FC = () => {
     }
     setCurrentFindMatch(null);
     setFindResultsMessage("");
-    // setFindResultSummary([]);
   }, [activeMainScript, activeMainScriptId, currentBlockIndex, viewMode, handleSettingsChange]);
 
 
@@ -661,10 +898,9 @@ const App: React.FC = () => {
             handleSettingsChange('text', DEFAULT_SETTINGS.text);
          }
       }
-      setFindResultsMessage(""); // Clear specific find message
+      setFindResultsMessage(""); 
       setCurrentFindMatch(null);
       setLastSearchIterationDetails(null); 
-      // Do not clear findResultSummary here, it's based on findText/scope, not navigation
   }, [activeMainScript, viewMode, handleSettingsChange]);
 
   const handleMainPreviewOverflowStatusChange = useCallback((isCurrentlyOverflowing: boolean) => {
@@ -708,10 +944,9 @@ const App: React.FC = () => {
     );
   }, [activeMainScript]);
 
-  // --- Find and Replace Logic ---
   const getRegexForFind = useCallback(() => {
     if (!findText) return null;
-    const flags = findIsCaseSensitive ? 'g' : 'gi'; // Always global for counting/multiple replaces
+    const flags = findIsCaseSensitive ? 'g' : 'gi'; 
     const pattern = findMatchWholeWord
       ? `\\b${findText.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')}\\b`
       : findText.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
@@ -725,7 +960,7 @@ const App: React.FC = () => {
   }, [findText, findIsCaseSensitive, findMatchWholeWord]);
 
   const updateFindResultSummary = useCallback(() => {
-    if (!findText || findScope === 'currentBlock') { // No summary list for 'currentBlock'
+    if (!findText || findScope === 'currentBlock') { 
       setFindResultSummary([]);
       if (!findText) setFindResultsMessage("");
       return;
@@ -733,7 +968,6 @@ const App: React.FC = () => {
     const regex = getRegexForFind();
     if (!regex) {
       setFindResultSummary([]);
-      // Message already set by getRegexForFind if error
       return;
     }
   
@@ -742,7 +976,7 @@ const App: React.FC = () => {
   
     if (findScope === 'activeScript' && activeMainScript) {
       activeMainScript.blocks.forEach(block => {
-        const blockRegex = new RegExp(regex); // New instance for each use due to global flag
+        const blockRegex = new RegExp(regex); 
         let match;
         let countInBlock = 0;
         while ((match = blockRegex.exec(block.content)) !== null) {
@@ -750,7 +984,7 @@ const App: React.FC = () => {
         }
         if (countInBlock > 0) {
           summary.push({
-            id: `${activeMainScript.id}-${block.index}`, // original index
+            id: `${activeMainScript.id}-${block.index}`, 
             name: `Block ${block.index + 1}`,
             count: countInBlock,
             type: 'block',
@@ -764,7 +998,7 @@ const App: React.FC = () => {
       mainScripts.forEach(script => {
         let countInScript = 0;
         script.blocks.forEach(block => {
-          const blockRegex = new RegExp(regex); // New instance
+          const blockRegex = new RegExp(regex); 
           let match;
           while ((match = blockRegex.exec(block.content)) !== null) {
             countInScript++;
@@ -796,9 +1030,7 @@ const App: React.FC = () => {
 
 
   useEffect(() => {
-    // Update summary when find parameters change
-    // Avoid calling if findText is empty initially, updateFindResultSummary handles empty findText
-    if (mainScripts.length > 0) { // Only run if there are scripts to search
+    if (mainScripts.length > 0) { 
         updateFindResultSummary();
     } else {
         setFindResultSummary([]);
@@ -819,7 +1051,7 @@ const App: React.FC = () => {
     let scriptsToSearch: ScriptFile[] = [];
     if (findScope === 'allScripts') {
       scriptsToSearch = mainScripts;
-    } else if (activeMainScript) { // activeScript or currentBlock (if in single view)
+    } else if (activeMainScript) { 
       scriptsToSearch = [activeMainScript];
     }
 
@@ -841,7 +1073,6 @@ const App: React.FC = () => {
       }
     }
     
-    // Special handling for 'currentBlock' scope if in single view
     if (findScope === 'currentBlock' && viewMode === 'single' && activeMainScript && currentBlockIndex !== null) {
         const currentBlockContent = settings.text; 
         regex.lastIndex = lastSearchIterationDetails?.searchStartIndexInBlock || 0;
@@ -916,18 +1147,15 @@ const App: React.FC = () => {
           });
 
           if (viewMode === 'single') {
-            if (script.id !== activeMainScriptId) { // Switch active script if needed
+            if (script.id !== activeMainScriptId) { 
                 handleSetActiveMainScriptId(script.id);
-                 // handleSetCurrentBlockIndex will be called by handleSetActiveMainScriptId's effect
-                 // or directly set it here, then highlight.
-                 // For now, rely on active script change + this find to set context.
             }
             if (block.index !== currentBlockIndex || script.id !== activeMainScriptId) {
               handleSetCurrentBlockIndex(block.index); 
               setFindResultsMessage(`Found in Script: ${script.name}, Block: ${block.index + 1}. Switched to block.`);
-            } else { // Match is in the already active script and block
+            } else { 
                setFindResultsMessage(`Found in Script: ${script.name}, Block: ${block.index + 1} at pos ${match.index + 1}.`);
-               if (mainTextAreaRef.current) { // Highlight will be handled by useEffect on currentFindMatch
+               if (mainTextAreaRef.current) { 
                   mainTextAreaRef.current.focus();
                   mainTextAreaRef.current.setSelectionRange(match.index, regex.lastIndex);
                 }
@@ -938,7 +1166,7 @@ const App: React.FC = () => {
           return;
         }
         if (i === startScriptIdx && block.index === startBlockOriginalIdx) {
-            startCharIdxInBlock = 0; // Reset for next block if we started mid-block
+            startCharIdxInBlock = 0; 
         }
       }
     }
@@ -959,7 +1187,7 @@ const App: React.FC = () => {
         currentBlockIndex === currentFindMatch.blockIndex) {
       
       const targetBlock = activeScriptBlocks.find(b => b.index === currentBlockIndex);
-      if (targetBlock && settings.text === targetBlock.content) { // Ensure textarea reflects the matched block
+      if (targetBlock && settings.text === targetBlock.content) { 
           mainTextAreaRef.current.focus();
           mainTextAreaRef.current.setSelectionRange(currentFindMatch.charStartIndex, currentFindMatch.charEndIndex);
       }
@@ -986,7 +1214,7 @@ const App: React.FC = () => {
         const currentBlockContent = settings.text;
         const newText = currentBlockContent.substring(0, charStartIndex) + replaceText + currentBlockContent.substring(charEndIndex);
         searchStartIndexAfterReplace = charStartIndex + replaceText.length;
-        handleCurrentBlockContentChangeInSingleView(newText); // This updates script and settings.text
+        handleCurrentBlockContentChangeInSingleView(newText); 
         success = true;
     } else {
         setMainScripts(prevScripts => {
@@ -1012,15 +1240,15 @@ const App: React.FC = () => {
     }
     
     if (success) {
-        setCurrentFindMatch(null); // Clear the just-replaced match
-        setLastSearchIterationDetails({ // Set to search after the replacement
+        setCurrentFindMatch(null); 
+        setLastSearchIterationDetails({ 
             scriptId: scriptId,
             blockOriginalIndex: blockIndex,
             searchStartIndexInBlock: searchStartIndexAfterReplace,
         });
         setFindResultsMessage("Replaced. Finding next...");
-        updateFindResultSummary(); // Update summary after content change
-        setTimeout(() => handleFindNext(), 50); // Small delay for state to settle
+        updateFindResultSummary(); 
+        setTimeout(() => handleFindNext(), 50); 
     } else {
         setFindResultsMessage("Failed to replace. Match might be stale.");
         setCurrentFindMatch(null); 
@@ -1037,7 +1265,7 @@ const App: React.FC = () => {
         setFindResultsMessage("Replace text is not set.");
         return;
     }
-    const regex = getRegexForFind(); // This regex will have 'g' flag
+    const regex = getRegexForFind(); 
     if (!regex) return;
 
     let scriptsToUpdate: ScriptFile[] = [];
@@ -1047,7 +1275,7 @@ const App: React.FC = () => {
       scriptsToUpdate = [activeMainScript];
     } else if (findScope === 'currentBlock' && viewMode === 'single' && activeMainScript && currentBlockIndex !== null) {
         const currentTextAreaContent = settings.text;
-        const freshRegex = getRegexForFind(); // Ensure fresh regex for counting
+        const freshRegex = getRegexForFind(); 
         if (freshRegex && currentTextAreaContent.match(freshRegex)) {
             const newText = currentTextAreaContent.replace(freshRegex, replaceText);
             let replacements = 0;
@@ -1059,7 +1287,7 @@ const App: React.FC = () => {
         }
         setCurrentFindMatch(null);
         setLastSearchIterationDetails(null);
-        updateFindResultSummary(); // Update summary for current block if applicable
+        updateFindResultSummary(); 
         return;
     } else {
         setFindResultsMessage("Invalid scope for Replace All or no active script/block.");
@@ -1077,7 +1305,7 @@ const App: React.FC = () => {
     const updatedScripts = scriptsToUpdate.map(script => {
       let scriptHadChanges = false;
       const newBlocks = script.blocks.map(block => {
-        const freshRegexForBlock = getRegexForFind(); // Fresh regex for each block
+        const freshRegexForBlock = getRegexForFind(); 
         if (freshRegexForBlock && block.content.match(freshRegexForBlock)) {
           let blockReplacements = 0;
           block.content.replace(freshRegexForBlock, () => { blockReplacements++; return ""; });
@@ -1112,10 +1340,10 @@ const App: React.FC = () => {
     }
     setCurrentFindMatch(null);
     setLastSearchIterationDetails(null);
-    updateFindResultSummary(); // Update summary for all affected scopes
+    updateFindResultSummary(); 
   }, [findText, replaceText, getRegexForFind, mainScripts, activeMainScript, activeMainScriptId, findScope, viewMode, currentBlockIndex, settings.text, handleSettingsChange, handleCurrentBlockContentChangeInSingleView, updateFindResultSummary]);
 
-  const onFindTextChange = (text: string) => { setFindText(text); setCurrentFindMatch(null); setLastSearchIterationDetails(null); /* Summary updates via useEffect */ };
+  const onFindTextChange = (text: string) => { setFindText(text); setCurrentFindMatch(null); setLastSearchIterationDetails(null); };
   const onReplaceTextChange = (text: string) => setReplaceText(text);
   const onFindIsCaseSensitiveChange = (value: boolean) => { setFindIsCaseSensitive(value); setCurrentFindMatch(null); setLastSearchIterationDetails(null);};
   const onFindMatchWholeWordChange = (value: boolean) => { setFindMatchWholeWord(value); setCurrentFindMatch(null); setLastSearchIterationDetails(null);};
@@ -1127,24 +1355,18 @@ const App: React.FC = () => {
   
     if (item.scriptId !== activeMainScriptId) {
       handleSetActiveMainScriptId(item.scriptId);
-      // It's important that activeMainScript and activeScriptBlocks are updated before proceeding.
-      // handleSetActiveMainScriptId should handle this. We might need to wait for these updates.
-      // A small timeout can sometimes help ensure state propagation if direct chaining causes issues.
-      await new Promise(resolve => setTimeout(resolve, 0)); // Ensure state update for activeMainScript
+      await new Promise(resolve => setTimeout(resolve, 0)); 
     }
   
     if (item.type === 'block' && item.blockOriginalIndex !== undefined) {
       if (viewMode !== 'single') {
         setViewMode('single');
-        await new Promise(resolve => setTimeout(resolve, 0)); // Ensure viewMode update
+        await new Promise(resolve => setTimeout(resolve, 0)); 
       }
       handleSetCurrentBlockIndex(item.blockOriginalIndex);
-      await new Promise(resolve => setTimeout(resolve, 0)); // Ensure currentBlockIndex & settings.text update
+      await new Promise(resolve => setTimeout(resolve, 0)); 
   
-      // Now find the first match in this newly set current block.
-      // The content of settings.text should be the target.
       setTimeout(() => {
-        // Find the script and block from the *current* state, which should now be updated
         const currentActiveScript = mainScripts.find(s => s.id === item.scriptId);
         const targetBlock = currentActiveScript?.blocks.find(b => b.index === item.blockOriginalIndex);
 
@@ -1152,15 +1374,11 @@ const App: React.FC = () => {
              setFindResultsMessage(`Error navigating to ${item.name}. Block not found or text area unavailable.`);
              return;
         }
-        // Ensure settings.text in the App state is in sync with targetBlock.content for the regex to work on the correct string
-        // This should have been handled by handleSetCurrentBlockIndex and its useEffect
-        // If settings.text is not yet updated, this find will be on old data.
-
         const regex = getRegexForFind();
         if (!regex) return;
         
         regex.lastIndex = 0; 
-        const match = regex.exec(targetBlock.content); // Use targetBlock.content
+        const match = regex.exec(targetBlock.content); 
   
         if (match) {
           const matchDetails: FoundMatch = {
@@ -1169,7 +1387,7 @@ const App: React.FC = () => {
             charStartIndex: match.index,
             charEndIndex: regex.lastIndex,
           };
-          setCurrentFindMatch(matchDetails); // This will trigger the useEffect for highlighting
+          setCurrentFindMatch(matchDetails); 
           setLastSearchIterationDetails({
             scriptId: item.scriptId,
             blockOriginalIndex: item.blockOriginalIndex,
@@ -1211,7 +1429,6 @@ const App: React.FC = () => {
         handleSetCurrentBlockIndex(firstMatchInScript.blockIndex);
         await new Promise(resolve => setTimeout(resolve, 0)); 
 
-        // Set currentFindMatch directly after states are updated
         setCurrentFindMatch(firstMatchInScript); 
         setLastSearchIterationDetails({ 
           scriptId: firstMatchInScript.scriptId,
@@ -1230,8 +1447,124 @@ const App: React.FC = () => {
     }
   }, [activeMainScriptId, handleSetActiveMainScriptId, viewMode, setViewMode, handleSetCurrentBlockIndex, mainScripts, getRegexForFind]);
 
-  // --- End Find and Replace Logic ---
+  const handleGitHubSettingsChange = useCallback(<K extends keyof GitHubSettings>(key: K, value: GitHubSettings[K]) => {
+    setGitHubSettings(prev => ({ ...prev, [key]: value }));
+    setGitHubStatusMessage("");
+  }, []);
 
+  const handleLoadFromGitHub = useCallback(async () => {
+    if (!gitHubSettings.pat || !gitHubSettings.repoFullName || !gitHubSettings.filePath) {
+      setGitHubStatusMessage("Error: PAT, Repository, and File Path are required.");
+      return;
+    }
+    setIsGitHubLoading(true);
+    setGitHubStatusMessage("Loading from GitHub...");
+
+    const [owner, repo] = gitHubSettings.repoFullName.split('/');
+    if (!owner || !repo) {
+      setGitHubStatusMessage("Error: Repository format must be 'owner/repo-name'.");
+      setIsGitHubLoading(false);
+      return;
+    }
+
+    try {
+      const octokit = new Octokit({ auth: gitHubSettings.pat });
+      const response = await octokit.repos.getContent({
+        owner,
+        repo,
+        path: gitHubSettings.filePath,
+        ref: gitHubSettings.branch || undefined,
+      });
+
+      // @ts-ignore 
+      if (response.data && response.data.content && response.data.encoding === 'base64') {
+        // @ts-ignore
+        const rawText = atob(response.data.content);
+        const blocks = parseTextToBlocksInternal(rawText, settings.useCustomBlockSeparator, settings.blockSeparators);
+        const newScript: ScriptFile = {
+          id: `github-${owner}-${repo}-${gitHubSettings.filePath.replace(/[^a-zA-Z0-9]/g, '-')}-${Date.now()}`,
+          name: `GitHub: ${gitHubSettings.filePath.split('/').pop() || gitHubSettings.filePath} (${owner}/${repo})`,
+          blocks,
+          rawText,
+          parsedWithCustomSeparators: settings.useCustomBlockSeparator,
+        };
+        setMainScripts(prev => [...prev, newScript]);
+        setActiveMainScriptId(newScript.id);
+        setCurrentBlockIndex(newScript.blocks.length > 0 ? 0 : null);
+        setGitHubStatusMessage(`Successfully loaded ${newScript.name}.`);
+      } else {
+        setGitHubStatusMessage("Error: Could not decode file content from GitHub.");
+      }
+    } catch (error: any) {
+      console.error("Error loading from GitHub:", error);
+      setGitHubStatusMessage(`Error: ${error.message || 'Failed to load from GitHub.'}`);
+    } finally {
+      setIsGitHubLoading(false);
+    }
+  }, [gitHubSettings, settings.useCustomBlockSeparator, settings.blockSeparators, parseTextToBlocksInternal, setActiveMainScriptId, setCurrentBlockIndex]);
+
+  const handleSaveToGitHub = useCallback(async () => {
+    if (!gitHubSettings.pat || !gitHubSettings.repoFullName || !gitHubSettings.filePath) {
+      setGitHubStatusMessage("Error: PAT, Repository, and File Path are required.");
+      return;
+    }
+    if (!activeMainScript) {
+      setGitHubStatusMessage("Error: No active script selected to save.");
+      return;
+    }
+    setIsGitHubLoading(true);
+    setGitHubStatusMessage("Saving to GitHub...");
+
+    const [owner, repo] = gitHubSettings.repoFullName.split('/');
+    if (!owner || !repo) {
+      setGitHubStatusMessage("Error: Repository format must be 'owner/repo-name'.");
+      setIsGitHubLoading(false);
+      return;
+    }
+
+    let scriptContent = "";
+    if (activeMainScript.blocks.length === 0) {
+        scriptContent = ""; 
+    } else if (activeMainScript.parsedWithCustomSeparators) {
+      scriptContent = activeMainScript.blocks.map(block => block.content).join('');
+    } else {
+      scriptContent = activeMainScript.blocks.map(block => block.content).join('\n\n');
+    }
+    
+    try {
+      const octokit = new Octokit({ auth: gitHubSettings.pat });
+      let existingSha: string | undefined = undefined;
+      try {
+        const { data: fileData } = await octokit.repos.getContent({
+          owner,
+          repo,
+          path: gitHubSettings.filePath,
+          ref: gitHubSettings.branch || undefined,
+        });
+        // @ts-ignore
+        if (fileData && fileData.sha) existingSha = fileData.sha;
+      } catch (e: any) {
+        if (e.status !== 404) throw e;
+         setGitHubStatusMessage("File not found on GitHub, creating new file...");
+      }
+
+      await octokit.repos.createOrUpdateFileContents({
+        owner,
+        repo,
+        path: gitHubSettings.filePath,
+        message: `Update ${gitHubSettings.filePath} via Banana Vision`,
+        content: btoa(unescape(encodeURIComponent(scriptContent))),
+        sha: existingSha,
+        branch: gitHubSettings.branch || undefined,
+      });
+      setGitHubStatusMessage(`Successfully saved ${activeMainScript.name} to GitHub.`);
+    } catch (error: any) {
+      console.error("Error saving to GitHub:", error);
+      setGitHubStatusMessage(`Error: ${error.message || 'Failed to save to GitHub.'}`);
+    } finally {
+      setIsGitHubLoading(false);
+    }
+  }, [gitHubSettings, activeMainScript]);
 
   const getFontFormatAndMime = (fileName: string): { format: string; mime: string } => {
     const extension = fileName.split('.').pop()?.toLowerCase();
@@ -1290,28 +1623,28 @@ const App: React.FC = () => {
   }, [settings.currentFontType, settings.systemFont.fontFamily, loadedCustomFontInfo]);
 
   useLayoutEffect(() => {
-    if (viewMode === 'single' && previewRef.current && previewContainerRef.current) {
+    if (currentMainView === 'editor' && viewMode === 'single' && previewRef.current && previewContainerRef.current) {
       const scaledHeight = previewRef.current.getBoundingClientRect().height;
       previewContainerRef.current.style.height = `${scaledHeight}px`;
     } else if (previewContainerRef.current) {
       previewContainerRef.current.style.height = 'auto';
     }
-  }, [settings, currentBlockIndex, viewMode, activeMainScriptId]); 
+  }, [settings, currentBlockIndex, viewMode, activeMainScriptId, currentMainView]); 
 
 
-  const currentEditableBlockForSingleView = (viewMode === 'single' && activeMainScript && currentBlockIndex !== null && activeScriptBlocks[currentBlockIndex])
+  const currentEditableBlockForSingleView = (currentMainView === 'editor' && viewMode === 'single' && activeMainScript && currentBlockIndex !== null && activeScriptBlocks[currentBlockIndex])
     ? activeScriptBlocks[currentBlockIndex]
     : null;
 
   let originalBlockForSingleViewComparison: Block | null = null;
   let originalSourceInfoForSingleView = "";
 
-  if (viewMode === 'single' && settings.comparisonModeEnabled && currentEditableBlockForSingleView && matchedOriginalScript) {
+  if (currentMainView === 'editor' && viewMode === 'single' && settings.comparisonModeEnabled && currentEditableBlockForSingleView && matchedOriginalScript) {
     if (matchedOriginalScript.blocks[currentEditableBlockForSingleView.index]) {
         originalBlockForSingleViewComparison = matchedOriginalScript.blocks[currentEditableBlockForSingleView.index];
         originalSourceInfoForSingleView = `(File: ${matchedOriginalScript.name})`;
     }
-  } else if (viewMode === 'single' && settings.comparisonModeEnabled && currentEditableBlockForSingleView) {
+  } else if (currentMainView === 'editor' && viewMode === 'single' && settings.comparisonModeEnabled && currentEditableBlockForSingleView) {
       originalBlockForSingleViewComparison = {
           ...currentEditableBlockForSingleView,
           content: currentEditableBlockForSingleView.originalContent,
@@ -1319,249 +1652,349 @@ const App: React.FC = () => {
       originalSourceInfoForSingleView = "(Initial Load of Active Script)";
   }
 
+  const handleToggleMainView = useCallback(() => {
+    setCurrentMainView(prev => prev === 'editor' ? 'profilesGallery' : 'editor');
+  }, []);
+
+  const showControlsPanel = currentMainView === 'editor';
+
+
   return (
-    <div className={`min-h-screen flex flex-col transition-colors duration-300 ${
-      theme === 'banana' ? 'bg-yellow-100' : theme === 'dark' ? 'bg-gray-800' : 'bg-gray-100'
-    }`}>
-      <header className={`p-4 shadow-md ${
-        theme === 'banana' ? 'bg-yellow-400 text-yellow-900' : theme === 'dark' ? 'bg-gray-900 text-yellow-400' : 'bg-white text-yellow-600'
-      }`}>
+    <div className="min-h-screen flex flex-col transition-colors duration-300 bg-[var(--bv-page-background)]">
+      <header className="p-4 shadow-md bg-[var(--bv-toolbar-background)] text-[var(--bv-toolbar-text)]">
         <div className="container mx-auto flex justify-between items-center">
-          <h1 className="text-3xl font-bold">🍌 Banana Vision</h1>
+          <div className="flex items-center gap-3">
+            <h1 className="text-3xl font-bold">🍌 Banana Vision</h1>
+            <button
+              onClick={toggleSpecialSettingsMenu}
+              title="Special Settings"
+              className="p-1.5 rounded-full hover:bg-[var(--bv-toolbar-button-hover-background)] text-[var(--bv-toolbar-text)] focus:outline-none focus:ring-2 focus:ring-[var(--bv-accent-primary)]"
+              aria-label="Open Special Settings Menu"
+            >
+              <svg xmlns="http://www.w3.org/2000/svg" className="h-6 w-6" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
+                <path strokeLinecap="round" strokeLinejoin="round" d="M10.325 4.317c.426-1.756 2.924-1.756 3.35 0a1.724 1.724 0 002.573 1.066c1.543-.94 3.31.826 2.37 2.37a1.724 1.724 0 001.065 2.572c1.756.426 1.756 2.924 0 3.35a1.724 1.724 0 00-1.066 2.573c.94 1.543-.826 3.31-2.37 2.37a1.724 1.724 0 00-2.572 1.065c-.426 1.756-2.924 1.756-3.35 0a1.724 1.724 0 00-2.573-1.066c-1.543.94-3.31-.826-2.37-2.37a1.724 1.724 0 00-1.065-2.572c-1.756-.426-1.756-2.924 0-3.35a1.724 1.724 0 001.066-2.573c-.94-1.543.826-3.31 2.37-2.37.996.608 2.296.07 2.572-1.065z" />
+                <path strokeLinecap="round" strokeLinejoin="round" d="M15 12a3 3 0 11-6 0 3 3 0 016 0z" />
+              </svg>
+            </button>
+          </div>
           <Toolbar
             onExportJson={handleExportJson}
             onImportJson={handleImportJson}
             onExportPng={handleExportPng}
-            onToggleTheme={toggleTheme}
-            currentTheme={theme}
+            onToggleLegacyTheme={toggleLegacyTheme}
+            currentActiveThemeKey={appThemeSettings.activeThemeKey}
+            currentMainView={currentMainView}
+            onToggleMainView={handleToggleMainView}
             onSaveScript={handleSaveScript}
+            onSaveAllChangedScripts={handleSaveAllChangedScripts}
+            onShowTutorial={handleStartTutorial}
           />
         </div>
       </header>
 
-      <div className="flex-grow container mx-auto p-4 flex flex-col lg:flex-row gap-4">
-        <aside className={`w-full ${viewMode === 'all' ? 'lg:w-1/5' : 'lg:w-1/3'} p-4 rounded-lg shadow-lg overflow-y-auto max-h-[calc(100vh-150px)] ${
-          theme === 'banana' ? 'bg-yellow-200/80 backdrop-blur-sm' : theme === 'dark' ? 'bg-gray-700/80 backdrop-blur-sm text-gray-200' : 'bg-white/80 backdrop-blur-sm'
-        }`}>
-          <ControlsPanel
-            settings={settings}
-            onSettingsChange={handleSettingsChange}
-            onNestedSettingsChange={handleNestedSettingsChange}
-            onTextFileUpload={handleTextFileUpload}
+      <div className="flex-grow container mx-auto p-4 flex lg:flex-row gap-4 relative">
+        {showControlsPanel && (
+          <button
+            onClick={() => setIsControlsPanelCollapsed(!isControlsPanelCollapsed)}
+            title={isControlsPanelCollapsed ? 'Expand Controls' : 'Collapse Controls'}
+            aria-expanded={!isControlsPanelCollapsed}
+            aria-controls="controls-panel-aside"
+            className={`
+              fixed top-24 left-4 z-40
+              lg:absolute lg:top-0
+              p-2 rounded-full shadow-lg
+              transition-all duration-300 ease-in-out
+              bg-[var(--bv-accent-secondary)] text-[var(--bv-accent-secondary-content)] hover:opacity-80
+              ${isControlsPanelCollapsed ? 
+                'lg:left-4' 
+                : 
+                (viewMode === 'all' ? 'lg:left-1/5' : 'lg:left-1/3') + ' lg:ml-2' 
+              }
+            `}
+          >
+            {isControlsPanelCollapsed ? (
+               <svg xmlns="http://www.w3.org/2000/svg" className="h-6 w-6" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}><path strokeLinecap="round" strokeLinejoin="round" d="M4 6h16M4 12h16M4 18h7" /></svg>
+            ) : (
+              <svg xmlns="http://www.w3.org/2000/svg" className="h-6 w-6" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}><path strokeLinecap="round" strokeLinejoin="round" d="M15 19l-7-7 7-7" /></svg>
+            )}
+          </button>
+        )}
 
-            mainScripts={mainScripts}
-            activeMainScriptId={activeMainScriptId}
-            onSetActiveMainScriptId={handleSetActiveMainScriptId}
-            onClearMainScripts={handleClearMainScripts}
+        {showControlsPanel && (
+          <aside
+            id="controls-panel-aside"
+            className={`
+            flex-shrink-0 rounded-lg shadow-lg overflow-y-auto max-h-[calc(100vh-150px)]
+            transition-all duration-300 ease-in-out
+            bg-[var(--bv-element-background)] text-[var(--bv-text-primary)] backdrop-blur-sm
+            ${isControlsPanelCollapsed ? 
+              'w-0 p-0 opacity-0 -mr-4 lg:-mr-0' 
+              : 
+              `w-full ${viewMode === 'all' ? 'lg:w-1/5' : 'lg:w-1/3'} p-4`
+            }
+          `}>
+            {!isControlsPanelCollapsed && (
+              <ControlsPanel
+                settings={settings}
+                onSettingsChange={handleSettingsChange}
+                onNestedSettingsChange={handleNestedSettingsChange}
+                onTextFileUpload={handleTextFileUpload}
 
-            activeScriptBlocks={activeScriptBlocks}
-            currentBlockIndex={currentBlockIndex}
-            onSetCurrentBlockIndex={handleSetCurrentBlockIndex}
+                mainScripts={mainScripts}
+                activeMainScriptId={activeMainScriptId}
+                onSetActiveMainScriptId={handleSetActiveMainScriptId}
+                onClearMainScripts={handleClearMainScripts}
 
-            showOnlyOverflowingBlocks={showOnlyOverflowingBlocks}
-            onShowOnlyOverflowingBlocksChange={setShowOnlyOverflowingBlocks}
-            displayedBlocksForView={displayedBlocksForView} 
+                activeScriptBlocks={activeScriptBlocks}
+                currentBlockIndex={currentBlockIndex}
+                onSetCurrentBlockIndex={handleSetCurrentBlockIndex}
 
-            onLoadCustomFont={handleLoadCustomFont}
-            loadedCustomFontName={loadedCustomFontInfo?.name || null}
-            overflowSettingsPanelOpen={overflowSettingsPanelOpen}
-            onToggleOverflowSettingsPanel={() => setOverflowSettingsPanelOpen(prev => !prev)}
+                showOnlyOverflowingBlocks={showOnlyOverflowingBlocks}
+                onShowOnlyOverflowingBlocksChange={setShowOnlyOverflowingBlocks}
+                displayedBlocksForView={displayedBlocksForView} 
 
-            originalScripts={originalScripts}
-            onOriginalScriptUpload={handleOriginalScriptUpload}
-            matchedOriginalScriptName={matchedOriginalScript?.name || null}
-            onClearOriginalScripts={handleClearOriginalScripts}
+                onLoadCustomFont={handleLoadCustomFont}
+                loadedCustomFontName={loadedCustomFontInfo?.name || null}
+                overflowSettingsPanelOpen={overflowSettingsPanelOpen}
+                onToggleOverflowSettingsPanel={() => setOverflowSettingsPanelOpen(prev => !prev)}
 
-            viewMode={viewMode}
-            onViewModeChange={setViewMode}
+                originalScripts={originalScripts}
+                onOriginalScriptUpload={handleOriginalScriptUpload}
+                matchedOriginalScriptName={matchedOriginalScript?.name || null}
+                onClearOriginalScripts={handleClearOriginalScripts}
 
-            findText={findText}
-            onFindTextChange={onFindTextChange}
-            replaceText={replaceText}
-            onReplaceTextChange={onReplaceTextChange}
-            findIsCaseSensitive={findIsCaseSensitive}
-            onFindIsCaseSensitiveChange={onFindIsCaseSensitiveChange}
-            findMatchWholeWord={findMatchWholeWord}
-            onFindMatchWholeWordChange={onFindMatchWholeWordChange}
-            findScope={findScope}
-            onFindScopeChange={onFindScopeChange}
-            onFindNext={handleFindNext}
-            onReplace={handleReplace}
-            onReplaceAll={handleReplaceAll}
-            findResultsMessage={findResultsMessage}
-            isFindCurrentBlockDisabled={!(viewMode === 'single' && activeMainScriptId && currentBlockIndex !== null)}
-            findResultSummary={findResultSummary}
-            onNavigateToFindResult={handleNavigateToFindResult}
-          />
-        </aside>
-        <main className={`w-full ${viewMode === 'all' ? 'lg:w-4/5' : 'lg:w-2/3'} flex-grow flex flex-col p-4 rounded-lg shadow-lg relative ${
-          theme === 'banana' ? 'bg-yellow-200/80 backdrop-blur-sm' : theme === 'dark' ? 'bg-gray-700/80 backdrop-blur-sm' : 'bg-white/80 backdrop-blur-sm'
-        }`}>
+                viewMode={viewMode}
+                onViewModeChange={setViewMode}
 
-          {viewMode === 'single' ? (
+                findText={findText}
+                onFindTextChange={onFindTextChange}
+                replaceText={replaceText}
+                onReplaceTextChange={onReplaceTextChange}
+                findIsCaseSensitive={findIsCaseSensitive}
+                onFindIsCaseSensitiveChange={onFindIsCaseSensitiveChange}
+                findMatchWholeWord={findMatchWholeWord}
+                onFindMatchWholeWordChange={onFindMatchWholeWordChange}
+                findScope={findScope}
+                onFindScopeChange={onFindScopeChange}
+                onFindNext={handleFindNext}
+                onReplace={handleReplace}
+                onReplaceAll={handleReplaceAll}
+                findResultsMessage={findResultsMessage}
+                isFindCurrentBlockDisabled={!(viewMode === 'single' && activeMainScriptId && currentBlockIndex !== null)}
+                findResultSummary={findResultSummary}
+                onNavigateToFindResult={handleNavigateToFindResult}
+
+                gitHubSettings={gitHubSettings}
+                onGitHubSettingsChange={handleGitHubSettingsChange}
+                onLoadFromGitHub={handleLoadFromGitHub}
+                onSaveToGitHub={handleSaveToGitHub}
+                isGitHubLoading={isGitHubLoading}
+                gitHubStatusMessage={gitHubStatusMessage}
+                activeThemeKey={appThemeSettings.activeThemeKey}
+              />
+            )}
+          </aside>
+        )}
+        <main className={`
+          flex-grow flex flex-col p-4 rounded-lg shadow-lg relative
+          transition-all duration-300 ease-in-out
+          bg-[var(--bv-element-background)] text-[var(--bv-text-primary)] backdrop-blur-sm
+          ${!showControlsPanel || isControlsPanelCollapsed ? 'w-full ml-0' : `w-full ${viewMode === 'all' ? 'lg:w-4/5' : 'lg:w-2/3'} ${isControlsPanelCollapsed ? 'ml-0' : 'ml-0 lg:ml-0'}`} 
+        `}>
+          {currentMainView === 'editor' ? (
             <>
-              <div
-                ref={previewContainerRef}
-                className="flex flex-col items-center justify-center w-full relative p-4 overflow-hidden"
-              >
-                {settings.comparisonModeEnabled && currentEditableBlockForSingleView ? (
-                  <div className="flex flex-row w-full gap-4">
-                    <div className="w-1/2 flex flex-col items-center justify-center relative">
-                      <h3 className={`text-sm font-semibold mb-1 ${ theme === 'banana' ? 'text-yellow-700' : theme === 'dark' ? 'text-yellow-300' : 'text-gray-700'}`}>
-                        Original {originalSourceInfoForSingleView} (Block {currentEditableBlockForSingleView.index + 1})
-                      </h3>
-                      <PreviewArea
-                        key={`original-preview-single-${activeMainScriptId}-${currentEditableBlockForSingleView.index}`}
-                        baseSettings={settings}
-                        textOverride={originalBlockForSingleViewComparison ? originalBlockForSingleViewComparison.content : "Original content not available."}
-                        setIsOverflowing={() => {}}
-                        onNestedSettingsChange={() => {}} 
-                        showPixelMarginGuides={false}
-                        isReadOnlyPreview={true}
-                        simplifiedRender={false}
-                      />
-                    </div>
-                    <div className="w-1/2 flex flex-col items-center justify-center relative">
-                      <h3 className={`text-sm font-semibold mb-1 ${ theme === 'banana' ? 'text-yellow-700' : theme === 'dark' ? 'text-yellow-300' : 'text-gray-700'}`}>
-                        Editable (Block {currentEditableBlockForSingleView.index + 1})
-                      </h3>
-                      <PreviewArea
-                        ref={previewRef}
-                        key={`editable-preview-single-${activeMainScriptId}-${currentEditableBlockForSingleView.index}`}
-                        baseSettings={settings}
-                        setIsOverflowing={handleMainPreviewOverflowStatusChange}
-                        onNestedSettingsChange={handleNestedSettingsChange}
-                        showPixelMarginGuides={overflowSettingsPanelOpen}
-                        isReadOnlyPreview={false}
-                        simplifiedRender={false}
-                      />
-                      {activeScriptBlocks[currentBlockIndex || 0]?.isOverflowing && (
-                        <div className="absolute top-0 right-1 mt-1 mr-1 bg-red-500 text-white text-xs px-2 py-1 rounded z-20">
-                          Overflow!
+              {viewMode === 'single' ? (
+                <>
+                  <div
+                    ref={previewContainerRef}
+                    className="flex flex-col items-center justify-center w-full relative p-4 overflow-hidden"
+                  >
+                    {settings.comparisonModeEnabled && currentEditableBlockForSingleView ? (
+                      <div className="flex flex-row w-full gap-4">
+                        <div className="w-1/2 flex flex-col items-center justify-center relative">
+                          <h3 className="text-sm font-semibold mb-1 text-[var(--bv-text-secondary)]">
+                            Original {originalSourceInfoForSingleView} (Block {currentEditableBlockForSingleView.index + 1})
+                          </h3>
+                          <PreviewArea
+                            key={`original-preview-single-${activeMainScriptId}-${currentEditableBlockForSingleView.index}`}
+                            baseSettings={settings}
+                            textOverride={originalBlockForSingleViewComparison ? originalBlockForSingleViewComparison.content : "Original content not available."}
+                            setIsOverflowing={() => {}}
+                            onNestedSettingsChange={() => {}} 
+                            showPixelMarginGuides={false}
+                            isReadOnlyPreview={true}
+                            simplifiedRender={false}
+                            activeThemeKey={appThemeSettings.activeThemeKey}
+                          />
                         </div>
-                      )}
-                    </div>
+                        <div className="w-1/2 flex flex-col items-center justify-center relative">
+                          <h3 className="text-sm font-semibold mb-1 text-[var(--bv-text-secondary)]">
+                            Editable (Block {currentEditableBlockForSingleView.index + 1})
+                          </h3>
+                          <PreviewArea
+                            ref={previewRef}
+                            key={`editable-preview-single-${activeMainScriptId}-${currentEditableBlockForSingleView.index}`}
+                            baseSettings={settings}
+                            setIsOverflowing={handleMainPreviewOverflowStatusChange}
+                            onNestedSettingsChange={handleNestedSettingsChange}
+                            showPixelMarginGuides={overflowSettingsPanelOpen}
+                            isReadOnlyPreview={false}
+                            simplifiedRender={false}
+                            activeThemeKey={appThemeSettings.activeThemeKey}
+                          />
+                          {activeScriptBlocks[currentBlockIndex || 0]?.isOverflowing && (
+                            <div className="absolute top-0 right-1 mt-1 mr-1 bg-red-500 text-white text-xs px-2 py-1 rounded z-20">
+                              Overflow!
+                            </div>
+                          )}
+                        </div>
+                      </div>
+                    ) : (
+                      <>
+                        <PreviewArea
+                          ref={previewRef}
+                          baseSettings={settings}
+                          setIsOverflowing={handleMainPreviewOverflowStatusChange}
+                          onNestedSettingsChange={handleNestedSettingsChange}
+                          showPixelMarginGuides={overflowSettingsPanelOpen}
+                          isReadOnlyPreview={false}
+                          simplifiedRender={false}
+                          activeThemeKey={appThemeSettings.activeThemeKey}
+                        />
+                        {activeScriptBlocks[currentBlockIndex || 0]?.isOverflowing && (
+                          <div className="absolute top-1 right-1 bg-red-500 text-white text-xs px-2 py-1 rounded z-10">
+                            Overflow!
+                          </div>
+                        )}
+                      </>
+                    )}
                   </div>
-                ) : (
-                  <>
-                    <PreviewArea
-                      ref={previewRef}
-                      baseSettings={settings}
-                      setIsOverflowing={handleMainPreviewOverflowStatusChange}
-                      onNestedSettingsChange={handleNestedSettingsChange}
-                      showPixelMarginGuides={overflowSettingsPanelOpen}
-                      isReadOnlyPreview={false}
-                      simplifiedRender={false}
-                    />
-                    {activeScriptBlocks[currentBlockIndex || 0]?.isOverflowing && (
-                      <div className="absolute top-1 right-1 bg-red-500 text-white text-xs px-2 py-1 rounded z-10">
-                        Overflow!
+                  <div className={`mt-4 w-full flex-grow flex flex-col ${settings.comparisonModeEnabled && currentEditableBlockForSingleView ? 'sm:flex-row gap-4' : ''}`}>
+                    {settings.comparisonModeEnabled && currentEditableBlockForSingleView && (
+                      <div className="w-full sm:w-1/2 flex flex-col">
+                        <h2 className="text-lg font-semibold mb-2 text-[var(--bv-text-primary)]">
+                          Original {originalSourceInfoForSingleView} (Block {currentEditableBlockForSingleView.index + 1})
+                        </h2>
+                        <textarea
+                          id={`original-block-content-single-${activeMainScriptId}-${currentEditableBlockForSingleView.index}`}
+                          aria-label={`Original content of block ${currentEditableBlockForSingleView.index + 1}`}
+                          readOnly
+                          value={originalBlockForSingleViewComparison ? originalBlockForSingleViewComparison.content : "Original content not available."}
+                          className="w-full p-2 border rounded-md shadow-sm sm:text-sm flex-grow resize-y
+                                      bg-[var(--bv-element-background-secondary)] border-[var(--bv-border-color-light)] text-[var(--bv-text-secondary)]
+                                      cursor-not-allowed min-h-[100px]"
+                        />
                       </div>
                     )}
-                  </>
-                )}
-              </div>
-              <div className={`mt-4 w-full flex-grow flex flex-col ${settings.comparisonModeEnabled && currentEditableBlockForSingleView ? 'sm:flex-row gap-4' : ''}`}>
-                {settings.comparisonModeEnabled && currentEditableBlockForSingleView && (
-                  <div className="w-full sm:w-1/2 flex flex-col">
-                    <h2 className={`text-lg font-semibold mb-2 ${ theme === 'banana' ? 'text-yellow-700' : theme === 'dark' ? 'text-yellow-300' : 'text-gray-800'}`}>
-                      Original {originalSourceInfoForSingleView} (Block {currentEditableBlockForSingleView.index + 1})
-                    </h2>
-                    <textarea
-                      id={`original-block-content-single-${activeMainScriptId}-${currentEditableBlockForSingleView.index}`}
-                      aria-label={`Original content of block ${currentEditableBlockForSingleView.index + 1}`}
-                      readOnly
-                      value={originalBlockForSingleViewComparison ? originalBlockForSingleViewComparison.content : "Original content not available."}
-                      className={`w-full p-2 border rounded-md shadow-sm sm:text-sm flex-grow resize-y
-                                  bg-gray-100 dark:bg-gray-800 border-gray-300 dark:border-gray-700 text-gray-500 dark:text-gray-400
-                                  cursor-not-allowed min-h-[100px]`}
-                    />
+                    <div className={`flex flex-col ${settings.comparisonModeEnabled && currentEditableBlockForSingleView ? 'w-full sm:w-1/2' : 'w-full flex-grow'}`}>
+                      <h2 className="text-lg font-semibold mb-2 text-[var(--bv-text-primary)]">
+                        Current Block Content {settings.comparisonModeEnabled && currentEditableBlockForSingleView ? '(Editable)' : ''}
+                        {currentBlockIndex !== null && activeScriptBlocks.length > 0 && `(Block ${currentBlockIndex + 1} of Script: ${activeMainScript?.name || ''})`}
+                      </h2>
+                      <textarea
+                        ref={mainTextAreaRef}
+                        id="current-block-content-main"
+                        aria-label="Current block content"
+                        value={settings.text} 
+                        onChange={(e) => handleCurrentBlockContentChangeInSingleView(e.target.value)}
+                        disabled={currentBlockIndex === null && activeScriptBlocks.length > 0 && !!activeMainScriptId}
+                        className="w-full p-2 border rounded-md shadow-sm sm:text-sm flex-grow resize-y min-h-[100px]
+                                   bg-[var(--bv-input-background)] border-[var(--bv-input-border)] text-[var(--bv-input-text)]
+                                   focus:ring-[var(--bv-input-focus-ring)] focus:border-[var(--bv-input-focus-ring)] placeholder:text-[var(--bv-text-secondary)]"
+                        placeholder={activeScriptBlocks.length > 0 && currentBlockIndex === null ? "Select a block from the navigation to edit." : !activeMainScriptId ? "Load a main script to begin..." : "Type here..."}
+                      />
+                    </div>
                   </div>
-                )}
-                <div className={`flex flex-col ${settings.comparisonModeEnabled && currentEditableBlockForSingleView ? 'w-full sm:w-1/2' : 'w-full flex-grow'}`}>
-                  <h2 className={`text-lg font-semibold mb-2 ${ theme === 'banana' ? 'text-yellow-700' : theme === 'dark' ? 'text-yellow-300' : 'text-gray-800'}`}>
-                    Current Block Content {settings.comparisonModeEnabled && currentEditableBlockForSingleView ? '(Editable)' : ''}
-                    {currentBlockIndex !== null && activeScriptBlocks.length > 0 && `(Block ${currentBlockIndex + 1} of Script: ${activeMainScript?.name || ''})`}
-                  </h2>
-                  <textarea
-                    ref={mainTextAreaRef}
-                    id="current-block-content-main"
-                    aria-label="Current block content"
-                    value={settings.text} 
-                    onChange={(e) => handleCurrentBlockContentChangeInSingleView(e.target.value)}
-                    disabled={currentBlockIndex === null && activeScriptBlocks.length > 0 && !!activeMainScriptId}
-                    className={`w-full p-2 border rounded-md shadow-sm sm:text-sm flex-grow resize-y min-h-[100px]
-                                ${ theme === 'banana' ? 'bg-yellow-50 border-yellow-400 focus:ring-yellow-500 focus:border-yellow-500 text-gray-800 placeholder-gray-500'
-                                                    : theme === 'dark' ? 'bg-gray-600 border-gray-500 focus:ring-yellow-500 focus:border-yellow-500 text-gray-100 placeholder-gray-400'
-                                                    : 'bg-white border-gray-300 focus:ring-yellow-500 focus:border-yellow-500 text-gray-900 placeholder-gray-500'}`}
-                    placeholder={activeScriptBlocks.length > 0 && currentBlockIndex === null ? "Select a block from the navigation to edit." : !activeMainScriptId ? "Load a main script to begin..." : "Type here..."}
-                  />
+                </>
+              ) : ( 
+                <div
+                  ref={allBlocksScrollContainerRefCallback}
+                  className="all-blocks-scroll-container w-full flex-grow min-h-0 overflow-y-auto space-y-6 pr-2"
+                  aria-label={`Scrollable list of all text blocks for script: ${activeMainScript?.name || 'N/A'}`}
+                >
+                  {activeMainScript && displayedBlocksForView.map((block) => {
+                    const isFullyVisible = fullyVisibleBlockOriginalIndices.has(block.index);
+                    const placeholderHeight = (settings.previewHeight > 0 ? settings.previewHeight : 150) * settings.previewZoom;
+                    const placeholderWidth = (settings.previewWidth > 0 ? settings.previewWidth : 250) * settings.previewZoom;
+
+                    let comparisonContentForCell: string | null = null;
+                    if (settings.comparisonModeEnabled && matchedOriginalScript && matchedOriginalScript.blocks[block.index]) {
+                        comparisonContentForCell = matchedOriginalScript.blocks[block.index].content;
+                    } else if (settings.comparisonModeEnabled) {
+                        comparisonContentForCell = block.originalContent; 
+                    }
+
+                    return (
+                      <MemoizedBlockCell
+                        key={`${activeMainScript.id}-${block.index}`}
+                        block={block}
+                        activeThemeKey={appThemeSettings.activeThemeKey}
+                        appSettings={settings}
+                        isFullyVisible={isFullyVisible}
+                        placeholderHeight={placeholderHeight}
+                        placeholderWidth={placeholderWidth}
+                        onBlockContentChange={handleBlockContentChangeForCell}
+                        onBlockOverflowChange={handleBlockCellOverflowChange}
+                        onNestedSettingsChange={handleNestedSettingsChange}
+                        comparisonOriginalContent={comparisonContentForCell}
+                        overflowSettingsPanelOpen={overflowSettingsPanelOpen}
+                        simplifiedRender={false} // This was hardcoded to false
+                        onVisibilityChange={handleBlockVisibilityChange}
+                        scrollRootElement={scrollRootElement}
+                        observerRootMarginValue={observerRootMarginValue}
+                      />
+                    );
+                  })}
+                  {activeMainScript && displayedBlocksForView.length === 0 && activeScriptBlocks.length > 0 && (
+                    <p className="text-center italic text-[var(--bv-text-secondary)]">
+                      No blocks match the current filter (e.g., "Show Only Overflowing") for script: {activeMainScript.name}.
+                    </p>
+                  )}
+                   {!activeMainScript && (
+                    <p className="text-center italic text-[var(--bv-text-secondary)]">
+                      No active main script. Load or select a script from the Controls Panel.
+                    </p>
+                  )}
+                   {activeMainScript && activeScriptBlocks.length === 0 && (
+                    <p className="text-center italic text-[var(--bv-text-secondary)]">
+                      Script "{activeMainScript.name}" has no blocks.
+                    </p>
+                  )}
                 </div>
-              </div>
+              )}
             </>
-          ) : ( // All Blocks View
-            <div
-              ref={allBlocksScrollContainerRefCallback}
-              className="all-blocks-scroll-container w-full flex-grow min-h-0 overflow-y-auto space-y-6 pr-2"
-              aria-label={`Scrollable list of all text blocks for script: ${activeMainScript?.name || 'N/A'}`}
-            >
-              {activeMainScript && displayedBlocksForView.map((block) => {
-                const isFullyVisible = fullyVisibleBlockOriginalIndices.has(block.index);
-                const placeholderHeight = (settings.previewHeight > 0 ? settings.previewHeight : 150) * settings.previewZoom;
-                const placeholderWidth = (settings.previewWidth > 0 ? settings.previewWidth : 250) * settings.previewZoom;
-
-                let comparisonContentForCell: string | null = null;
-                if (settings.comparisonModeEnabled && matchedOriginalScript && matchedOriginalScript.blocks[block.index]) {
-                    comparisonContentForCell = matchedOriginalScript.blocks[block.index].content;
-                } else if (settings.comparisonModeEnabled) {
-                    comparisonContentForCell = block.originalContent; 
-                }
-
-                return (
-                  <MemoizedBlockCell
-                    key={`${activeMainScript.id}-${block.index}`}
-                    block={block}
-                    theme={theme}
-                    appSettings={settings}
-                    isFullyVisible={isFullyVisible}
-                    placeholderHeight={placeholderHeight}
-                    placeholderWidth={placeholderWidth}
-                    onBlockContentChange={handleBlockContentChangeForCell}
-                    onBlockOverflowChange={handleBlockCellOverflowChange}
-                    onNestedSettingsChange={handleNestedSettingsChange}
-                    comparisonOriginalContent={comparisonContentForCell}
-                    overflowSettingsPanelOpen={overflowSettingsPanelOpen}
-                    simplifiedRender={false}
-                    onVisibilityChange={handleBlockVisibilityChange}
-                    scrollRootElement={scrollRootElement}
-                    observerRootMarginValue={observerRootMarginValue}
-                  />
-                );
-              })}
-              {activeMainScript && displayedBlocksForView.length === 0 && activeScriptBlocks.length > 0 && (
-                <p className={`text-center italic ${theme === 'dark' ? 'text-gray-400' : 'text-gray-600'}`}>
-                  No blocks match the current filter (e.g., "Show Only Overflowing") for script: {activeMainScript.name}.
-                </p>
-              )}
-               {!activeMainScript && (
-                <p className={`text-center italic ${theme === 'dark' ? 'text-gray-400' : 'text-gray-600'}`}>
-                  No active main script. Load or select a script from the Controls Panel.
-                </p>
-              )}
-               {activeMainScript && activeScriptBlocks.length === 0 && (
-                <p className={`text-center italic ${theme === 'dark' ? 'text-gray-400' : 'text-gray-600'}`}>
-                  Script "{activeMainScript.name}" has no blocks.
-                </p>
-              )}
-            </div>
+          ) : ( 
+            <ProfilesGalleryPage
+              profiles={profiles}
+              onLoadProfile={handleLoadProfile}
+              onDeleteProfile={handleDeleteProfile}
+              activeThemeKey={appThemeSettings.activeThemeKey}
+              currentEditorSettings={settings}
+              onSaveCurrentSettingsAsProfile={handleSaveProfile}
+            />
           )}
         </main>
       </div>
-      <footer className={`text-center p-4 text-sm ${
-        theme === 'banana' ? 'text-yellow-700' : theme === 'dark' ? 'text-gray-400' : 'text-gray-600'
-      }`}>
+      <footer className="text-center p-4 text-sm text-[var(--bv-text-secondary)]">
         Banana Vision &copy; {new Date().getFullYear()} - Romhacking Text Preview Tool
       </footer>
+
+      <SpecialSettingsMenu
+        isOpen={isSpecialSettingsMenuOpen}
+        onClose={toggleSpecialSettingsMenu}
+        appThemeSettings={appThemeSettings}
+        onThemeSettingsChange={handleThemeSettingsChange}
+        onCustomColorChange={handleCustomColorChange}
+        onSaveCustomTheme={saveCustomTheme}
+        onResetCustomTheme={resetCustomTheme}
+        allThemeDefinitions={ALL_THEME_DEFINITIONS}
+      />
+      <TutorialModal
+        isOpen={showTutorial}
+        currentStep={currentTutorialStep}
+        onClose={(markCompleted) => handleCloseTutorial(markCompleted)}
+        onSetStep={setCurrentTutorialStep}
+      />
     </div>
   );
 };

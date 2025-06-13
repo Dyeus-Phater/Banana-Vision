@@ -1,3 +1,4 @@
+
 <!DOCTYPE html>
 <html lang="en">
   <head>
@@ -6,54 +7,74 @@
     <title>Banana Vision</title>
     <script src="https://cdn.tailwindcss.com"></script>
     <style>
-      /* Custom scrollbar for webkit browsers */
+      /* Basic CSS variable fallbacks (will be overridden by JS) */
+      :root {
+        --bv-page-background: #fef3c7; /* yellow-100 */
+        --bv-element-background: #fef9c3; /* yellow-200 */
+        --bv-element-background-secondary: #fef08a; /* yellow-300 */
+        --bv-text-primary: #78350f; /* yellow-900 */
+        --bv-text-secondary: #92400e; /* yellow-800 */
+        --bv-accent-primary: #facc15; /* yellow-500 */
+        --bv-accent-primary-content: #ffffff;
+        --bv-accent-secondary: #fbbf24; /* amber-400 */
+        --bv-accent-secondary-content: #422006;
+        --bv-border-color: #fde047; /* yellow-400 */
+        --bv-border-color-light: #fef3c7; /* yellow-100 */
+        --bv-toolbar-background: #fde047;
+        --bv-toolbar-text: #78350f;
+        --bv-toolbar-button-background: var(--bv-accent-primary);
+        --bv-toolbar-button-text: var(--bv-accent-primary-content);
+        --bv-toolbar-button-hover-background: var(--bv-accent-primary);
+        --bv-input-background: #fef9e7;
+        --bv-input-text: #78350f;
+        --bv-input-border: #fcd34d;
+        --bv-input-focus-ring: #facc15;
+        --bv-modal-background: #fef9e7;
+        --bv-modal-text: #78350f;
+        --bv-scrollbar-track: #fef3c7;
+        --bv-scrollbar-thumb: #fde047;
+        --bv-scrollbar-thumb-hover: #facc15;
+      }
+
+      /* Base scrollbar styles - JS will override colors */
       ::-webkit-scrollbar {
         width: 8px;
         height: 8px;
       }
       ::-webkit-scrollbar-track {
-        background: #f1f1f1;
+        background: var(--bv-scrollbar-track);
         border-radius: 10px;
       }
       ::-webkit-scrollbar-thumb {
-        background: #fde047; /* Banana yellow */
+        background: var(--bv-scrollbar-thumb);
         border-radius: 10px;
       }
       ::-webkit-scrollbar-thumb:hover {
-        background: #facc15; /* Darker banana yellow */
+        background: var(--bv-scrollbar-thumb-hover);
       }
 
       /* Custom Range Input Slider Styles */
-      /* Webkit (Chrome, Safari, Edge) */
       input[type="range"]::-webkit-slider-thumb {
         -webkit-appearance: none;
         appearance: none;
         width: 16px;
         height: 16px;
-        background: #fde047; /* banana yellow */
+        background: var(--bv-accent-primary);
         cursor: pointer;
         border-radius: 50%;
-        margin-top: -6px; /* Adjust to center thumb on track (if track height is 4px) */
+        margin-top: -6px; 
       }
       input[type="range"]::-webkit-slider-runnable-track {
         width: 100%;
         height: 4px;
         cursor: pointer;
-        background: #e5e7eb; /* gray-200 */
+        background: var(--bv-border-color-light); 
         border-radius: 2px;
       }
-      .dark input[type="range"]::-webkit-slider-thumb {
-        background: #facc15; /* darker banana yellow */
-      }
-      .dark input[type="range"]::-webkit-slider-runnable-track {
-        background: #4b5563; /* gray-600 */
-      }
-
-      /* Firefox */
       input[type="range"]::-moz-range-thumb {
         width: 16px;
         height: 16px;
-        background: #fde047; /* banana yellow */
+        background: var(--bv-accent-primary);
         cursor: pointer;
         border-radius: 50%;
         border: none;
@@ -62,17 +83,10 @@
         width: 100%;
         height: 4px;
         cursor: pointer;
-        background: #e5e7eb; /* gray-200 */
+        background: var(--bv-border-color-light);
         border-radius: 2px;
       }
-      .dark input[type="range"]::-moz-range-thumb {
-        background: #facc15; /* darker banana yellow */
-      }
-      .dark input[type="range"]::-moz-range-track {
-        background: #4b5563; /* gray-600 */
-      }
       
-      /* Remove default Tailwind accent color if custom styles are applied, to avoid conflict */
       input[type="range"].custom-styled {
         accent-color: initial;
       }
@@ -84,13 +98,15 @@
     "react": "https://esm.sh/react@^19.1.0",
     "react-dom/": "https://esm.sh/react-dom@^19.1.0/",
     "html2canvas": "https://esm.sh/html2canvas@^1.4.1",
-    "@vercel/analytics": "https://esm.sh/@vercel/analytics@latest"
+    "@vercel/analytics": "https://esm.sh/@vercel/analytics@latest",
+    "jszip": "https://esm.sh/jszip@3.10.1",
+    "@octokit/rest": "https://esm.sh/@octokit/rest@^20.0.0"
   }
 }
 </script>
 <link rel="stylesheet" href="/index.css">
 </head>
-  <body class="bg-yellow-50 text-gray-800">
+  <body>
     <div id="root"></div>
     <script type="module" src="/index.tsx"></script>
   </body>

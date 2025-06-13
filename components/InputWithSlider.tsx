@@ -1,3 +1,4 @@
+
 import React from 'react';
 
 interface InputWithSliderProps {
@@ -11,7 +12,7 @@ interface InputWithSliderProps {
   unit?: string;
   className?: string;
   subText?: string;
-  disabled?: boolean; // Added disabled prop
+  disabled?: boolean;
 }
 
 const InputWithSlider: React.FC<InputWithSliderProps> = ({
@@ -25,10 +26,10 @@ const InputWithSlider: React.FC<InputWithSliderProps> = ({
   unit,
   className,
   subText,
-  disabled = false, // Default to false
+  disabled = false,
 }) => {
   const handleValueChange = (rawValue: string) => {
-    if (disabled) return; // Do nothing if disabled
+    if (disabled) return;
 
     const isFloat = step % 1 !== 0 || String(step).includes('.');
     const numValue = isFloat ? parseFloat(rawValue) : parseInt(rawValue, 10);
@@ -43,10 +44,15 @@ const InputWithSlider: React.FC<InputWithSliderProps> = ({
   const internalValue = isNaN(value) ? min : value;
 
   const containerClasses = `py-1 ${className || ''} ${disabled ? 'opacity-60 cursor-not-allowed' : ''}`;
-  const labelClasses = `block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1 ${disabled ? 'cursor-not-allowed' : ''}`;
-  const numberInputClasses = `block w-24 px-2 py-1 border border-gray-300 dark:border-gray-500 rounded-md shadow-sm focus:outline-none focus:ring-yellow-500 focus:border-yellow-500 sm:text-sm dark:bg-gray-800 dark:text-gray-200 ${disabled ? 'cursor-not-allowed bg-gray-100 dark:bg-gray-700' : ''}`;
-  const rangeInputClasses = `w-full h-2 bg-gray-200 dark:bg-gray-700 rounded-lg appearance-none custom-styled slider-thumb ${disabled ? 'cursor-not-allowed opacity-70' : 'cursor-pointer'}`;
-  const subTextClasses = `text-xs text-gray-500 dark:text-gray-400 mt-0.5 ${disabled ? 'cursor-not-allowed' : ''}`;
+  const labelClasses = `block text-sm font-medium text-[var(--bv-text-primary)] mb-1 ${disabled ? 'cursor-not-allowed' : ''}`;
+  const numberInputClasses = `block w-24 px-2 py-1 border border-[var(--bv-input-border)] rounded-md shadow-sm 
+                            focus:outline-none focus:ring-[var(--bv-input-focus-ring)] focus:border-[var(--bv-input-focus-ring)] 
+                            sm:text-sm bg-[var(--bv-input-background)] text-[var(--bv-input-text)] 
+                            ${disabled ? 'cursor-not-allowed bg-opacity-70' : ''}`;
+  const rangeInputClasses = `w-full h-2 rounded-lg appearance-none custom-styled slider-thumb 
+                           bg-[var(--bv-border-color-light,var(--bv-input-border))]
+                           ${disabled ? 'cursor-not-allowed opacity-70' : 'cursor-pointer'}`;
+  const subTextClasses = `text-xs text-[var(--bv-text-secondary)] mt-0.5 ${disabled ? 'cursor-not-allowed' : ''}`;
 
   return (
     <div className={containerClasses}>
