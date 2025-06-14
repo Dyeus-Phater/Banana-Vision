@@ -182,7 +182,7 @@ const BlockCell: React.FC<BlockCellProps> = ({
         aria-label={`Content for block ${block.index + 1}`}
         value={block.content}
         onChange={(e) => onBlockContentChange(blockOriginalIndex, e.target.value)}
-        className="w-full p-2 border rounded-md shadow-sm sm:text-sm resize-y min-h-[80px] mb-2
+        className="w-full p-2 border rounded-md shadow-sm sm:text-sm resize-y min-h-[120px] mb-2
                    bg-[var(--bv-input-background)] border-[var(--bv-input-border)] text-[var(--bv-input-text)]
                    focus:ring-[var(--bv-input-focus-ring)] focus:border-[var(--bv-input-focus-ring)]"
       />
@@ -193,8 +193,8 @@ const BlockCell: React.FC<BlockCellProps> = ({
             aria-label={`Original content for block ${block.index + 1}`}
             readOnly
             value={comparisonOriginalContent}
-            className="w-full p-2 border rounded-md shadow-sm sm:text-sm resize-y min-h-[60px]
-                       bg-[var(--bv-element-background-secondary)] border-[var(--bv-border-color-light)] text-[var(--bv-text-secondary)]
+            className="w-full p-2 border rounded-md shadow-sm sm:text-sm resize-y min-h-[100px]
+                       bg-[var(--bv-accent-secondary)] border-[var(--bv-border-color)] text-[var(--bv-accent-secondary-content)]
                        cursor-not-allowed"
           />
         </div>
@@ -204,6 +204,35 @@ const BlockCell: React.FC<BlockCellProps> = ({
 };
 
 const MemoizedBlockCell = React.memo(BlockCell);
+
+// Helper functions for UTF-8 to Base64 and vice-versa
+const utf8ToBase64 = (str: string): string => {
+  try {
+    const utf8Bytes = new TextEncoder().encode(str);
+    let binaryString = "";
+    utf8Bytes.forEach((byte) => {
+      binaryString += String.fromCharCode(byte);
+    });
+    return btoa(binaryString);
+  } catch (e) {
+    console.error("Error in utf8ToBase64 for string:", str.substring(0,100) , e);
+    throw new Error(`Failed to encode to Base64. Input starts with: ${str.substring(0,30)}`);
+  }
+};
+
+const base64ToUtf8 = (base64Str: string): string => {
+  try {
+    const binaryString = atob(base64Str);
+    const bytes = new Uint8Array(binaryString.length);
+    for (let i = 0; i < binaryString.length; i++) {
+      bytes[i] = binaryString.charCodeAt(i);
+    }
+    return new TextDecoder("utf-8", { fatal: true }).decode(bytes);
+  } catch (e) {
+    console.error("Error in base64ToUtf8 for base64 string:", base64Str.substring(0,100), e);
+    throw new Error(`Failed to decode from Base64. Input starts with: ${base64Str.substring(0,30)}`);
+  }
+};
 
 
 const App: React.FC = () => {
@@ -489,19 +518,24 @@ const App: React.FC = () => {
       return;
     }
     try {
-      const updatedProfiles = profileService.saveProfile(profileName, settingsToSave);
+      const updatedProfiles = profileService.saveProfile(profileName, settingsToSave, gitHubSettings);
       setProfiles(updatedProfiles);
       alert(`Profile "${profileName}" saved successfully!`);
     } catch (error) {
       console.error("Error saving profile:", error);
       alert(`Failed to save profile: ${error instanceof Error ? error.message : String(error)}`);
     }
-  }, []);
+  }, [gitHubSettings]);
 
   const handleLoadProfile = useCallback((profileId: string) => {
     const profileToLoad = profileService.getProfileById(profileId);
     if (profileToLoad) {
       handleApplyNewSettings(profileToLoad.settings, `Profile-${profileToLoad.name}`);
+      if (profileToLoad.gitHubSettings) {
+        setGitHubSettings(profileToLoad.gitHubSettings);
+      } else {
+        setGitHubSettings(DEFAULT_GITHUB_SETTINGS); // For older profiles
+      }
       setCurrentMainView('editor'); 
       alert(`Profile "${profileToLoad.name}" loaded successfully!`);
     } else {
@@ -592,15 +626,16 @@ const App: React.FC = () => {
   }, []);
 
   const handleExportJson = useCallback(() => {
-    exportSettingsAsJson(settings, 'banana-vision-settings.json');
-  }, [settings]);
+    exportSettingsAsJson(settings, gitHubSettings, 'banana-vision-settings.json');
+  }, [settings, gitHubSettings]);
 
   const handleImportJson = useCallback(async (files: FileList) => { 
     if (!files || files.length === 0) return;
     const file = files[0]; 
     try {
-      const newSettings = await importSettingsFromJson(file);
-      handleApplyNewSettings(newSettings, "Imported-JSON");
+      const { appSettings: newAppSettings, gitHubSettings: newGitHubSettings } = await importSettingsFromJson(file);
+      handleApplyNewSettings(newAppSettings, "Imported-JSON");
+      setGitHubSettings(newGitHubSettings);
     } catch (error) {
       console.error("Failed to import JSON:", error);
       alert("Error importing settings. Make sure it's a valid JSON file.");
@@ -1452,13 +1487,13 @@ const App: React.FC = () => {
     setGitHubStatusMessage("");
   }, []);
 
-  const handleLoadFromGitHub = useCallback(async () => {
+  const handleLoadFileFromGitHub = useCallback(async () => {
     if (!gitHubSettings.pat || !gitHubSettings.repoFullName || !gitHubSettings.filePath) {
-      setGitHubStatusMessage("Error: PAT, Repository, and File Path are required.");
+      setGitHubStatusMessage("Error: PAT, Repository, and File Path are required for single file load.");
       return;
     }
     setIsGitHubLoading(true);
-    setGitHubStatusMessage("Loading from GitHub...");
+    setGitHubStatusMessage("Loading file from GitHub...");
 
     const [owner, repo] = gitHubSettings.repoFullName.split('/');
     if (!owner || !repo) {
@@ -1479,7 +1514,7 @@ const App: React.FC = () => {
       // @ts-ignore 
       if (response.data && response.data.content && response.data.encoding === 'base64') {
         // @ts-ignore
-        const rawText = atob(response.data.content);
+        const rawText = base64ToUtf8(response.data.content);
         const blocks = parseTextToBlocksInternal(rawText, settings.useCustomBlockSeparator, settings.blockSeparators);
         const newScript: ScriptFile = {
           id: `github-${owner}-${repo}-${gitHubSettings.filePath.replace(/[^a-zA-Z0-9]/g, '-')}-${Date.now()}`,
@@ -1488,24 +1523,141 @@ const App: React.FC = () => {
           rawText,
           parsedWithCustomSeparators: settings.useCustomBlockSeparator,
         };
-        setMainScripts(prev => [...prev, newScript]);
+        setMainScripts(prev => [newScript, ...prev.filter(s => s.id !== newScript.id)]);
         setActiveMainScriptId(newScript.id);
         setCurrentBlockIndex(newScript.blocks.length > 0 ? 0 : null);
-        setGitHubStatusMessage(`Successfully loaded ${newScript.name}.`);
+        setGitHubStatusMessage(`Successfully loaded file: ${newScript.name}.`);
       } else {
         setGitHubStatusMessage("Error: Could not decode file content from GitHub.");
       }
     } catch (error: any) {
-      console.error("Error loading from GitHub:", error);
-      setGitHubStatusMessage(`Error: ${error.message || 'Failed to load from GitHub.'}`);
+      console.error("Error loading file from GitHub:", error);
+      setGitHubStatusMessage(`Error: ${error.message || 'Failed to load file from GitHub.'}`);
     } finally {
       setIsGitHubLoading(false);
     }
   }, [gitHubSettings, settings.useCustomBlockSeparator, settings.blockSeparators, parseTextToBlocksInternal, setActiveMainScriptId, setCurrentBlockIndex]);
 
-  const handleSaveToGitHub = useCallback(async () => {
+  const sanitizeFilename = (name: string): string => {
+    let sName = name.replace(/[<>:"/\\|?*]+/g, '_'); 
+    sName = sName.replace(/\s+/g, '_'); 
+    if (sName.startsWith('.')) {
+      sName = '_' + sName.substring(1); 
+    }
+    // Check for common text extensions, otherwise add .txt
+    if (!/\.(txt|scp|text|md|json|xml|yaml|yml|csv|tsv|ini|cfg|log|srt|vtt|html|htm|js|css)$/i.test(sName)) {
+      sName += '.txt';
+    }
+    return sName.substring(0, 250); // Limit length
+  };
+  
+
+  const handleLoadAllFromGitHubFolder = useCallback(async () => {
     if (!gitHubSettings.pat || !gitHubSettings.repoFullName || !gitHubSettings.filePath) {
-      setGitHubStatusMessage("Error: PAT, Repository, and File Path are required.");
+      setGitHubStatusMessage("Error: PAT, Repository, and Folder Path are required.");
+      return;
+    }
+    setIsGitHubLoading(true);
+    setGitHubStatusMessage("Loading scripts from GitHub folder...");
+    let loadedCount = 0;
+    let skippedCount = 0;
+    let errorCount = 0;
+    const newScripts: ScriptFile[] = [];
+    const statusMessages: string[] = [];
+
+    const [owner, repo] = gitHubSettings.repoFullName.split('/');
+    if (!owner || !repo) {
+      setGitHubStatusMessage("Error: Repository format must be 'owner/repo-name'.");
+      setIsGitHubLoading(false);
+      return;
+    }
+
+    try {
+      const octokit = new Octokit({ auth: gitHubSettings.pat });
+      const { data: folderContents } = await octokit.repos.getContent({
+        owner,
+        repo,
+        path: gitHubSettings.filePath.endsWith('/') ? gitHubSettings.filePath.slice(0, -1) : gitHubSettings.filePath,
+        ref: gitHubSettings.branch || undefined,
+      });
+
+      if (Array.isArray(folderContents)) {
+        for (const item of folderContents) {
+          if (item.type === 'file') {
+            try {
+              const { data: fileContent } = await octokit.repos.getContent({
+                owner,
+                repo,
+                path: item.path,
+                ref: gitHubSettings.branch || undefined,
+              });
+              // @ts-ignore
+              if (fileContent && fileContent.content && fileContent.encoding === 'base64') {
+                // @ts-ignore
+                let rawText = "";
+                try {
+                  // @ts-ignore
+                  rawText = base64ToUtf8(fileContent.content);
+                } catch (decodeError) {
+                  console.warn(`Skipped ${item.name} due to Base64 decoding error:`, decodeError);
+                  statusMessages.push(`Skipped ${item.name} (decoding error).`);
+                  skippedCount++;
+                  continue;
+                }
+
+                 // Basic check for text-like content (very naive, can be improved)
+                if (rawText.includes('\uFFFD') && !rawText.startsWith('\uFEFF')) { // Common issue with non-text trying to be UTF8
+                    statusMessages.push(`Skipped ${item.name} (likely binary or wrong encoding).`);
+                    skippedCount++;
+                    continue;
+                }
+
+                const blocks = parseTextToBlocksInternal(rawText, settings.useCustomBlockSeparator, settings.blockSeparators);
+                const newScript: ScriptFile = {
+                  id: `github-${owner}-${repo}-${item.path.replace(/[^a-zA-Z0-9]/g, '-')}-${Date.now()}`,
+                  name: `GitHub: ${item.name} (${owner}/${repo}${gitHubSettings.filePath ? '/' + gitHubSettings.filePath : ''})`,
+                  blocks,
+                  rawText,
+                  parsedWithCustomSeparators: settings.useCustomBlockSeparator,
+                };
+                newScripts.push(newScript);
+                loadedCount++;
+                statusMessages.push(`Loaded ${item.name}.`);
+              } else {
+                statusMessages.push(`Skipped ${item.name} (not base64 encoded or no content).`);
+                skippedCount++;
+              }
+            } catch (fileError: any) {
+              console.error(`Error loading file ${item.name} from GitHub:`, fileError);
+              statusMessages.push(`Error loading ${item.name}: ${fileError.message || 'Unknown error'}`);
+              errorCount++;
+            }
+          }
+        }
+        if (newScripts.length > 0) {
+          setMainScripts(prev => [...newScripts, ...prev.filter(s => !newScripts.find(ns => ns.name === s.name))]); // Add new, avoid duplicates by name
+          if (!activeMainScriptId && newScripts.length > 0) {
+            setActiveMainScriptId(newScripts[0].id);
+            setCurrentBlockIndex(newScripts[0].blocks.length > 0 ? 0 : null);
+          }
+        }
+        setGitHubStatusMessage(`Folder load complete. Loaded: ${loadedCount}, Skipped: ${skippedCount}, Errors: ${errorCount}. Details: ${statusMessages.slice(0,3).join(' ')}${statusMessages.length > 3 ? '...' : ''}`);
+
+      } else {
+        setGitHubStatusMessage("Error: The specified path is not a folder or is empty.");
+      }
+    } catch (error: any) {
+      console.error("Error loading from GitHub folder:", error);
+      setGitHubStatusMessage(`Error: ${error.message || 'Failed to load from GitHub folder.'}`);
+    } finally {
+      setIsGitHubLoading(false);
+    }
+  }, [gitHubSettings, settings.useCustomBlockSeparator, settings.blockSeparators, parseTextToBlocksInternal, activeMainScriptId, setActiveMainScriptId, setCurrentBlockIndex]);
+
+
+  const handleSaveFileToGitHub = useCallback(async () => {
+    if (!gitHubSettings.pat || !gitHubSettings.repoFullName || !gitHubSettings.filePath) {
+      setGitHubStatusMessage("Error: PAT, Repository, and File Path are required for single file save.");
       return;
     }
     if (!activeMainScript) {
@@ -1513,7 +1665,7 @@ const App: React.FC = () => {
       return;
     }
     setIsGitHubLoading(true);
-    setGitHubStatusMessage("Saving to GitHub...");
+    setGitHubStatusMessage("Saving active file to GitHub...");
 
     const [owner, repo] = gitHubSettings.repoFullName.split('/');
     if (!owner || !repo) {
@@ -1553,11 +1705,12 @@ const App: React.FC = () => {
         repo,
         path: gitHubSettings.filePath,
         message: `Update ${gitHubSettings.filePath} via Banana Vision`,
-        content: btoa(unescape(encodeURIComponent(scriptContent))),
+        content: utf8ToBase64(scriptContent), 
         sha: existingSha,
         branch: gitHubSettings.branch || undefined,
       });
-      setGitHubStatusMessage(`Successfully saved ${activeMainScript.name} to GitHub.`);
+       setMainScripts(prevScripts => prevScripts.map(s => s.id === activeMainScript.id ? {...s, rawText: scriptContent } : s));
+      setGitHubStatusMessage(`Successfully saved ${activeMainScript.name} to GitHub path: ${gitHubSettings.filePath}.`);
     } catch (error: any) {
       console.error("Error saving to GitHub:", error);
       setGitHubStatusMessage(`Error: ${error.message || 'Failed to save to GitHub.'}`);
@@ -1565,6 +1718,100 @@ const App: React.FC = () => {
       setIsGitHubLoading(false);
     }
   }, [gitHubSettings, activeMainScript]);
+
+
+const handleSaveAllToGitHubFolder = useCallback(async () => {
+    if (!gitHubSettings.pat || !gitHubSettings.repoFullName || !gitHubSettings.filePath) {
+      setGitHubStatusMessage("Error: PAT, Repository, and Folder Path are required.");
+      return;
+    }
+    if (mainScripts.length === 0) {
+      setGitHubStatusMessage("No scripts loaded to save.");
+      return;
+    }
+
+    setIsGitHubLoading(true);
+    setGitHubStatusMessage("Saving all modified scripts to GitHub folder...");
+    let savedCount = 0;
+    let unchangedCount = 0;
+    let errorCount = 0;
+    const statusMessages: string[] = [];
+
+    const [owner, repo] = gitHubSettings.repoFullName.split('/');
+    if (!owner || !repo) {
+      setGitHubStatusMessage("Error: Repository format must be 'owner/repo-name'.");
+      setIsGitHubLoading(false);
+      return;
+    }
+    const targetFolder = gitHubSettings.filePath.endsWith('/') ? gitHubSettings.filePath : `${gitHubSettings.filePath}/`;
+
+    try {
+      const octokit = new Octokit({ auth: gitHubSettings.pat });
+
+      for (const script of mainScripts) {
+        let currentScriptContent = "";
+        if (script.blocks.length === 0) {
+            currentScriptContent = "";
+        } else if (script.parsedWithCustomSeparators) {
+          currentScriptContent = script.blocks.map(block => block.content).join('');
+        } else {
+          currentScriptContent = script.blocks.map(block => block.content).join('\n\n');
+        }
+
+        if (currentScriptContent === script.rawText) {
+          unchangedCount++;
+          statusMessages.push(`Script ${script.name} unchanged.`);
+          continue;
+        }
+        
+        const fileName = sanitizeFilename(script.name);
+        const fullPath = `${targetFolder}${fileName}`;
+
+        try {
+          let existingSha: string | undefined = undefined;
+          try {
+            const { data: fileData } = await octokit.repos.getContent({
+              owner,
+              repo,
+              path: fullPath,
+              ref: gitHubSettings.branch || undefined,
+            });
+             // @ts-ignore
+            if (fileData && fileData.sha) existingSha = fileData.sha;
+          } catch (e: any) {
+            if (e.status !== 404) throw e; // Re-throw if not a "not found" error
+            // File doesn't exist, existingSha remains undefined
+          }
+
+          await octokit.repos.createOrUpdateFileContents({
+            owner,
+            repo,
+            path: fullPath,
+            message: `Update ${fileName} via Banana Vision`,
+            content: utf8ToBase64(currentScriptContent),
+            sha: existingSha,
+            branch: gitHubSettings.branch || undefined,
+          });
+          
+          setMainScripts(prevScripts => prevScripts.map(s => s.id === script.id ? {...s, rawText: currentScriptContent } : s));
+          savedCount++;
+          statusMessages.push(`Saved ${fileName}.`);
+        } catch (fileError: any) {
+          console.error(`Error saving script ${script.name} to ${fullPath}:`, fileError);
+          statusMessages.push(`Error saving ${fileName}: ${fileError.message || 'Unknown error'}`);
+          errorCount++;
+        }
+      }
+      setGitHubStatusMessage(`Folder save complete. Saved: ${savedCount}, Unchanged: ${unchangedCount}, Errors: ${errorCount}. Details: ${statusMessages.slice(0,2).join(' ')}${statusMessages.length > 2 ? '...' : ''}`);
+
+    } catch (error: any) { // Catch errors from initial Octokit setup or unexpected issues
+      console.error("Error during 'Save All to Folder' operation:", error);
+      setGitHubStatusMessage(`Error: ${error.message || 'Failed to save all scripts to GitHub folder.'}`);
+    } finally {
+      setIsGitHubLoading(false);
+    }
+  }, [gitHubSettings, mainScripts]);
+
 
   const getFontFormatAndMime = (fileName: string): { format: string; mime: string } => {
     const extension = fileName.split('.').pop()?.toLowerCase();
@@ -1672,7 +1919,7 @@ const App: React.FC = () => {
               aria-label="Open Special Settings Menu"
             >
               <svg xmlns="http://www.w3.org/2000/svg" className="h-6 w-6" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
-                <path strokeLinecap="round" strokeLinejoin="round" d="M10.325 4.317c.426-1.756 2.924-1.756 3.35 0a1.724 1.724 0 002.573 1.066c1.543-.94 3.31.826 2.37 2.37a1.724 1.724 0 001.065 2.572c1.756.426 1.756 2.924 0 3.35a1.724 1.724 0 00-1.066 2.573c.94 1.543-.826 3.31-2.37 2.37a1.724 1.724 0 00-2.572 1.065c-.426 1.756-2.924 1.756-3.35 0a1.724 1.724 0 00-2.573-1.066c-1.543.94-3.31-.826-2.37-2.37a1.724 1.724 0 00-1.065-2.572c-1.756-.426-1.756-2.924 0-3.35a1.724 1.724 0 001.066-2.573c-.94-1.543.826-3.31 2.37-2.37.996.608 2.296.07 2.572-1.065z" />
+                <path strokeLinecap="round" strokeLinejoin="round" d="M10.325 4.317c.426-1.756 2.924-1.756 3.35 0a1.724 1.724 0 002.573 1.066c1.543-.94 3.31.826 2.37 2.37a1.724 1.724 0 001.065 2.572c1.756.426 1.756 2.924 0 3.35a1.724 1.724 0 00-1.066 2.573c.94 1.543-.826 3.31-2.37 2.37a1.724 1.724 0 00-2.572 1.065c-.426 1.756-2.924 1.756-3.35 0a1.724 1.724 0 00-2.573-1.066c-1.543.94-3.31-.826-2.37-2.37a1.724 1.724 0 00-1.065-2.572c-1.756-.426-1.756-2.924 0-3.35a1.724 1.724 0 001.066 2.573c-.94-1.543.826 3.31 2.37-2.37.996.608 2.296.07 2.572-1.065z" />
                 <path strokeLinecap="round" strokeLinejoin="round" d="M15 12a3 3 0 11-6 0 3 3 0 016 0z" />
               </svg>
             </button>
@@ -1786,8 +2033,10 @@ const App: React.FC = () => {
 
                 gitHubSettings={gitHubSettings}
                 onGitHubSettingsChange={handleGitHubSettingsChange}
-                onLoadFromGitHub={handleLoadFromGitHub}
-                onSaveToGitHub={handleSaveToGitHub}
+                onLoadFileFromGitHub={handleLoadFileFromGitHub}
+                onSaveFileToGitHub={handleSaveFileToGitHub}
+                onLoadAllFromGitHubFolder={handleLoadAllFromGitHubFolder}
+                onSaveAllToGitHubFolder={handleSaveAllToGitHubFolder}
                 isGitHubLoading={isGitHubLoading}
                 gitHubStatusMessage={gitHubStatusMessage}
                 activeThemeKey={appThemeSettings.activeThemeKey}
@@ -1881,7 +2130,7 @@ const App: React.FC = () => {
                           readOnly
                           value={originalBlockForSingleViewComparison ? originalBlockForSingleViewComparison.content : "Original content not available."}
                           className="w-full p-2 border rounded-md shadow-sm sm:text-sm flex-grow resize-y
-                                      bg-[var(--bv-element-background-secondary)] border-[var(--bv-border-color-light)] text-[var(--bv-text-secondary)]
+                                      bg-[var(--bv-accent-secondary)] border-[var(--bv-border-color)] text-[var(--bv-accent-secondary-content)]
                                       cursor-not-allowed min-h-[100px]"
                         />
                       </div>

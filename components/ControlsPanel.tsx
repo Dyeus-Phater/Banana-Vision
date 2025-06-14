@@ -1,6 +1,6 @@
 
 import React, {useState, useEffect, useCallback} from 'react';
-import { AppSettings, Block, NestedAppSettingsObjectKeys, ScriptFile, GitHubSettings, ThemeKey, CustomColorTag } from '../types';
+import { AppSettings, Block, NestedAppSettingsObjectKeys, ScriptFile, GitHubSettings, ThemeKey, CustomColorTag, ImageTag } from '../types';
 import { FindScope, FindResultSummaryItem } from '../App';
 import { AVAILABLE_FONTS } // Removed DEFAULT_THEME_COLORS
 from '../constants';
@@ -62,8 +62,10 @@ interface ControlsPanelProps {
   onNavigateToFindResult: (item: FindResultSummaryItem) => void;
   gitHubSettings: GitHubSettings;
   onGitHubSettingsChange: <K extends keyof GitHubSettings>(key: K, value: GitHubSettings[K]) => void;
-  onLoadFromGitHub: () => void;
-  onSaveToGitHub: () => void;
+  onLoadFileFromGitHub: () => void;
+  onSaveFileToGitHub: () => void;
+  onLoadAllFromGitHubFolder: () => void;
+  onSaveAllToGitHubFolder: () => void;
   isGitHubLoading: boolean;
   gitHubStatusMessage: string;
   activeThemeKey: ThemeKey;
@@ -206,6 +208,23 @@ const DEFAULT_CUSTOM_COLOR_TAG: Omit<CustomColorTag, 'id'> = {
   enabled: true,
 };
 
+const DEFAULT_IMAGE_TAG: Omit<ImageTag, 'id' | 'imageUrl'> = {
+  tag: '',
+  width: 24, // Default sensible size for an icon/emoji
+  height: 24,
+  enabled: true,
+};
+
+const readFileAsDataURL = (file: File): Promise<string> => {
+  return new Promise((resolve, reject) => {
+    const reader = new FileReader();
+    reader.onload = () => resolve(reader.result as string);
+    reader.onerror = (error) => reject(error);
+    reader.readAsDataURL(file);
+  });
+};
+
+
 const ControlsPanel: React.FC<ControlsPanelProps> = (props) => {
   const {
     settings, onSettingsChange, onNestedSettingsChange,
@@ -222,7 +241,9 @@ const ControlsPanel: React.FC<ControlsPanelProps> = (props) => {
     findIsCaseSensitive, onFindIsCaseSensitiveChange, findMatchWholeWord, onFindMatchWholeWordChange,
     findScope, onFindScopeChange, onFindNext, onReplace, onReplaceAll, findResultsMessage,
     isFindCurrentBlockDisabled, findResultSummary, onNavigateToFindResult,
-    gitHubSettings, onGitHubSettingsChange, onLoadFromGitHub, onSaveToGitHub, isGitHubLoading, gitHubStatusMessage,
+    gitHubSettings, onGitHubSettingsChange, onLoadFileFromGitHub, onSaveFileToGitHub,
+    onLoadAllFromGitHubFolder, onSaveAllToGitHubFolder,
+    isGitHubLoading, gitHubStatusMessage,
     activeThemeKey
   } = props;
 
@@ -233,6 +254,12 @@ const ControlsPanel: React.FC<ControlsPanelProps> = (props) => {
   const [editingColorTag, setEditingColorTag] = useState<CustomColorTag | Omit<CustomColorTag, 'id'>>(DEFAULT_CUSTOM_COLOR_TAG);
   const [editingColorTagId, setEditingColorTagId] = useState<string | null>(null);
 
+  // State for Image Tag editing
+  const [isEditingImageTag, setIsEditingImageTag] = useState<boolean>(false);
+  const [editingImageTagFields, setEditingImageTagFields] = useState<Omit<ImageTag, 'id' | 'imageUrl'> & { imageUrl?: string }>(DEFAULT_IMAGE_TAG);
+  const [editingImageTagId, setEditingImageTagId] = useState<string | null>(null);
+  const [editingImageTagFile, setEditingImageTagFile] = useState<File | null>(null);
+
 
   useEffect(() => {
     if (loadedCustomFontName && settings.systemFont.fontFamily === loadedCustomFontName) {
@@ -242,11 +269,25 @@ const ControlsPanel: React.FC<ControlsPanelProps> = (props) => {
     }
   }, [settings.systemFont.fontFamily, loadedCustomFontName, customFontFile]);
 
+
   const handlePrimaryBgImageUpload = (files: FileList) => {
     if (!files || files.length === 0) return;
     const file = files[0];
     const reader = new FileReader();
-    reader.onloadend = () => onSettingsChange('backgroundImageUrl', reader.result as string);
+    reader.onloadend = () => {
+      const dataUrl = reader.result as string;
+      const img = new Image();
+      img.onload = () => {
+        onSettingsChange('previewWidth', img.naturalWidth);
+        onSettingsChange('previewHeight', img.naturalHeight);
+        onSettingsChange('backgroundImageUrl', dataUrl);
+      };
+      img.onerror = () => {
+        console.error("Failed to load image for dimension extraction.");
+        onSettingsChange('backgroundImageUrl', dataUrl); // Still set URL if dimensions fail
+      }
+      img.src = dataUrl;
+    };
     reader.readAsDataURL(file);
   };
 
@@ -326,7 +367,7 @@ const ControlsPanel: React.FC<ControlsPanelProps> = (props) => {
       const newTag: CustomColorTag = {
         ...editingColorTag,
         id: `cct-${Date.now()}-${Math.random().toString(36).substring(2, 7)}`,
-      };
+      } as CustomColorTag; // Ensure `id` is part of it.
       updatedTags = [...settings.customColorTags, newTag];
     }
     onSettingsChange('customColorTags', updatedTags);
@@ -350,6 +391,112 @@ const ControlsPanel: React.FC<ControlsPanelProps> = (props) => {
 
   const handleEditingColorTagChange = <K extends keyof (typeof editingColorTag)>(key: K, value: (typeof editingColorTag)[K]) => {
     setEditingColorTag(prev => ({ ...prev, [key]: value }));
+  };
+
+  // Image Tag Management
+  const handleStartAddNewImageTag = () => {
+    setEditingImageTagFields(DEFAULT_IMAGE_TAG);
+    setEditingImageTagId(null);
+    setEditingImageTagFile(null);
+    setIsEditingImageTag(true);
+  };
+
+  const handleStartEditImageTag = (imageTag: ImageTag) => {
+    setEditingImageTagFields({ 
+      tag: imageTag.tag, 
+      width: imageTag.width, 
+      height: imageTag.height, 
+      enabled: imageTag.enabled,
+      imageUrl: imageTag.imageUrl // Keep existing image URL for editing form
+    });
+    setEditingImageTagId(imageTag.id);
+    setEditingImageTagFile(null);
+    setIsEditingImageTag(true);
+  };
+
+  const handleImageTagFileSelected = (files: FileList) => {
+    if (files && files.length > 0) {
+      setEditingImageTagFile(files[0]);
+      // Optionally, provide a preview of the selected image here if desired
+    }
+  };
+  
+  const handleEditingImageTagFieldChange = <K extends keyof typeof editingImageTagFields>(key: K, value: (typeof editingImageTagFields)[K]) => {
+    setEditingImageTagFields(prev => ({ ...prev, [key]: value }));
+  };
+
+  const handleSaveImageTag = async () => {
+    if (!editingImageTagFields.tag?.trim()) {
+      alert("Image tag string cannot be empty.");
+      return;
+    }
+    if (editingImageTagFields.width <=0 || editingImageTagFields.height <=0) {
+      alert("Image width and height must be positive numbers.");
+      return;
+    }
+
+    let finalImageUrl = editingImageTagFields.imageUrl;
+
+    if (editingImageTagFile) {
+      try {
+        finalImageUrl = await readFileAsDataURL(editingImageTagFile);
+      } catch (error) {
+        console.error("Error reading image file for tag:", error);
+        alert(`Failed to read image file: ${error instanceof Error ? error.message : "Unknown error"}`);
+        return;
+      }
+    } else if (!editingImageTagId && !finalImageUrl) { // New tag and no file selected/no existing URL
+      alert("Please select an image for the new tag.");
+      return;
+    }
+    
+    if (!finalImageUrl) { // Should only happen if editing an existing tag and somehow the URL was cleared, or new and no file
+        alert("Image URL is missing.");
+        return;
+    }
+
+
+    let updatedImageTags;
+    if (editingImageTagId) { // Editing existing
+      updatedImageTags = settings.imageTags.map(it =>
+        it.id === editingImageTagId ? { 
+          ...it, // Keep original ID
+          tag: editingImageTagFields.tag!, 
+          imageUrl: finalImageUrl!, 
+          width: editingImageTagFields.width!, 
+          height: editingImageTagFields.height!, 
+          enabled: editingImageTagFields.enabled! 
+        } : it
+      );
+    } else { // Adding new
+      const newImageTag: ImageTag = {
+        id: `imgtag-${Date.now()}-${Math.random().toString(36).substring(2, 7)}`,
+        tag: editingImageTagFields.tag!,
+        imageUrl: finalImageUrl!,
+        width: editingImageTagFields.width!,
+        height: editingImageTagFields.height!,
+        enabled: editingImageTagFields.enabled!,
+      };
+      updatedImageTags = [...settings.imageTags, newImageTag];
+    }
+    onSettingsChange('imageTags', updatedImageTags);
+    setIsEditingImageTag(false);
+    setEditingImageTagId(null);
+    setEditingImageTagFile(null);
+  };
+
+  const handleDeleteImageTag = (tagId: string) => {
+    if (window.confirm("Are you sure you want to delete this image tag?")) {
+      const updatedTags = settings.imageTags.filter(t => t.id !== tagId);
+      onSettingsChange('imageTags', updatedTags);
+    }
+  };
+
+  const handleToggleImageTagEnabled = (tagId: string, enabled: boolean) => {
+    const updatedTags = settings.imageTags.map(t =>
+      t.id === tagId ? { ...t, enabled } : t
+    );
+    onSettingsChange('imageTags', updatedTags);
   };
 
 
@@ -522,13 +669,15 @@ const ControlsPanel: React.FC<ControlsPanelProps> = (props) => {
       {
         id: 'tag-handling-section', title: 'Tag Handling & Colorization', defaultOpen: false, content: (
           <>
+            {/* General Tag Hiding */}
             <LabelInputContainer label="Hide General Tags in Preview" htmlFor="hideTagsInPreview" inline>
               <input type="checkbox" id="hideTagsInPreview" checked={settings.hideTagsInPreview} onChange={(e) => onSettingsChange('hideTagsInPreview', e.target.checked)} className="h-5 w-5 text-[var(--bv-accent-primary)] border-[var(--bv-input-border)] rounded focus:ring-[var(--bv-input-focus-ring)]" />
             </LabelInputContainer>
-            <LabelInputContainer label="General Tag Patterns to Hide:" htmlFor="tagPatternsToHide" subText="Enter RegEx patterns, one per line. Applied if 'Hide Tags' is enabled. These are for non-coloring tags.">
+            <LabelInputContainer label="General Tag Patterns to Hide:" htmlFor="tagPatternsToHide" subText="Enter RegEx patterns, one per line. Applied if 'Hide Tags' is enabled. These are for non-coloring, non-image tags.">
               <TextAreaInput id="tagPatternsToHide" value={settings.tagPatternsToHide.join('\n')} onChange={(e) => handleTagPatternsChange(e.target.value)} rows={3} placeholder="e.g. <[^>]*>\n\\[[^\\]]*\\]" />
             </LabelInputContainer>
             
+            {/* Custom Color Tags */}
             <div className="mt-4 pt-3 border-t border-[var(--bv-border-color-light)]">
               <h4 className="text-md font-semibold mb-2 text-[var(--bv-accent-primary)]">Custom Color Tags</h4>
               {isEditingColorTag ? (
@@ -569,6 +718,60 @@ const ControlsPanel: React.FC<ControlsPanelProps> = (props) => {
                       <div className="flex-shrink-0 space-x-1">
                         <Button onClick={() => handleStartEditColorTag(tag)} className="!p-1 text-xs !bg-blue-500 hover:!bg-blue-600" title="Edit Tag">✏️</Button>
                         <Button onClick={() => handleDeleteColorTag(tag.id)} className="!p-1 text-xs !bg-red-500 hover:!bg-red-600" title="Delete Tag">🗑️</Button>
+                      </div>
+                    </div>
+                  ))}
+                </div>
+              )}
+            </div>
+
+            {/* Image Tags */}
+            <div className="mt-4 pt-3 border-t border-[var(--bv-border-color-light)]">
+              <h4 className="text-md font-semibold mb-2 text-[var(--bv-accent-primary)]">Image Tags (Emojis/Icons)</h4>
+              {isEditingImageTag ? (
+                <div className="p-3 border border-[var(--bv-border-color)] rounded-md space-y-2 bg-[var(--bv-element-background)] mb-3">
+                  <h5 className="text-sm font-medium">{editingImageTagId ? 'Edit' : 'Add New'} Image Tag</h5>
+                  <LabelInputContainer label="Tag String" htmlFor="editingImageTagString">
+                    <TextInput id="editingImageTagString" value={editingImageTagFields.tag || ''} onChange={e => handleEditingImageTagFieldChange('tag', e.target.value)} placeholder="e.g. [GOLD_COIN]" />
+                  </LabelInputContainer>
+                  <LabelInputContainer label="Image File" htmlFor="editingImageTagFile">
+                    <FileInput accept="image/*" onChange={handleImageTagFileSelected} buttonLabel={editingImageTagFile ? `Selected: ${editingImageTagFile.name.substring(0,20)}...` : "Choose Image"} />
+                    {editingImageTagFields.imageUrl && !editingImageTagFile && <img src={editingImageTagFields.imageUrl} alt="Current" className="mt-1 h-8 w-8 object-contain border border-[var(--bv-border-color-light)]"/>}
+                    {editingImageTagFile && <img src={URL.createObjectURL(editingImageTagFile)} alt="New preview" className="mt-1 h-8 w-8 object-contain border border-[var(--bv-border-color-light)]" onLoad={() => URL.revokeObjectURL(editingImageTagFile ? URL.createObjectURL(editingImageTagFile) : '')} />}
+                  </LabelInputContainer>
+                   <div className="flex gap-2">
+                        <LabelInputContainer label="Width (px)" htmlFor="editingImageTagWidth" subText="Display width in preview.">
+                            <TextInput type="number" id="editingImageTagWidth" value={editingImageTagFields.width || 0} onChange={e => handleEditingImageTagFieldChange('width', parseInt(e.target.value, 10))} min="1" className="w-20"/>
+                        </LabelInputContainer>
+                        <LabelInputContainer label="Height (px)" htmlFor="editingImageTagHeight" subText="Display height in preview.">
+                            <TextInput type="number" id="editingImageTagHeight" value={editingImageTagFields.height || 0} onChange={e => handleEditingImageTagFieldChange('height', parseInt(e.target.value, 10))} min="1" className="w-20"/>
+                        </LabelInputContainer>
+                   </div>
+                  <div className="flex gap-2 mt-2">
+                    <Button onClick={handleSaveImageTag} className="flex-1">Save Image Tag</Button>
+                    <Button onClick={() => setIsEditingImageTag(false)} className="flex-1 !bg-gray-500 hover:!bg-gray-600">Cancel</Button>
+                  </div>
+                </div>
+              ) : (
+                <Button onClick={handleStartAddNewImageTag} className="w-full mb-3">Add New Image Tag</Button>
+              )}
+              {settings.imageTags.length === 0 && !isEditingImageTag && (
+                <p className="text-xs text-[var(--bv-text-secondary)]">No image tags defined.</p>
+              )}
+              {settings.imageTags.length > 0 && (
+                <div className="space-y-2 max-h-60 overflow-y-auto pr-1">
+                  {settings.imageTags.map(imgTag => (
+                    <div key={imgTag.id} className="p-2 border border-[var(--bv-border-color-light)] rounded-md bg-[var(--bv-element-background)] flex items-center justify-between gap-2">
+                      <div className="flex items-center gap-2 flex-grow">
+                        <input type="checkbox" checked={imgTag.enabled} onChange={e => handleToggleImageTagEnabled(imgTag.id, e.target.checked)} className="h-4 w-4 text-[var(--bv-accent-primary)] border-[var(--bv-input-border)] rounded focus:ring-[var(--bv-input-focus-ring)] flex-shrink-0" title={imgTag.enabled ? 'Disable Tag' : 'Enable Tag'} />
+                        <img src={imgTag.imageUrl} alt={imgTag.tag} className="h-6 w-6 object-contain flex-shrink-0" />
+                        <span className="text-xs font-mono truncate flex-grow" title={`Tag: ${imgTag.tag}\nSize: ${imgTag.width}x${imgTag.height}px`}>
+                          <code>{imgTag.tag}</code> ({imgTag.width}x{imgTag.height})
+                        </span>
+                      </div>
+                      <div className="flex-shrink-0 space-x-1">
+                        <Button onClick={() => handleStartEditImageTag(imgTag)} className="!p-1 text-xs !bg-blue-500 hover:!bg-blue-600" title="Edit Image Tag">✏️</Button>
+                        <Button onClick={() => handleDeleteImageTag(imgTag.id)} className="!p-1 text-xs !bg-red-500 hover:!bg-red-600" title="Delete Image Tag">🗑️</Button>
                       </div>
                     </div>
                   ))}
@@ -664,14 +867,14 @@ const ControlsPanel: React.FC<ControlsPanelProps> = (props) => {
         )
       },
       {
-        id: 'github-integration-section', title: 'GitHub Integration', defaultOpen: false, content: (
+        id: 'github-sync-section', title: 'GitHub Folder Sync', defaultOpen: false, content: (
           <>
             <div className="p-2 mb-2 border border-red-400 bg-red-50 dark:border-red-600 dark:bg-red-900/30 rounded-md">
               <p className="text-xs text-red-700 dark:text-red-300 font-semibold">Security Warning:</p>
               <ul className="list-disc list-inside text-xs text-red-600 dark:text-red-400">
                 <li>Personal Access Tokens (PATs) are sensitive. Use tokens with the minimum necessary scopes (e.g., `repo` or `public_repo`).</li>
                 <li>Prefer PATs with an expiration date.</li>
-                <li>The PAT is stored in memory for the current session only and is not saved with settings exports.</li>
+                <li>The PAT is stored in memory for the current session only and is not saved with profiles or JSON exports.</li>
               </ul>
             </div>
             <LabelInputContainer label="Personal Access Token (PAT)" htmlFor="github-pat">
@@ -683,13 +886,17 @@ const ControlsPanel: React.FC<ControlsPanelProps> = (props) => {
             <LabelInputContainer label="Branch" htmlFor="github-branch">
               <TextInput id="github-branch" type="text" value={restOfProps.gitHubSettings.branch} onChange={(e) => restOfProps.onGitHubSettingsChange('branch', e.target.value)} placeholder="e.g., main (default if empty)" />
             </LabelInputContainer>
-            <LabelInputContainer label="File Path in Repository" htmlFor="github-filepath">
-              <TextInput id="github-filepath" type="text" value={restOfProps.gitHubSettings.filePath} onChange={(e) => restOfProps.onGitHubSettingsChange('filePath', e.target.value)} placeholder="e.g., scripts/my_script.txt" />
+            <LabelInputContainer label="File/Folder Path in Repository" htmlFor="github-filepath" subText="For single file ops, use full path. For folder ops, use folder path (e.g., scripts/ or assets/dialogue/).">
+              <TextInput id="github-filepath" type="text" value={restOfProps.gitHubSettings.filePath} onChange={(e) => restOfProps.onGitHubSettingsChange('filePath', e.target.value)} placeholder="e.g., path/to/file.txt or path/to/folder/" />
             </LabelInputContainer>
-            <div className="flex space-x-2 mt-3">
-              <Button onClick={restOfProps.onLoadFromGitHub} disabled={restOfProps.isGitHubLoading || !restOfProps.gitHubSettings.pat || !restOfProps.gitHubSettings.repoFullName || !restOfProps.gitHubSettings.filePath} className="flex-1 !bg-green-500 hover:!bg-green-600">Load from GitHub</Button>
-              <Button onClick={restOfProps.onSaveToGitHub} disabled={restOfProps.isGitHubLoading || !restOfProps.gitHubSettings.pat || !restOfProps.gitHubSettings.repoFullName || !restOfProps.gitHubSettings.filePath || !activeMainScriptId} className="flex-1 !bg-blue-500 hover:!bg-blue-600">Save Active to GitHub</Button>
+            
+            <div className="grid grid-cols-2 gap-2 mt-3">
+              <Button onClick={restOfProps.onLoadFileFromGitHub} disabled={restOfProps.isGitHubLoading || !restOfProps.gitHubSettings.pat || !restOfProps.gitHubSettings.repoFullName || !restOfProps.gitHubSettings.filePath} className="!bg-green-600 hover:!bg-green-700">Load File from Path</Button>
+              <Button onClick={restOfProps.onLoadAllFromGitHubFolder} disabled={restOfProps.isGitHubLoading || !restOfProps.gitHubSettings.pat || !restOfProps.gitHubSettings.repoFullName || !restOfProps.gitHubSettings.filePath} className="!bg-green-500 hover:!bg-green-600">Load All from Folder</Button>
+              <Button onClick={restOfProps.onSaveFileToGitHub} disabled={restOfProps.isGitHubLoading || !restOfProps.gitHubSettings.pat || !restOfProps.gitHubSettings.repoFullName || !restOfProps.gitHubSettings.filePath || !activeMainScriptId} className="!bg-blue-600 hover:!bg-blue-700">Save Active to Path</Button>
+              <Button onClick={restOfProps.onSaveAllToGitHubFolder} disabled={restOfProps.isGitHubLoading || !restOfProps.gitHubSettings.pat || !restOfProps.gitHubSettings.repoFullName || !restOfProps.gitHubSettings.filePath || mainScripts.length === 0} className="!bg-blue-500 hover:!bg-blue-600">Save All to Folder</Button>
             </div>
+
             {restOfProps.gitHubStatusMessage && (
               <p className={`mt-2 text-sm ${restOfProps.gitHubStatusMessage.startsWith('Error:') ? 'text-red-600 dark:text-red-400' : 'text-[var(--bv-text-secondary)]'}`} aria-live="polite">
                 {restOfProps.gitHubStatusMessage}
@@ -714,9 +921,12 @@ const ControlsPanel: React.FC<ControlsPanelProps> = (props) => {
     findScope, onFindScopeChange, onFindNext, onReplace, onReplaceAll, findResultsMessage,
     isFindCurrentBlockDisabled, findResultSummary, onNavigateToFindResult,
     activeMainScriptName, isFindReplaceDisabled, showCustomFontLoadUI,
-    gitHubSettings, onGitHubSettingsChange, onLoadFromGitHub, onSaveToGitHub, isGitHubLoading, gitHubStatusMessage,
-    activeThemeKey, // Add activeThemeKey as it's used in some button styles now
-    isEditingColorTag, editingColorTag, editingColorTagId // Dependencies for Custom Color Tag UI
+    gitHubSettings, onGitHubSettingsChange, onLoadFileFromGitHub, onSaveFileToGitHub, onLoadAllFromGitHubFolder, onSaveAllToGitHubFolder,
+    isGitHubLoading, gitHubStatusMessage,
+    activeThemeKey, 
+    isEditingColorTag, editingColorTag, editingColorTagId,
+    isEditingImageTag, editingImageTagFields, editingImageTagId, editingImageTagFile, 
+    handlePrimaryBgImageUpload, handleSecondaryBgImageUpload, handleBitmapFontImageUpload
   ]);
 
 

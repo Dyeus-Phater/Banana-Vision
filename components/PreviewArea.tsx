@@ -1,7 +1,7 @@
 
 
 import React, { CSSProperties, forwardRef, useLayoutEffect, useRef, useEffect, useState } from 'react';
-import { AppSettings, NestedAppSettingsObjectKeys, ThemeKey, CustomColorTag } from '../types';
+import { AppSettings, NestedAppSettingsObjectKeys, ThemeKey, CustomColorTag, ImageTag } from '../types';
 
 export interface PreviewAreaProps {
   baseSettings: AppSettings;
@@ -19,16 +19,33 @@ export interface PreviewAreaProps {
   ) => void;
   showPixelMarginGuides: boolean; 
   isReadOnlyPreview?: boolean;
-  activeThemeKey: ThemeKey; // Added to potentially influence non-content styling
+  activeThemeKey: ThemeKey; 
 }
 
-// Represents a segment of text with an associated color from custom tags
+// Intermediate segment type for color parsing
 interface ColorSegment {
   text: string;
-  color: string | null; // Hex color string or null for default
+  color: string | null; 
 }
 
-// New function to parse text with custom color tags
+// Final display segments after all parsing
+interface FinalTextSegment {
+  type: 'text';
+  text: string;
+  color: string | null; 
+}
+
+interface FinalImageSegment {
+  type: 'image';
+  imageUrl: string;
+  width: number;
+  height: number;
+  altText: string; // Original tag for alt attribute
+}
+
+type FinalDisplaySegment = FinalTextSegment | FinalImageSegment;
+
+
 const parseTextWithCustomColorTags = (
   rawText: string,
   customColorTags: CustomColorTag[],
@@ -42,10 +59,6 @@ const parseTextWithCustomColorTags = (
   if (enabledTags.length === 0) {
     return [{ text: rawText, color: defaultColor }];
   }
-
-  // Create a combined regex for all opening and closing tags
-  // Sort tags by length (desc) to match longer tags first, helping with prefixes
-  // e.g. <COLOR_RED> vs <COLOR>
   const sortedTags = [...enabledTags].sort((a,b) => 
     Math.max(b.openingTag.length, b.closingTag.length) - Math.max(a.openingTag.length, a.closingTag.length)
   );
@@ -67,7 +80,6 @@ const parseTextWithCustomColorTags = (
 
   for (const part of splitText) {
     if (!part) continue;
-
     let isTag = false;
     for (const tag of enabledTags) {
       if (part === tag.openingTag) {
@@ -83,70 +95,49 @@ const parseTextWithCustomColorTags = (
           segments.push({ text: currentTextSegment, color: colorStack.length > 0 ? colorStack[colorStack.length - 1].color : defaultColor });
           currentTextSegment = "";
         }
-        // Pop only if the closing tag matches the top of the stack's opening tag type
         if (colorStack.length > 0 && colorStack[colorStack.length - 1].closingTag === part) {
           colorStack.pop();
         } else {
-          // Mismatched closing tag, treat as text or log warning
-          // For now, treat as text if not matching the current open tag
            currentTextSegment += part;
         }
         isTag = true;
         break;
       }
     }
-
     if (!isTag) {
       currentTextSegment += part;
     }
   }
-
   if (currentTextSegment) {
     segments.push({ text: currentTextSegment, color: colorStack.length > 0 ? colorStack[colorStack.length - 1].color : defaultColor });
   }
-  
-  // Handle unclosed tags: any remaining colors on stack apply to the rest of the text
-  // This might not be desired, usually unclosed tags mean the color doesn't extend.
-  // For simplicity now, if stack is not empty, last segment gets that color.
-  // A more robust parser would handle unclosed tags by potentially reverting to default or erroring.
-  // The current logic correctly applies color only to text between matched pairs due to segment creation timing.
-
-  return segments.filter(s => s.text.length > 0); // Remove empty text segments
+  return segments.filter(s => s.text.length > 0);
 };
 
-
-const processTextForPreview = (
+const hideGeneralTagsFromText = (
   text: string,
   hideTags: boolean,
-  tagPatterns: string[], // General tags to hide, NOT custom color tags
+  tagPatterns: string[], 
   blockSeparatorsToHide: string[],
   useCustomBlockSeparator: boolean
 ): string => {
-  if (!hideTags) return text; // If not hiding general tags, return early
-
+  if (!hideTags) return text;
   let processedText = text;
-
-  // Hide general tags first (e.g. <PAGE>, [CMD])
   if (tagPatterns.length > 0) {
     tagPatterns.forEach(patternStr => {
       const trimmedPattern = patternStr.trim();
       if (trimmedPattern.length === 0) return;
-
       try {
         const regex = new RegExp(trimmedPattern, 'g');
         processedText = processedText.replace(regex, '');
-      } catch (error) {
-        // console.warn for regex errors during typing is fine
-      }
+      } catch (error) {/* console.warn for regex errors */}
     });
   }
-  
-  // Hide block separators if applicable
   if (useCustomBlockSeparator && blockSeparatorsToHide && blockSeparatorsToHide.length > 0) {
     blockSeparatorsToHide.forEach(separator => {
       if (separator.trim().length > 0) {
         try {
-          const escapedSeparator = separator.replace(/[-\/\\^$*+?.()|[\]{}]/g, '\\$&');
+          const escapedSeparator = separator.replace(/[-\/\\^$*+?.()|[\]\\]/g, '\\$&');
           const regex = new RegExp(escapedSeparator, 'g');
           processedText = processedText.replace(regex, '');
         } catch (error) { /* console.warn for regex errors */ }
@@ -155,6 +146,80 @@ const processTextForPreview = (
   }
   return processedText;
 };
+
+// New comprehensive parsing function
+const generateDisplaySegments = (
+  rawText: string,
+  settings: AppSettings,
+  simplifiedRender: boolean
+): FinalDisplaySegment[] => {
+  const finalSegments: FinalDisplaySegment[] = [];
+  
+  const enabledImageTags = settings.imageTags.filter(it => it.enabled && it.tag);
+
+  if (simplifiedRender || enabledImageTags.length === 0) {
+    // No image tags to process or simplified render: process for color and general tags only
+    const colorSegments = parseTextWithCustomColorTags(
+      rawText,
+      settings.customColorTags,
+      settings.currentFontType === 'system' ? settings.systemFont.color : null
+    );
+    colorSegments.forEach(cs => {
+      const generalTagsHiddenText = hideGeneralTagsFromText(
+        cs.text,
+        settings.hideTagsInPreview,
+        settings.tagPatternsToHide,
+        settings.blockSeparators,
+        settings.useCustomBlockSeparator
+      );
+      if (generalTagsHiddenText) {
+        finalSegments.push({ type: 'text', text: generalTagsHiddenText, color: cs.color });
+      }
+    });
+    return finalSegments;
+  }
+
+  // Sort image tags by length of tag descending to match longer tags first
+  enabledImageTags.sort((a, b) => b.tag.length - a.tag.length);
+  const imageTagPattern = enabledImageTags.map(it => it.tag.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')).join('|');
+  const splitRegex = new RegExp(`(${imageTagPattern})`);
+  
+  const parts = rawText.split(splitRegex).filter(part => part !== undefined && part !== '');
+
+  for (const part of parts) {
+    const matchedImageTag = enabledImageTags.find(it => it.tag === part);
+    if (matchedImageTag) {
+      finalSegments.push({
+        type: 'image',
+        imageUrl: matchedImageTag.imageUrl,
+        width: matchedImageTag.width,
+        height: matchedImageTag.height,
+        altText: matchedImageTag.tag,
+      });
+    } else {
+      // This part is text, process it for color and general tags
+      const colorSegments = parseTextWithCustomColorTags(
+        part,
+        settings.customColorTags,
+        settings.currentFontType === 'system' ? settings.systemFont.color : null
+      );
+      colorSegments.forEach(cs => {
+        const generalTagsHiddenText = hideGeneralTagsFromText(
+          cs.text,
+          settings.hideTagsInPreview,
+          settings.tagPatternsToHide,
+          settings.blockSeparators,
+          settings.useCustomBlockSeparator
+        );
+        if (generalTagsHiddenText) {
+          finalSegments.push({ type: 'text', text: generalTagsHiddenText, color: cs.color });
+        }
+      });
+    }
+  }
+  return finalSegments;
+};
+
 
 function hexToRgb(hex: string): { r: number; g: number; b: number } | null {
   const result = /^#?([a-f\d]{2})([a-f\d]{2})([a-f\d]{2})$/i.exec(hex);
@@ -169,14 +234,25 @@ function hexToRgb(hex: string): { r: number; g: number; b: number } | null {
 
 const getCleanTextForCounting = (
   rawText: string,
-  generalTagPatterns: string[], // General tags from settings.tagPatternsToHide
-  customColorTags: CustomColorTag[], // User-defined color tags
+  imageTags: ImageTag[],
+  generalTagPatterns: string[], 
+  customColorTags: CustomColorTag[], 
   blockSeparators: string[],
   useCustomBlockSeparator: boolean
 ): string => {
   let cleanText = rawText;
 
-  // 1. Strip custom color tags
+  if (imageTags && imageTags.length > 0) {
+    imageTags.forEach(imgTag => {
+      if (imgTag.enabled && imgTag.tag) {
+        try {
+          const escapedTag = imgTag.tag.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+          cleanText = cleanText.replace(new RegExp(escapedTag, 'g'), '');
+        } catch (e) { /* ignore regex error during typing */ }
+      }
+    });
+  }
+  
   if (customColorTags && customColorTags.length > 0) {
     customColorTags.forEach(tagDef => {
       if (tagDef.enabled && tagDef.openingTag) {
@@ -194,7 +270,6 @@ const getCleanTextForCounting = (
     });
   }
   
-  // 2. Strip general tag patterns
   if (generalTagPatterns && generalTagPatterns.length > 0) {
     generalTagPatterns.forEach(patternStr => {
       const trimmedPattern = patternStr.trim();
@@ -206,13 +281,12 @@ const getCleanTextForCounting = (
     });
   }
 
-  // 3. Strip block separators
   if (useCustomBlockSeparator && blockSeparators && blockSeparators.length > 0) {
     blockSeparators.forEach(separator => {
       const trimmedSeparator = separator.trim(); 
       if (trimmedSeparator.length > 0) {
         try {
-          const escapedSeparator = trimmedSeparator.replace(/[-\/\\^$*+?.()|[\]{}]/g, '\\$&');
+          const escapedSeparator = trimmedSeparator.replace(/[-\/\\^$*+?.()|[\]\\]/g, '\\$&');
           const regex = new RegExp(escapedSeparator, 'g');
           cleanText = cleanText.replace(regex, '');
         } catch (error) { /* console.warn for regex errors */ }
@@ -261,11 +335,11 @@ const PreviewAreaInner = forwardRef<HTMLDivElement, PreviewAreaProps>(({
   onNestedSettingsChange, 
   showPixelMarginGuides, 
   isReadOnlyPreview = false,
-  activeThemeKey // Consumed for potential non-content styling
+  activeThemeKey 
 }, ref) => {
   const textContainerRef = useRef<HTMLDivElement>(null);
   const contentBoxRef = useRef<HTMLDivElement>(null); 
-  const bitmapCharCache = useRef<Map<string, HTMLCanvasElement | null>>(new Map()); // Stores UNTINTED chars
+  const bitmapCharCache = useRef<Map<string, HTMLCanvasElement | null>>(new Map());
   const [bitmapCacheId, setBitmapCacheId] = useState(0);
 
   const [isDragging, setIsDragging] = useState(false);
@@ -273,7 +347,7 @@ const PreviewAreaInner = forwardRef<HTMLDivElement, PreviewAreaProps>(({
   const initialTextPosition = useRef({ x: 0, y: 0 });
 
   const effectiveText = textOverride !== undefined ? textOverride : baseSettings.text;
-  const settings: AppSettings = {
+  const settings: AppSettings = { // Create a local copy of settings to use effectiveText
       ...baseSettings,
       text: effectiveText,
   };
@@ -281,25 +355,7 @@ const PreviewAreaInner = forwardRef<HTMLDivElement, PreviewAreaProps>(({
   const { positionX, positionY, scaleX, scaleY, origin: transformOrigin } = settings.transform;
   const currentPreviewZoom = settings.previewZoom || 1;
 
-  // Parse text for color segments FIRST
-  const colorSegments = parseTextWithCustomColorTags(
-    settings.text,
-    settings.customColorTags,
-    settings.currentFontType === 'system' ? settings.systemFont.color : null // Pass default sys font color for sys font segments
-  );
-
-  // Then, process each segment's text for general tag hiding
-  const finalSegmentsForRender = colorSegments.map(segment => ({
-    ...segment,
-    text: processTextForPreview(
-      segment.text,
-      settings.hideTagsInPreview,
-      settings.tagPatternsToHide, // These are general tags, not color tags
-      settings.blockSeparators,
-      settings.useCustomBlockSeparator
-    ),
-  }));
-
+  const finalDisplaySegments = generateDisplaySegments(settings.text, settings, simplifiedRender);
 
   const textTransformStyle: CSSProperties = simplifiedRender ? {
     cursor: isReadOnlyPreview ? 'default' : (isDragging ? 'grabbing' : 'grab'),
@@ -379,9 +435,10 @@ const PreviewAreaInner = forwardRef<HTMLDivElement, PreviewAreaProps>(({
     } else if (settings.overflowDetectionMode === 'character') {
       if (settings.maxCharacters > 0) {
         const textForCharCounting = getCleanTextForCounting(
-          settings.text, // original text before any processing
-          settings.tagPatternsToHide, // general tags
-          settings.customColorTags,   // custom color tags
+          settings.text, 
+          settings.imageTags, // Pass imageTags
+          settings.tagPatternsToHide,
+          settings.customColorTags,   
           settings.blockSeparators,
           settings.useCustomBlockSeparator
         );
@@ -398,7 +455,7 @@ const PreviewAreaInner = forwardRef<HTMLDivElement, PreviewAreaProps>(({
     }
     setIsOverflowing(hasOverflow);
   }, [
-      settings.text, settings.customColorTags,
+      settings.text, settings.customColorTags, settings.imageTags, // Added imageTags
       settings.systemFont, settings.bitmapFont, settings.currentFontType,
       settings.transform, settings.previewWidth, settings.previewHeight,
       settings.overflowDetectionMode, settings.maxCharacters, settings.hideTagsInPreview,
@@ -410,7 +467,6 @@ const PreviewAreaInner = forwardRef<HTMLDivElement, PreviewAreaProps>(({
 
 
   useEffect(() => {
-    // Bitmap cache now stores UNTINTED characters. Tinting happens at render time per segment.
     if (settings.currentFontType === 'bitmap' && settings.bitmapFont.enabled && settings.bitmapFont.imageUrl && !simplifiedRender) {
         const img = new Image();
         img.crossOrigin = "anonymous";
@@ -445,7 +501,6 @@ const PreviewAreaInner = forwardRef<HTMLDivElement, PreviewAreaProps>(({
                             ? Math.max(1, Math.floor(charWidth / 4)) 
                             : charWidth;
                     }
-                    // For spaces, cache an empty canvas of the correct width (it won't be tinted)
                     const spaceCanvas = document.createElement('canvas');
                     spaceCanvas.width = effectiveCharWidth;
                     spaceCanvas.height = charHeight;
@@ -456,14 +511,13 @@ const PreviewAreaInner = forwardRef<HTMLDivElement, PreviewAreaProps>(({
                 const tileX = (i % charsPerRow) * charWidth;
                 const tileY = Math.floor(i / charsPerRow) * charHeight;
 
-                const baseCharCanvas = document.createElement('canvas'); // This will store the UNTINTED char
+                const baseCharCanvas = document.createElement('canvas'); 
                 baseCharCanvas.width = charWidth;
                 baseCharCanvas.height = charHeight;
                 const baseCtx = baseCharCanvas.getContext('2d', { willReadFrequently: true });
                 if (!baseCtx) continue;
                 baseCtx.drawImage(img, tileX, tileY, charWidth, charHeight, 0, 0, charWidth, charHeight);
 
-                // Apply color removal if enabled
                 if (enableColorRemoval && targetRgb) {
                     const imageData = baseCtx.getImageData(0, 0, charWidth, charHeight);
                     const data = imageData.data;
@@ -477,8 +531,7 @@ const PreviewAreaInner = forwardRef<HTMLDivElement, PreviewAreaProps>(({
                     }
                     baseCtx.putImageData(imageData, 0, 0);
                 }
-                // DO NOT apply global tint here. Stored char is base.
-
+                
                 if (enablePixelScanning) {
                     const imageData = baseCtx.getImageData(0, 0, charWidth, charHeight);
                     const data = imageData.data;
@@ -497,9 +550,8 @@ const PreviewAreaInner = forwardRef<HTMLDivElement, PreviewAreaProps>(({
                 }
                 
                 if (enablePixelScanning && effectiveCharWidth === 0) { 
-                    newCache.set(char, null); // Represents a fully transparent character after processing
+                    newCache.set(char, null);
                 } else {
-                    // If pixel scanning changed width, create a new canvas of correct size
                     if (enablePixelScanning && effectiveCharWidth !== charWidth && effectiveCharWidth > 0) {
                         const finalScannedCanvas = document.createElement('canvas');
                         finalScannedCanvas.width = effectiveCharWidth;
@@ -509,10 +561,10 @@ const PreviewAreaInner = forwardRef<HTMLDivElement, PreviewAreaProps>(({
                            finalScannedCtx.drawImage(baseCharCanvas, 0, 0, effectiveCharWidth, charHeight, 0, 0, effectiveCharWidth, charHeight);
                            newCache.set(char, finalScannedCanvas);
                         } else {
-                           newCache.set(char, baseCharCanvas); // Fallback if context fails
+                           newCache.set(char, baseCharCanvas); 
                         }
                     } else {
-                         newCache.set(char, baseCharCanvas); // Store the processed (color-removed if applicable) base character
+                         newCache.set(char, baseCharCanvas); 
                     }
                 }
             }
@@ -532,7 +584,7 @@ const PreviewAreaInner = forwardRef<HTMLDivElement, PreviewAreaProps>(({
     }
   }, [
       settings.bitmapFont.imageUrl, settings.bitmapFont.charWidth, settings.bitmapFont.charHeight,
-      settings.bitmapFont.charMap, // Global tint color removed as dependency for cache generation
+      settings.bitmapFont.charMap, 
       settings.bitmapFont.enableColorRemoval, settings.bitmapFont.colorToRemove,
       settings.bitmapFont.colorRemovalTolerance, settings.bitmapFont.enablePixelScanning,
       settings.bitmapFont.spaceWidthOverride,
@@ -590,121 +642,107 @@ const PreviewAreaInner = forwardRef<HTMLDivElement, PreviewAreaProps>(({
   const renderContent = () => {
     if (simplifiedRender && settings.currentFontType === 'bitmap') {
         const simplifiedBitmapStyle: CSSProperties = {
-            ...textTransformStyle,
-            display: 'flex', alignItems: 'center', justifyContent: 'center',
-            width: '100%', height: '100%',
-            fontFamily: 'Arial, sans-serif', fontSize: '12px', 
-            color: 'var(--bv-text-secondary)', // Use CSS variable
-            fontStyle: 'italic', padding: '10px', boxSizing: 'border-box',
+            ...textTransformStyle, display: 'flex', alignItems: 'center', justifyContent: 'center',
+            width: '100%', height: '100%', fontFamily: 'Arial, sans-serif', fontSize: '12px', 
+            color: 'var(--bv-text-secondary)', fontStyle: 'italic', padding: '10px', boxSizing: 'border-box',
             textAlign: 'center',
         };
         return (
-             <div 
-                style={{
-                    width: '100%', height: '100%', display: 'flex', alignItems: alignItems,
-                    justifyContent: settings.systemFont.textAlignHorizontal === 'center' ? 'center' : settings.systemFont.textAlignHorizontal === 'right' ? 'flex-end' : 'flex-start',
-                    padding: '8px', boxSizing: 'border-box',
-                }}
-            >
+             <div style={{ width: '100%', height: '100%', display: 'flex', alignItems: alignItems, justifyContent: settings.systemFont.textAlignHorizontal === 'center' ? 'center' : settings.systemFont.textAlignHorizontal === 'right' ? 'flex-end' : 'flex-start', padding: '8px', boxSizing: 'border-box' }}>
                 <div ref={textContainerRef} style={simplifiedBitmapStyle}>Bitmap Preview Simplified</div>
             </div>
         );
     }
 
-
     if (settings.currentFontType === 'bitmap' && settings.bitmapFont.enabled && settings.bitmapFont.imageUrl && !simplifiedRender) {
       const { charHeight, spacing, zoom: bitmapZoom, enableTintColor, color: globalTintColor } = settings.bitmapFont;
       const baseCharPixelHeight = charHeight * bitmapZoom;
-      const actualLineHeightPx = baseCharPixelHeight * settings.globalLineHeightFactor;
       const effectiveSpacing = spacing * bitmapZoom;
       
       const bitmapContainerStyle: CSSProperties = {
-        ...textTransformStyle,
-        width: 'auto', height: 'auto', display: 'flex', flexDirection: 'column',
+        ...textTransformStyle, width: 'auto', height: 'auto', display: 'flex', flexDirection: 'column',
         alignItems: settings.systemFont.textAlignHorizontal === 'center' ? 'center' : settings.systemFont.textAlignHorizontal === 'right' ? 'flex-end' : 'flex-start',
         padding: '2px', boxSizing: 'border-box', imageRendering: 'pixelated',
       };
 
+      // Group segments by lines for bitmap rendering
+      const linesOfSegments: FinalDisplaySegment[][] = [];
+      let currentLine: FinalDisplaySegment[] = [];
+      finalDisplaySegments.forEach(segment => {
+        if (segment.type === 'text') {
+          const textLines = trimLeadingAndTrailingEmptyLines(segment.text.replace(/\r/g, '')).split('\n');
+          textLines.forEach((lineText, index) => {
+            if (lineText || textLines.length === 1) { // Add segment even if lineText is empty if it's the only part of this text segment
+                 currentLine.push({ ...segment, text: lineText });
+            }
+            if (index < textLines.length - 1) {
+              linesOfSegments.push(currentLine);
+              currentLine = [];
+            }
+          });
+        } else { // Image segment
+          currentLine.push(segment);
+        }
+      });
+      if (currentLine.length > 0) linesOfSegments.push(currentLine);
+      
       return (
-        <div 
-          style={{
-            width: '100%', height: '100%', display: 'flex', alignItems: alignItems,
-            justifyContent: settings.systemFont.textAlignHorizontal === 'center' ? 'center' : settings.systemFont.textAlignHorizontal === 'right' ? 'flex-end' : 'flex-start',
-            padding: '8px', boxSizing: 'border-box',
-          }}
-          onMouseDown={handleMouseDown} 
-          role={isReadOnlyPreview ? undefined : "application"}
-          aria-roledescription={isReadOnlyPreview ? undefined : "draggable text area"}
-        >
+        <div style={{ width: '100%', height: '100%', display: 'flex', alignItems: alignItems, justifyContent: settings.systemFont.textAlignHorizontal === 'center' ? 'center' : settings.systemFont.textAlignHorizontal === 'right' ? 'flex-end' : 'flex-start', padding: '8px', boxSizing: 'border-box' }} onMouseDown={handleMouseDown} role={isReadOnlyPreview ? undefined : "application"} aria-roledescription={isReadOnlyPreview ? undefined : "draggable text area"}>
           <div ref={textContainerRef} style={bitmapContainerStyle}>
-            {finalSegmentsForRender.map((segment, segmentIndex) => {
-                const lines = trimLeadingAndTrailingEmptyLines(segment.text.replace(/\r/g, '')).split('\n');
-                const segmentColor = segment.color; // This is the color from custom tag, or null
+            {linesOfSegments.map((lineSegments, lineIndex) => {
+              let maxElementHeightInLine = baseCharPixelHeight;
+              lineSegments.forEach(seg => {
+                if (seg.type === 'image') {
+                  maxElementHeightInLine = Math.max(maxElementHeightInLine, seg.height * bitmapZoom);
+                }
+              });
+              const actualLineHeightPx = Math.max(maxElementHeightInLine, baseCharPixelHeight * settings.globalLineHeightFactor);
 
-                return lines.map((line, lineIndex) => (
-                    <div key={`${segmentIndex}-${lineIndex}`} style={{ display: 'flex', height: `${actualLineHeightPx}px`, alignItems: 'center' }}>
-                    {line.split('').map((char, charIndex) => {
-                        const baseCachedCanvas = bitmapCharCache.current.get(char);
-
-                        if (baseCachedCanvas === null) { // Fully transparent char after processing
-                            return <div key={charIndex} style={{ width: 0, height: `${baseCharPixelHeight}px`, marginRight: `${effectiveSpacing}px` }} />;
-                        }
-                        
-                        if (baseCachedCanvas instanceof HTMLCanvasElement) {
-                            let charToRenderCanvas = baseCachedCanvas;
-                            
-                            // Dynamic Tinting
-                            if (enableTintColor) {
-                                const tintToApply = segmentColor || globalTintColor; // Segment color takes precedence
-                                if (tintToApply) {
-                                    const tintedCanvas = document.createElement('canvas');
-                                    tintedCanvas.width = baseCachedCanvas.width;
-                                    tintedCanvas.height = baseCachedCanvas.height;
-                                    const ctx = tintedCanvas.getContext('2d');
-                                    if (ctx) {
-                                        ctx.drawImage(baseCachedCanvas, 0, 0);
-                                        ctx.globalCompositeOperation = 'source-in';
-                                        ctx.fillStyle = tintToApply;
-                                        ctx.fillRect(0, 0, tintedCanvas.width, tintedCanvas.height);
-                                        charToRenderCanvas = tintedCanvas;
-                                    }
-                                }
+              return (
+                <div key={lineIndex} style={{ display: 'flex', height: `${actualLineHeightPx}px`, alignItems: 'center' }}>
+                  {lineSegments.map((segment, segIdx) => {
+                    if (segment.type === 'image') {
+                      return <img key={segIdx} src={segment.imageUrl} alt={segment.altText} style={{ width: `${segment.width * bitmapZoom}px`, height: `${segment.height * bitmapZoom}px`, marginRight: `${effectiveSpacing}px`, imageRendering: 'pixelated', verticalAlign: 'middle' }} />;
+                    }
+                    // Text segment for bitmap
+                    return segment.text.split('').map((char, charIndex) => {
+                      const baseCachedCanvas = bitmapCharCache.current.get(char);
+                      if (baseCachedCanvas === null) return <div key={charIndex} style={{ width: 0, height: `${baseCharPixelHeight}px`, marginRight: `${effectiveSpacing}px` }} />;
+                      if (baseCachedCanvas instanceof HTMLCanvasElement) {
+                        let charToRenderCanvas = baseCachedCanvas;
+                        if (enableTintColor) {
+                          const tintToApply = globalTintColor; // Bitmap currently doesn't use color segments from custom tags for tinting characters
+                          if (tintToApply) {
+                            const tintedCanvas = document.createElement('canvas');
+                            tintedCanvas.width = baseCachedCanvas.width;
+                            tintedCanvas.height = baseCachedCanvas.height;
+                            const ctx = tintedCanvas.getContext('2d');
+                            if (ctx) {
+                              ctx.drawImage(baseCachedCanvas, 0, 0);
+                              ctx.globalCompositeOperation = 'source-in';
+                              ctx.fillStyle = tintToApply;
+                              ctx.fillRect(0, 0, tintedCanvas.width, tintedCanvas.height);
+                              charToRenderCanvas = tintedCanvas;
                             }
-
-                            const displayWidth = charToRenderCanvas.width * bitmapZoom; 
-                            const displayHeight = charToRenderCanvas.height * bitmapZoom; 
-
-                            if (displayWidth === 0 && char !== ' ') { 
-                                return <div key={charIndex} style={{ width: 0, height: `${baseCharPixelHeight}px`, marginRight: `${effectiveSpacing}px` }} />;
-                            }
-
-                            return (
-                            <img
-                                key={charIndex}
-                                src={charToRenderCanvas.toDataURL()}
-                                alt={char}
-                                style={{
-                                width: `${displayWidth}px`,
-                                height: `${displayHeight}px`, 
-                                marginRight: `${effectiveSpacing}px`,
-                                imageRendering: 'pixelated',
-                                }}
-                            />
-                            );
+                          }
                         }
-                         if (char === '\r') return null; 
-                        // Fallback for missing char in cache - should be rare
-                        return <span key={charIndex} style={{width: `${settings.bitmapFont.charWidth * bitmapZoom}px`, height: `${baseCharPixelHeight}px`, marginRight: `${effectiveSpacing}px`}}>{char === ' ' ? '\u00A0' : '?'}</span>;
-                    })}
-                    </div>
-                ));
+                        const displayWidth = charToRenderCanvas.width * bitmapZoom; 
+                        const displayHeight = charToRenderCanvas.height * bitmapZoom; 
+                        if (displayWidth === 0 && char !== ' ') return <div key={charIndex} style={{ width: 0, height: `${baseCharPixelHeight}px`, marginRight: `${effectiveSpacing}px` }} />;
+                        return <img key={charIndex} src={charToRenderCanvas.toDataURL()} alt={char} style={{ width: `${displayWidth}px`, height: `${displayHeight}px`, marginRight: `${effectiveSpacing}px`, imageRendering: 'pixelated' }} />;
+                      }
+                      if (char === '\r') return null; 
+                      return <span key={charIndex} style={{width: `${settings.bitmapFont.charWidth * bitmapZoom}px`, height: `${baseCharPixelHeight}px`, marginRight: `${effectiveSpacing}px`}}>{char === ' ' ? '\u00A0' : '?'}</span>;
+                    });
+                  })}
+                </div>
+              );
             })}
           </div>
         </div>
       );
     }
 
-    // System Font Rendering with Custom Color Tags
     const measurableDivStyle: CSSProperties = {
         ...textTransformStyle, display: 'inline-block', maxWidth: '100%',
     };
@@ -713,34 +751,52 @@ const PreviewAreaInner = forwardRef<HTMLDivElement, PreviewAreaProps>(({
         fontWeight: settings.systemFont.fontWeight, lineHeight: settings.globalLineHeightFactor, 
         letterSpacing: `${settings.systemFont.letterSpacing}px`, 
         textAlign: settings.systemFont.textAlignHorizontal, whiteSpace: 'pre-wrap',
-        wordBreak: 'break-word', overflowWrap: 'break-word', display: 'block', // Changed from inline-block to block for multi-span lines
+        wordBreak: 'break-word', overflowWrap: 'break-word', display: 'block',
         textShadow: textShadowValue !== 'none' ? textShadowValue : undefined,
     };
     
+    // System Font Rendering with Image Tags
+    const linesOfSystemSegments: (FinalTextSegment | FinalImageSegment)[][] = [];
+    let currentSystemLine: (FinalTextSegment | FinalImageSegment)[] = [];
+
+    finalDisplaySegments.forEach(segment => {
+      if (segment.type === 'text') {
+        const textLines = trimLeadingAndTrailingEmptyLines(segment.text).split('\n');
+        textLines.forEach((lineText, i) => {
+          if (lineText || textLines.length === 1 && currentSystemLine.length === 0 && i === 0 && segment.text.trim() === '') { // Keep empty line if it's the only content from an originally empty segment part
+             currentSystemLine.push({ ...segment, text: lineText });
+          } else if (lineText) {
+             currentSystemLine.push({ ...segment, text: lineText });
+          }
+
+          if (i < textLines.length - 1) {
+            linesOfSystemSegments.push(currentSystemLine);
+            currentSystemLine = [];
+          }
+        });
+      } else { // Image segment
+        currentSystemLine.push(segment);
+      }
+    });
+    if (currentSystemLine.length > 0) linesOfSystemSegments.push(currentSystemLine);
+    if (finalDisplaySegments.length === 0 && settings.text.trim() === '') { // Handle case of only whitespace input
+        linesOfSystemSegments.push([{type: 'text', text: '', color: settings.systemFont.color}]);
+    }
+
+
     return (
-      <div 
-        style={{
-          width: '100%', height: '100%', display: 'flex', alignItems: alignItems,
-          justifyContent: settings.systemFont.textAlignHorizontal === 'center' ? 'center' : settings.systemFont.textAlignHorizontal === 'right' ? 'flex-end' : 'flex-start',
-          padding: '8px', boxSizing: 'border-box',
-        }}
-        onMouseDown={handleMouseDown}
-        role={(isReadOnlyPreview || simplifiedRender) ? undefined : "application"}
-        aria-roledescription={(isReadOnlyPreview || simplifiedRender) ? undefined : "draggable text area"}
-      >
+      <div style={{ width: '100%', height: '100%', display: 'flex', alignItems: alignItems, justifyContent: settings.systemFont.textAlignHorizontal === 'center' ? 'center' : settings.systemFont.textAlignHorizontal === 'right' ? 'flex-end' : 'flex-start', padding: '8px', boxSizing: 'border-box' }} onMouseDown={handleMouseDown} role={(isReadOnlyPreview || simplifiedRender) ? undefined : "application"} aria-roledescription={(isReadOnlyPreview || simplifiedRender) ? undefined : "draggable text area"} >
         <div ref={textContainerRef} style={measurableDivStyle}>
-            <div style={{...baseTextSpanStyle, display: 'block' /* Ensure outer div respects block layout for alignment*/ }}>
-            {finalSegmentsForRender.map((segment, index) => {
-                const lines = trimLeadingAndTrailingEmptyLines(segment.text).split('\n');
-                return lines.map((line, lineIndex) => (
-                    <React.Fragment key={`${index}-${lineIndex}`}>
-                        <span style={{ color: segment.color || settings.systemFont.color }}>
-                            {line}
-                        </span>
-                        {lineIndex < lines.length - 1 && <br />} 
-                    </React.Fragment>
-                ));
-            })}
+            <div style={{...baseTextSpanStyle, display: 'block' }}>
+            {linesOfSystemSegments.map((lineSegments, lineIdx) => (
+              <div key={lineIdx} style={{ minHeight: `${settings.systemFont.fontSize * settings.globalLineHeightFactor}px` /* Ensure empty lines have height */ }}>
+                {lineSegments.map((segment, segIdx) => (
+                  segment.type === 'image' 
+                  ? <img key={`${lineIdx}-${segIdx}`} src={segment.imageUrl} alt={segment.altText} style={{ width: `${segment.width}px`, height: `${segment.height}px`, display: 'inline-block', verticalAlign: 'middle', margin: '0 1px' }} />
+                  : <span key={`${lineIdx}-${segIdx}`} style={{ color: segment.color || settings.systemFont.color }}>{segment.text === '' && lineSegments.length === 1 ? '\u00A0' : segment.text /* Render non-breaking space for truly empty lines */}</span>
+                ))}
+              </div>
+            ))}
             </div>
         </div>
       </div>
@@ -787,27 +843,24 @@ const PreviewAreaInner = forwardRef<HTMLDivElement, PreviewAreaProps>(({
 
   const outerDivProps = isReadOnlyPreview ? {} : { ref };
 
-  const previewBoxBackgroundColor = baseSettings.backgroundColor; // Use the direct setting for preview box, not the theme's page bg
+  const previewBoxBackgroundColor = baseSettings.backgroundColor; 
 
   return (
     <div
       {...outerDivProps} 
-      style={{
-        transform: `scale(${currentPreviewZoom})`,
-        transformOrigin: 'center', 
-      }}
+      style={{ transform: `scale(${currentPreviewZoom})`, transformOrigin: 'center' }}
       aria-live="polite" 
       aria-label={isReadOnlyPreview ? "Static original text preview area" : "Zoomable interactive text preview area"}
     >
       <div
         ref={contentBoxRef} 
-        className="preview-box border-2 border-dashed border-[var(--bv-accent-primary,var(--bv-border-color))] relative" // Fallback to general border color
+        className="preview-box border-2 border-dashed border-[var(--bv-accent-primary,var(--bv-border-color))] relative" 
         style={{
           width: settings.previewWidth > 0 ? `${settings.previewWidth}px` : 'auto',
           height: settings.previewHeight > 0 ? `${settings.previewHeight}px` : 'auto',
           minWidth: settings.previewWidth === 0 ? '150px': undefined,
           minHeight: settings.previewHeight === 0 ? '100px': undefined,
-          backgroundColor: previewBoxBackgroundColor, // Use specific setting from AppSettings
+          backgroundColor: previewBoxBackgroundColor, 
           backgroundImage: currentBackgroundImage ? `url(${currentBackgroundImage})` : 'none',
           backgroundSize: 'cover', backgroundPosition: 'center', overflow: 'hidden',
         }}

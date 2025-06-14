@@ -87,6 +87,15 @@ export interface CustomColorTag {
   enabled: boolean;
 }
 
+export interface ImageTag {
+  id: string;
+  tag: string; // e.g., "[SMILE]" or "<GOLD_ICON>"
+  imageUrl: string; // Data URL of the uploaded image
+  width: number; // Display width in px
+  height: number; // Display height in px
+  enabled: boolean;
+}
+
 export interface AppSettings {
   text: string; // Represents content of the current block of the active script
   previewWidth: number;
@@ -105,7 +114,8 @@ export interface AppSettings {
   blockSeparators: string[]; // Array of custom separator strings
   hideTagsInPreview: boolean;
   tagPatternsToHide: string[];
-  customColorTags: CustomColorTag[]; // New: For user-defined color tags
+  customColorTags: CustomColorTag[]; 
+  imageTags: ImageTag[]; // New: For user-defined image tags
   overflowDetectionMode: 'pixel' | 'character';
   maxCharacters: number;
   maxPixelHeight: number;
@@ -131,6 +141,7 @@ export interface Profile {
   name: string;
   coverImageUrl: string | null;
   settings: AppSettings;
+  gitHubSettings: GitHubSettings; // Added GitHub settings to profile
 }
 
 export type MainViewMode = 'editor' | 'profilesGallery';

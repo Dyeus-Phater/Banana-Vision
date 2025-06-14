@@ -147,7 +147,7 @@ const TUTORIAL_STEPS: TutorialStepContent[] = [
     speech: (
       <>
         And that's the grand tour! You're now a Banana Vision virtuoso! Go forth and create some a-peel-ing text.
-        If you ever need a refresher, just click the <strong className="text-[var(--bv-accent-primary)]">Question Mark (?)</strong> button in the toolbar. Happy 'romhacking!
+        If you ever need a refresher, just click the <strong className="text-[var(--bv-accent-primary)]">Question Mark (?)</strong> button in the toolbar. Happy 'hacking!
       </>
     ),
   },

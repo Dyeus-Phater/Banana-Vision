@@ -1,19 +1,28 @@
 
-import { AppSettings, Profile } from '../types';
+import { AppSettings, Profile, GitHubSettings } from '../types';
+import { DEFAULT_GITHUB_SETTINGS } from '../constants';
 
 const PROFILES_STORAGE_KEY = 'bananaVision_profiles';
 
 export const getProfiles = (): Profile[] => {
   try {
     const storedProfiles = localStorage.getItem(PROFILES_STORAGE_KEY);
-    return storedProfiles ? JSON.parse(storedProfiles) : [];
+    if (storedProfiles) {
+      const parsedProfiles = JSON.parse(storedProfiles) as Profile[];
+      // Ensure older profiles without gitHubSettings get a default
+      return parsedProfiles.map(profile => ({
+        ...profile,
+        gitHubSettings: profile.gitHubSettings || { ...DEFAULT_GITHUB_SETTINGS }
+      }));
+    }
+    return [];
   } catch (error) {
     console.error("Error loading profiles from localStorage:", error);
     return [];
   }
 };
 
-export const saveProfile = (name: string, settingsToSave: AppSettings): Profile[] => {
+export const saveProfile = (name: string, settingsToSave: AppSettings, gitHubSettingsToSave: GitHubSettings): Profile[] => {
   if (!name.trim()) {
     throw new Error("Profile name cannot be empty.");
   }
@@ -23,6 +32,7 @@ export const saveProfile = (name: string, settingsToSave: AppSettings): Profile[
     name: name.trim(),
     coverImageUrl: settingsToSave.backgroundImageUrl,
     settings: { ...settingsToSave }, // Deep copy settings
+    gitHubSettings: { ...gitHubSettingsToSave }, // Deep copy GitHub settings
   };
 
   const updatedProfiles = [...profiles, newProfile];
@@ -49,5 +59,10 @@ export const deleteProfile = (profileId: string): Profile[] => {
 
 export const getProfileById = (profileId: string): Profile | undefined => {
   const profiles = getProfiles();
-  return profiles.find(p => p.id === profileId);
+  const profile = profiles.find(p => p.id === profileId);
+  if (profile && !profile.gitHubSettings) {
+    // Ensure older profiles get a default if somehow missed by getProfiles map
+    return { ...profile, gitHubSettings: { ...DEFAULT_GITHUB_SETTINGS } };
+  }
+  return profile;
 };

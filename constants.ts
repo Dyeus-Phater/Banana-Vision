@@ -60,7 +60,8 @@ export const DEFAULT_SETTINGS: AppSettings = {
   blockSeparators: ['<PAGE>', '<END>', '[NEXT]'],
   hideTagsInPreview: true,
   tagPatternsToHide: ['<[^>]*>', '\\[[^\\]]*\\]', '\\{[^\\}]*\\}'],
-  customColorTags: [], // Initialize custom color tags
+  customColorTags: [],
+  imageTags: [], // Initialize image tags
   overflowDetectionMode: 'pixel',
   maxCharacters: 150,
   maxPixelHeight: 200,
