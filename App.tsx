@@ -43,6 +43,9 @@ export interface FindResultSummaryItem {
   blockOriginalIndex?: number; // original index
 }
 
+// For global bitmap cache
+type BitmapCharCache = Map<string, { canvas: HTMLCanvasElement | null; dataURL?: string }>;
+
 
 const ESTIMATED_BLOCK_CELL_HEIGHT_PX = 350;
 const OBSERVER_MARGIN_ITEM_COUNT = 2;
@@ -51,7 +54,7 @@ const TUTORIAL_COMPLETED_KEY = 'bananaVision_tutorialCompleted_v1';
 
 interface BlockCellProps {
   block: Block;
-  activeThemeKey: ThemeKey; // Changed from theme: Theme
+  activeThemeKey: ThemeKey; 
   appSettings: AppSettings;
   isFullyVisible: boolean;
   placeholderHeight: number;
@@ -65,6 +68,8 @@ interface BlockCellProps {
   onVisibilityChange: (blockOriginalIndex: number, isVisible: boolean) => void;
   scrollRootElement: HTMLDivElement | null;
   observerRootMarginValue: number;
+  globalBitmapCharCache: BitmapCharCache | null; // Added for shared cache
+  globalBitmapCacheId: number; // Added for cache refresh
 }
 
 const BlockCell: React.FC<BlockCellProps> = ({
@@ -82,7 +87,9 @@ const BlockCell: React.FC<BlockCellProps> = ({
   simplifiedRender,
   onVisibilityChange,
   scrollRootElement,
-  observerRootMarginValue
+  observerRootMarginValue,
+  globalBitmapCharCache, // Destructure new prop
+  globalBitmapCacheId   // Destructure new prop
 }) => {
   const cellRef = useRef<HTMLDivElement>(null);
   const blockOriginalIndex = block.index;
@@ -153,7 +160,7 @@ const BlockCell: React.FC<BlockCellProps> = ({
         {isFullyVisible ? (
          <PreviewArea
           ref={previewComponentRef}
-          key={`preview-cell-${block.index}`}
+          key={`preview-cell-${block.index}-${globalBitmapCacheId}`} // Add cache ID to key if it matters
           baseSettings={appSettings}
           textOverride={block.content}
           simplifiedRender={simplifiedRender}
@@ -162,6 +169,8 @@ const BlockCell: React.FC<BlockCellProps> = ({
           showPixelMarginGuides={appSettings.pixelOverflowMargins.enabled && overflowSettingsPanelOpen}
           isReadOnlyPreview={false}
           activeThemeKey={activeThemeKey}
+          bitmapCharCache={globalBitmapCharCache} // Pass down shared cache
+          bitmapCacheId={globalBitmapCacheId}     // Pass down cache ID
         />
         ) : (
           <div
@@ -234,6 +243,17 @@ const base64ToUtf8 = (base64Str: string): string => {
   }
 };
 
+function hexToRgb(hex: string): { r: number; g: number; b: number } | null {
+  const result = /^#?([a-f\d]{2})([a-f\d]{2})([a-f\d]{2})$/i.exec(hex);
+  return result
+    ? {
+        r: parseInt(result[1], 16),
+        g: parseInt(result[2], 16),
+        b: parseInt(result[3], 16),
+      }
+    : null;
+}
+
 
 const App: React.FC = () => {
   const [settings, setSettings] = useState<AppSettings>(DEFAULT_SETTINGS);
@@ -241,10 +261,8 @@ const App: React.FC = () => {
   const previewContainerRef = useRef<HTMLDivElement>(null);
   const mainTextAreaRef = useRef<HTMLTextAreaElement>(null);
 
-  // Theme state
   const [appThemeSettings, setAppThemeSettings] = useState<AppThemeSettings>(themeService.loadThemeSettings());
   const [isSpecialSettingsMenuOpen, setIsSpecialSettingsMenuOpen] = useState<boolean>(false);
-
 
   const [mainScripts, setMainScripts] = useState<ScriptFile[]>([]);
   const [activeMainScriptId, setActiveMainScriptId] = useState<string | null>(null);
@@ -285,10 +303,12 @@ const App: React.FC = () => {
   const [gitHubStatusMessage, setGitHubStatusMessage] = useState<string>("");
 
   const [profiles, setProfiles] = useState<Profile[]>([]);
-
-  // Tutorial State
   const [showTutorial, setShowTutorial] = useState<boolean>(false);
   const [currentTutorialStep, setCurrentTutorialStep] = useState<number>(0);
+
+  // Global Bitmap Font Cache
+  const [globalBitmapCharCache, setGlobalBitmapCharCache] = useState<BitmapCharCache | null>(null);
+  const [globalBitmapCacheId, setGlobalBitmapCacheId] = useState<number>(0);
 
   useEffect(() => {
     const tutorialCompleted = localStorage.getItem(TUTORIAL_COMPLETED_KEY);
@@ -297,6 +317,146 @@ const App: React.FC = () => {
       setCurrentTutorialStep(0);
     }
   }, []);
+
+  // Effect to generate global bitmap character cache
+  useEffect(() => {
+    if (settings.currentFontType === 'bitmap' && settings.bitmapFont.enabled && settings.bitmapFont.imageUrl) {
+      const img = new Image();
+      img.crossOrigin = "anonymous";
+      img.src = settings.bitmapFont.imageUrl;
+      img.onload = () => {
+        const newCache: BitmapCharCache = new Map();
+        const {
+          charWidth, charHeight, charMap,
+          colorToRemove, enableColorRemoval, colorRemovalTolerance,
+          enablePixelScanning, spaceWidthOverride,
+          enableTintColor, color: globalTintColor
+        } = settings.bitmapFont;
+
+        if (charWidth <= 0 || charHeight <= 0) {
+          console.error("Global Bitmap Cache: charWidth or charHeight is zero or negative.");
+          setGlobalBitmapCharCache(new Map()); // Set to empty map
+          setGlobalBitmapCacheId(id => id + 1);
+          return;
+        }
+
+        const charsPerRow = Math.floor(img.width / charWidth);
+        const targetRgb = enableColorRemoval ? hexToRgb(colorToRemove) : null;
+
+        for (let i = 0; i < charMap.length; i++) {
+          const char = charMap[i];
+          let effectiveCharWidth = charWidth;
+          let charSpecificCanvas: HTMLCanvasElement | null = document.createElement('canvas');
+
+          if (char === ' ') {
+            if (spaceWidthOverride > 0) {
+              effectiveCharWidth = spaceWidthOverride;
+            } else {
+              effectiveCharWidth = enablePixelScanning
+                ? Math.max(1, Math.floor(charWidth / 4))
+                : charWidth;
+            }
+            if (charSpecificCanvas) {
+              charSpecificCanvas.width = effectiveCharWidth;
+              charSpecificCanvas.height = charHeight;
+            }
+            newCache.set(char, { canvas: charSpecificCanvas, dataURL: charSpecificCanvas?.toDataURL() });
+            continue;
+          }
+
+          if (!charSpecificCanvas) {
+            newCache.set(char, { canvas: null });
+            continue;
+          }
+
+          charSpecificCanvas.width = charWidth;
+          charSpecificCanvas.height = charHeight;
+          const ctx = charSpecificCanvas.getContext('2d', { willReadFrequently: true });
+          if (!ctx) {
+            newCache.set(char, { canvas: null });
+            continue;
+          }
+          ctx.drawImage(img, (i % charsPerRow) * charWidth, Math.floor(i / charsPerRow) * charHeight, charWidth, charHeight, 0, 0, charWidth, charHeight);
+
+          if (enableColorRemoval && targetRgb) {
+            const imageData = ctx.getImageData(0, 0, charWidth, charHeight);
+            const data = imageData.data;
+            for (let p = 0; p < data.length; p += 4) {
+              const r = data[p]; const g = data[p + 1]; const b = data[p + 2];
+              if (Math.abs(r - targetRgb.r) <= colorRemovalTolerance &&
+                  Math.abs(g - targetRgb.g) <= colorRemovalTolerance &&
+                  Math.abs(b - targetRgb.b) <= colorRemovalTolerance) {
+                data[p + 3] = 0;
+              }
+            }
+            ctx.putImageData(imageData, 0, 0);
+          }
+
+          if (enablePixelScanning) {
+            const imageData = ctx.getImageData(0, 0, charWidth, charHeight);
+            const data = imageData.data;
+            let rightmostPixel = -1;
+            for (let yPx = 0; yPx < charHeight; yPx++) {
+              for (let xPx = 0; xPx < charWidth; xPx++) {
+                const alphaIndex = (yPx * charWidth + xPx) * 4 + 3;
+                if (data[alphaIndex] > 10) {
+                  if (xPx > rightmostPixel) rightmostPixel = xPx;
+                }
+              }
+            }
+            effectiveCharWidth = (rightmostPixel === -1) ? 0 : rightmostPixel + 1;
+
+            if (effectiveCharWidth === 0) {
+              newCache.set(char, { canvas: null });
+              continue;
+            } else if (effectiveCharWidth < charWidth) {
+              const scannedCanvas = document.createElement('canvas');
+              scannedCanvas.width = effectiveCharWidth;
+              scannedCanvas.height = charHeight;
+              const scannedCtx = scannedCanvas.getContext('2d');
+              if (scannedCtx) {
+                scannedCtx.drawImage(charSpecificCanvas, 0, 0, effectiveCharWidth, charHeight, 0, 0, effectiveCharWidth, charHeight);
+                charSpecificCanvas = scannedCanvas;
+              }
+            }
+          }
+
+          let finalCanvasForCache = charSpecificCanvas;
+          if (enableTintColor && globalTintColor && finalCanvasForCache) {
+            const tintedVersionCanvas = document.createElement('canvas');
+            tintedVersionCanvas.width = finalCanvasForCache.width;
+            tintedVersionCanvas.height = finalCanvasForCache.height;
+            const tintedCtx = tintedVersionCanvas.getContext('2d');
+            if (tintedCtx) {
+              tintedCtx.drawImage(finalCanvasForCache, 0, 0);
+              tintedCtx.globalCompositeOperation = 'source-in';
+              tintedCtx.fillStyle = globalTintColor;
+              tintedCtx.fillRect(0, 0, tintedVersionCanvas.width, tintedVersionCanvas.height);
+              finalCanvasForCache = tintedVersionCanvas;
+            }
+          }
+          newCache.set(char, { canvas: finalCanvasForCache, dataURL: finalCanvasForCache?.toDataURL() });
+        }
+        setGlobalBitmapCharCache(newCache);
+        setGlobalBitmapCacheId(id => id + 1);
+      };
+      img.onerror = () => {
+        console.error("Global Bitmap Cache: Failed to load bitmap font image.");
+        setGlobalBitmapCharCache(new Map());
+        setGlobalBitmapCacheId(id => id + 1);
+      }
+    } else {
+      setGlobalBitmapCharCache(null); // Clear cache if not bitmap or not enabled
+      setGlobalBitmapCacheId(id => id + 1);
+    }
+  }, [
+    settings.bitmapFont.imageUrl, settings.bitmapFont.charWidth, settings.bitmapFont.charHeight,
+    settings.bitmapFont.charMap, settings.bitmapFont.enableColorRemoval, settings.bitmapFont.colorToRemove,
+    settings.bitmapFont.colorRemovalTolerance, settings.bitmapFont.enablePixelScanning,
+    settings.bitmapFont.spaceWidthOverride, settings.bitmapFont.enableTintColor, settings.bitmapFont.color,
+    settings.currentFontType, settings.bitmapFont.enabled
+  ]);
+
 
   const handleStartTutorial = () => {
     setCurrentTutorialStep(0);
@@ -311,7 +471,6 @@ const App: React.FC = () => {
   };
 
 
-  // Effect to manage the dedicated scrollbar style tag
   useEffect(() => {
     const styleTagId = 'dynamic-scrollbar-styles';
     let styleTag = document.getElementById(styleTagId) as HTMLStyleElement | null;
@@ -322,7 +481,6 @@ const App: React.FC = () => {
     }
   }, []);
 
-  // Apply theme via CSS variables
   useEffect(() => {
     const resolvedColors = themeService.getResolvedThemeColors(appThemeSettings.activeThemeKey, appThemeSettings.customColors);
     const root = document.documentElement;
@@ -534,7 +692,7 @@ const App: React.FC = () => {
       if (profileToLoad.gitHubSettings) {
         setGitHubSettings(profileToLoad.gitHubSettings);
       } else {
-        setGitHubSettings(DEFAULT_GITHUB_SETTINGS); // For older profiles
+        setGitHubSettings(DEFAULT_GITHUB_SETTINGS); 
       }
       setCurrentMainView('editor'); 
       alert(`Profile "${profileToLoad.name}" loaded successfully!`);
@@ -1544,11 +1702,10 @@ const App: React.FC = () => {
     if (sName.startsWith('.')) {
       sName = '_' + sName.substring(1); 
     }
-    // Check for common text extensions, otherwise add .txt
     if (!/\.(txt|scp|text|md|json|xml|yaml|yml|csv|tsv|ini|cfg|log|srt|vtt|html|htm|js|css)$/i.test(sName)) {
       sName += '.txt';
     }
-    return sName.substring(0, 250); // Limit length
+    return sName.substring(0, 250); 
   };
   
 
@@ -1605,8 +1762,7 @@ const App: React.FC = () => {
                   continue;
                 }
 
-                 // Basic check for text-like content (very naive, can be improved)
-                if (rawText.includes('\uFFFD') && !rawText.startsWith('\uFEFF')) { // Common issue with non-text trying to be UTF8
+                if (rawText.includes('\uFFFD') && !rawText.startsWith('\uFEFF')) { 
                     statusMessages.push(`Skipped ${item.name} (likely binary or wrong encoding).`);
                     skippedCount++;
                     continue;
@@ -1635,7 +1791,7 @@ const App: React.FC = () => {
           }
         }
         if (newScripts.length > 0) {
-          setMainScripts(prev => [...newScripts, ...prev.filter(s => !newScripts.find(ns => ns.name === s.name))]); // Add new, avoid duplicates by name
+          setMainScripts(prev => [...newScripts, ...prev.filter(s => !newScripts.find(ns => ns.name === s.name))]); 
           if (!activeMainScriptId && newScripts.length > 0) {
             setActiveMainScriptId(newScripts[0].id);
             setCurrentBlockIndex(newScripts[0].blocks.length > 0 ? 0 : null);
@@ -1779,8 +1935,7 @@ const handleSaveAllToGitHubFolder = useCallback(async () => {
              // @ts-ignore
             if (fileData && fileData.sha) existingSha = fileData.sha;
           } catch (e: any) {
-            if (e.status !== 404) throw e; // Re-throw if not a "not found" error
-            // File doesn't exist, existingSha remains undefined
+            if (e.status !== 404) throw e; 
           }
 
           await octokit.repos.createOrUpdateFileContents({
@@ -1804,7 +1959,7 @@ const handleSaveAllToGitHubFolder = useCallback(async () => {
       }
       setGitHubStatusMessage(`Folder save complete. Saved: ${savedCount}, Unchanged: ${unchangedCount}, Errors: ${errorCount}. Details: ${statusMessages.slice(0,2).join(' ')}${statusMessages.length > 2 ? '...' : ''}`);
 
-    } catch (error: any) { // Catch errors from initial Octokit setup or unexpected issues
+    } catch (error: any) { 
       console.error("Error during 'Save All to Folder' operation:", error);
       setGitHubStatusMessage(`Error: ${error.message || 'Failed to save all scripts to GitHub folder.'}`);
     } finally {
@@ -2065,7 +2220,7 @@ const handleSaveAllToGitHubFolder = useCallback(async () => {
                             Original {originalSourceInfoForSingleView} (Block {currentEditableBlockForSingleView.index + 1})
                           </h3>
                           <PreviewArea
-                            key={`original-preview-single-${activeMainScriptId}-${currentEditableBlockForSingleView.index}`}
+                            key={`original-preview-single-${activeMainScriptId}-${currentEditableBlockForSingleView.index}-${globalBitmapCacheId}`}
                             baseSettings={settings}
                             textOverride={originalBlockForSingleViewComparison ? originalBlockForSingleViewComparison.content : "Original content not available."}
                             setIsOverflowing={() => {}}
@@ -2074,6 +2229,8 @@ const handleSaveAllToGitHubFolder = useCallback(async () => {
                             isReadOnlyPreview={true}
                             simplifiedRender={false}
                             activeThemeKey={appThemeSettings.activeThemeKey}
+                            bitmapCharCache={globalBitmapCharCache}
+                            bitmapCacheId={globalBitmapCacheId}
                           />
                         </div>
                         <div className="w-1/2 flex flex-col items-center justify-center relative">
@@ -2082,7 +2239,7 @@ const handleSaveAllToGitHubFolder = useCallback(async () => {
                           </h3>
                           <PreviewArea
                             ref={previewRef}
-                            key={`editable-preview-single-${activeMainScriptId}-${currentEditableBlockForSingleView.index}`}
+                            key={`editable-preview-single-${activeMainScriptId}-${currentEditableBlockForSingleView.index}-${globalBitmapCacheId}`}
                             baseSettings={settings}
                             setIsOverflowing={handleMainPreviewOverflowStatusChange}
                             onNestedSettingsChange={handleNestedSettingsChange}
@@ -2090,6 +2247,8 @@ const handleSaveAllToGitHubFolder = useCallback(async () => {
                             isReadOnlyPreview={false}
                             simplifiedRender={false}
                             activeThemeKey={appThemeSettings.activeThemeKey}
+                            bitmapCharCache={globalBitmapCharCache}
+                            bitmapCacheId={globalBitmapCacheId}
                           />
                           {activeScriptBlocks[currentBlockIndex || 0]?.isOverflowing && (
                             <div className="absolute top-0 right-1 mt-1 mr-1 bg-red-500 text-white text-xs px-2 py-1 rounded z-20">
@@ -2109,6 +2268,8 @@ const handleSaveAllToGitHubFolder = useCallback(async () => {
                           isReadOnlyPreview={false}
                           simplifiedRender={false}
                           activeThemeKey={appThemeSettings.activeThemeKey}
+                          bitmapCharCache={globalBitmapCharCache}
+                          bitmapCacheId={globalBitmapCacheId}
                         />
                         {activeScriptBlocks[currentBlockIndex || 0]?.isOverflowing && (
                           <div className="absolute top-1 right-1 bg-red-500 text-white text-xs px-2 py-1 rounded z-10">
@@ -2175,7 +2336,7 @@ const handleSaveAllToGitHubFolder = useCallback(async () => {
 
                     return (
                       <MemoizedBlockCell
-                        key={`${activeMainScript.id}-${block.index}`}
+                        key={`${activeMainScript.id}-${block.index}-${globalBitmapCacheId}`}
                         block={block}
                         activeThemeKey={appThemeSettings.activeThemeKey}
                         appSettings={settings}
@@ -2187,10 +2348,12 @@ const handleSaveAllToGitHubFolder = useCallback(async () => {
                         onNestedSettingsChange={handleNestedSettingsChange}
                         comparisonOriginalContent={comparisonContentForCell}
                         overflowSettingsPanelOpen={overflowSettingsPanelOpen}
-                        simplifiedRender={false} // This was hardcoded to false
+                        simplifiedRender={false} 
                         onVisibilityChange={handleBlockVisibilityChange}
                         scrollRootElement={scrollRootElement}
                         observerRootMarginValue={observerRootMarginValue}
+                        globalBitmapCharCache={globalBitmapCharCache}
+                        globalBitmapCacheId={globalBitmapCacheId}
                       />
                     );
                   })}

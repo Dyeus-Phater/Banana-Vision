@@ -259,6 +259,7 @@ const ControlsPanel: React.FC<ControlsPanelProps> = (props) => {
   const [editingImageTagFields, setEditingImageTagFields] = useState<Omit<ImageTag, 'id' | 'imageUrl'> & { imageUrl?: string }>(DEFAULT_IMAGE_TAG);
   const [editingImageTagId, setEditingImageTagId] = useState<string | null>(null);
   const [editingImageTagFile, setEditingImageTagFile] = useState<File | null>(null);
+  const [editingImageTagPreviewUrl, setEditingImageTagPreviewUrl] = useState<string | null>(null);
 
 
   useEffect(() => {
@@ -268,6 +269,26 @@ const ControlsPanel: React.FC<ControlsPanelProps> = (props) => {
         if (!customFontFile) setCustomFontCssNameInput("");
     }
   }, [settings.systemFont.fontFamily, loadedCustomFontName, customFontFile]);
+
+
+  // Effect to cleanup object URL for image tag preview
+  useEffect(() => {
+    // This effect runs when isEditingImageTag changes.
+    // If we are no longer editing, and there was a preview URL, revoke it.
+    if (!isEditingImageTag && editingImageTagPreviewUrl) {
+        URL.revokeObjectURL(editingImageTagPreviewUrl);
+        setEditingImageTagPreviewUrl(null);
+    }
+
+    // Return a cleanup function that will be called if the component unmounts
+    // or if isEditingImageTag becomes true again.
+    return () => {
+        if (editingImageTagPreviewUrl) {
+            URL.revokeObjectURL(editingImageTagPreviewUrl);
+            // No need to set state here as component might be unmounting
+        }
+    };
+  }, [isEditingImageTag, editingImageTagPreviewUrl]);
 
 
   const handlePrimaryBgImageUpload = (files: FileList) => {
@@ -398,6 +419,10 @@ const ControlsPanel: React.FC<ControlsPanelProps> = (props) => {
     setEditingImageTagFields(DEFAULT_IMAGE_TAG);
     setEditingImageTagId(null);
     setEditingImageTagFile(null);
+    if (editingImageTagPreviewUrl) {
+        URL.revokeObjectURL(editingImageTagPreviewUrl);
+    }
+    setEditingImageTagPreviewUrl(null);
     setIsEditingImageTag(true);
   };
 
@@ -411,13 +436,21 @@ const ControlsPanel: React.FC<ControlsPanelProps> = (props) => {
     });
     setEditingImageTagId(imageTag.id);
     setEditingImageTagFile(null);
+    if (editingImageTagPreviewUrl) {
+        URL.revokeObjectURL(editingImageTagPreviewUrl);
+    }
+    setEditingImageTagPreviewUrl(null); // No local file preview initially when editing existing
     setIsEditingImageTag(true);
   };
 
   const handleImageTagFileSelected = (files: FileList) => {
     if (files && files.length > 0) {
-      setEditingImageTagFile(files[0]);
-      // Optionally, provide a preview of the selected image here if desired
+      const file = files[0];
+      setEditingImageTagFile(file);
+      if (editingImageTagPreviewUrl) {
+          URL.revokeObjectURL(editingImageTagPreviewUrl);
+      }
+      setEditingImageTagPreviewUrl(URL.createObjectURL(file));
     }
   };
   
@@ -480,7 +513,12 @@ const ControlsPanel: React.FC<ControlsPanelProps> = (props) => {
       updatedImageTags = [...settings.imageTags, newImageTag];
     }
     onSettingsChange('imageTags', updatedImageTags);
-    setIsEditingImageTag(false);
+    
+    if (editingImageTagPreviewUrl) { // Clean up object URL after successful save or if data URL was used
+        URL.revokeObjectURL(editingImageTagPreviewUrl);
+        setEditingImageTagPreviewUrl(null);
+    }
+    setIsEditingImageTag(false); // This will also trigger useEffect cleanup if somehow URL still exists
     setEditingImageTagId(null);
     setEditingImageTagFile(null);
   };
@@ -737,7 +775,7 @@ const ControlsPanel: React.FC<ControlsPanelProps> = (props) => {
                   <LabelInputContainer label="Image File" htmlFor="editingImageTagFile">
                     <FileInput accept="image/*" onChange={handleImageTagFileSelected} buttonLabel={editingImageTagFile ? `Selected: ${editingImageTagFile.name.substring(0,20)}...` : "Choose Image"} />
                     {editingImageTagFields.imageUrl && !editingImageTagFile && <img src={editingImageTagFields.imageUrl} alt="Current" className="mt-1 h-8 w-8 object-contain border border-[var(--bv-border-color-light)]"/>}
-                    {editingImageTagFile && <img src={URL.createObjectURL(editingImageTagFile)} alt="New preview" className="mt-1 h-8 w-8 object-contain border border-[var(--bv-border-color-light)]" onLoad={() => URL.revokeObjectURL(editingImageTagFile ? URL.createObjectURL(editingImageTagFile) : '')} />}
+                    {editingImageTagPreviewUrl && editingImageTagFile && <img src={editingImageTagPreviewUrl} alt="New preview" className="mt-1 h-8 w-8 object-contain border border-[var(--bv-border-color-light)]"/>}
                   </LabelInputContainer>
                    <div className="flex gap-2">
                         <LabelInputContainer label="Width (px)" htmlFor="editingImageTagWidth" subText="Display width in preview.">
@@ -749,7 +787,12 @@ const ControlsPanel: React.FC<ControlsPanelProps> = (props) => {
                    </div>
                   <div className="flex gap-2 mt-2">
                     <Button onClick={handleSaveImageTag} className="flex-1">Save Image Tag</Button>
-                    <Button onClick={() => setIsEditingImageTag(false)} className="flex-1 !bg-gray-500 hover:!bg-gray-600">Cancel</Button>
+                    <Button onClick={() => {
+                        setIsEditingImageTag(false);
+                        // The useEffect for isEditingImageTag will handle revoking editingImageTagPreviewUrl
+                        setEditingImageTagFile(null); // Explicitly clear the file selection state
+                      }} 
+                      className="flex-1 !bg-gray-500 hover:!bg-gray-600">Cancel</Button>
                   </div>
                 </div>
               ) : (
@@ -925,7 +968,7 @@ const ControlsPanel: React.FC<ControlsPanelProps> = (props) => {
     isGitHubLoading, gitHubStatusMessage,
     activeThemeKey, 
     isEditingColorTag, editingColorTag, editingColorTagId,
-    isEditingImageTag, editingImageTagFields, editingImageTagId, editingImageTagFile, 
+    isEditingImageTag, editingImageTagFields, editingImageTagId, editingImageTagFile, editingImageTagPreviewUrl,
     handlePrimaryBgImageUpload, handleSecondaryBgImageUpload, handleBitmapFontImageUpload
   ]);
 
@@ -942,32 +985,48 @@ const ControlsPanel: React.FC<ControlsPanelProps> = (props) => {
 
   useEffect(() => {
     setOpenSections(prevOpenSections => {
-      const newOpenSectionsState = { ...prevOpenSections };
-      let hasChanges = false;
+      let newOpenState: Record<string, boolean> = {};
+      let hasChanged = false;
+      const currentPanelSectionIds = new Set<string>();
 
+      // Populate newOpenState based on current panelSections
+      // and determine if any individual section's open state needs to change
       panelSections.forEach(section => {
+        currentPanelSectionIds.add(section.id);
+        let intendedSectionOpenState: boolean;
+
         if (section.id === 'overflow-settings-section') {
-          if (newOpenSectionsState[section.id] !== overflowSettingsPanelOpen) {
-            newOpenSectionsState[section.id] = overflowSettingsPanelOpen;
-            hasChanges = true;
-          }
+          intendedSectionOpenState = overflowSettingsPanelOpen;
         } else {
-          if (newOpenSectionsState[section.id] === undefined) {
-            newOpenSectionsState[section.id] = section.defaultOpen !== undefined ? section.defaultOpen : true;
-            hasChanges = true;
-          }
+          // If section was previously known, keep its state, otherwise initialize from defaultOpen
+          intendedSectionOpenState = (section.id in prevOpenSections)
+            ? prevOpenSections[section.id]!
+            : (section.defaultOpen !== undefined ? section.defaultOpen : true);
+        }
+        
+        newOpenState[section.id] = intendedSectionOpenState;
+
+        // Check if this specific section's state has changed from prevOpenSections or if it's a new section
+        if (newOpenState[section.id] !== prevOpenSections[section.id]) {
+          hasChanged = true;
         }
       });
 
-      const currentSectionIds = new Set(panelSections.map(s => s.id));
-      for (const idInState in newOpenSectionsState) {
-        if (!currentSectionIds.has(idInState)) {
-          delete newOpenSectionsState[idInState];
-          hasChanges = true;
+      // Check for removed sections: if a key in prevOpenSections is not in currentPanelSectionIds
+      for (const idInPrev in prevOpenSections) {
+        if (!currentPanelSectionIds.has(idInPrev)) {
+          hasChanged = true; // A section was removed
+          // No need to delete from newOpenState as it's built fresh from panelSections
+          break; 
         }
       }
+      
+      // If the set of keys is different, it's a change
+      if (Object.keys(newOpenState).length !== Object.keys(prevOpenSections).length) {
+          hasChanged = true;
+      }
 
-      return hasChanges ? newOpenSectionsState : prevOpenSections;
+      return hasChanged ? newOpenState : prevOpenSections;
     });
   }, [panelSections, overflowSettingsPanelOpen]);
 

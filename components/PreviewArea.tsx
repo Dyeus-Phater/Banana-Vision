@@ -1,7 +1,9 @@
 
-
 import React, { CSSProperties, forwardRef, useLayoutEffect, useRef, useEffect, useState } from 'react';
 import { AppSettings, NestedAppSettingsObjectKeys, ThemeKey, CustomColorTag, ImageTag } from '../types';
+
+// For global bitmap cache type, if needed here or imported
+type BitmapCharCache = Map<string, { canvas: HTMLCanvasElement | null; dataURL?: string }>;
 
 export interface PreviewAreaProps {
   baseSettings: AppSettings;
@@ -20,15 +22,15 @@ export interface PreviewAreaProps {
   showPixelMarginGuides: boolean; 
   isReadOnlyPreview?: boolean;
   activeThemeKey: ThemeKey; 
+  bitmapCharCache: BitmapCharCache | null; // Added prop for shared cache
+  bitmapCacheId: number; // Added prop for cache refresh
 }
 
-// Intermediate segment type for color parsing
 interface ColorSegment {
   text: string;
   color: string | null; 
 }
 
-// Final display segments after all parsing
 interface FinalTextSegment {
   type: 'text';
   text: string;
@@ -40,7 +42,7 @@ interface FinalImageSegment {
   imageUrl: string;
   width: number;
   height: number;
-  altText: string; // Original tag for alt attribute
+  altText: string; 
 }
 
 type FinalDisplaySegment = FinalTextSegment | FinalImageSegment;
@@ -147,7 +149,6 @@ const hideGeneralTagsFromText = (
   return processedText;
 };
 
-// New comprehensive parsing function
 const generateDisplaySegments = (
   rawText: string,
   settings: AppSettings,
@@ -158,7 +159,6 @@ const generateDisplaySegments = (
   const enabledImageTags = settings.imageTags.filter(it => it.enabled && it.tag);
 
   if (simplifiedRender || enabledImageTags.length === 0) {
-    // No image tags to process or simplified render: process for color and general tags only
     const colorSegments = parseTextWithCustomColorTags(
       rawText,
       settings.customColorTags,
@@ -179,7 +179,6 @@ const generateDisplaySegments = (
     return finalSegments;
   }
 
-  // Sort image tags by length of tag descending to match longer tags first
   enabledImageTags.sort((a, b) => b.tag.length - a.tag.length);
   const imageTagPattern = enabledImageTags.map(it => it.tag.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')).join('|');
   const splitRegex = new RegExp(`(${imageTagPattern})`);
@@ -197,7 +196,6 @@ const generateDisplaySegments = (
         altText: matchedImageTag.tag,
       });
     } else {
-      // This part is text, process it for color and general tags
       const colorSegments = parseTextWithCustomColorTags(
         part,
         settings.customColorTags,
@@ -219,18 +217,6 @@ const generateDisplaySegments = (
   }
   return finalSegments;
 };
-
-
-function hexToRgb(hex: string): { r: number; g: number; b: number } | null {
-  const result = /^#?([a-f\d]{2})([a-f\d]{2})([a-f\d]{2})$/i.exec(hex);
-  return result
-    ? {
-        r: parseInt(result[1], 16),
-        g: parseInt(result[2], 16),
-        b: parseInt(result[3], 16),
-      }
-    : null;
-}
 
 const getCleanTextForCounting = (
   rawText: string,
@@ -335,19 +321,20 @@ const PreviewAreaInner = forwardRef<HTMLDivElement, PreviewAreaProps>(({
   onNestedSettingsChange, 
   showPixelMarginGuides, 
   isReadOnlyPreview = false,
-  activeThemeKey 
+  activeThemeKey,
+  bitmapCharCache, // Use passed-in cache
+  bitmapCacheId    // Use passed-in cache ID (might be used as part of key for re-renders)
 }, ref) => {
   const textContainerRef = useRef<HTMLDivElement>(null);
   const contentBoxRef = useRef<HTMLDivElement>(null); 
-  const bitmapCharCache = useRef<Map<string, HTMLCanvasElement | null>>(new Map());
-  const [bitmapCacheId, setBitmapCacheId] = useState(0);
+  // Removed local bitmapCharCache ref and bitmapCacheId state
 
   const [isDragging, setIsDragging] = useState(false);
   const dragStartCoords = useRef({ x: 0, y: 0 });
   const initialTextPosition = useRef({ x: 0, y: 0 });
 
   const effectiveText = textOverride !== undefined ? textOverride : baseSettings.text;
-  const settings: AppSettings = { // Create a local copy of settings to use effectiveText
+  const settings: AppSettings = { 
       ...baseSettings,
       text: effectiveText,
   };
@@ -436,7 +423,7 @@ const PreviewAreaInner = forwardRef<HTMLDivElement, PreviewAreaProps>(({
       if (settings.maxCharacters > 0) {
         const textForCharCounting = getCleanTextForCounting(
           settings.text, 
-          settings.imageTags, // Pass imageTags
+          settings.imageTags, 
           settings.tagPatternsToHide,
           settings.customColorTags,   
           settings.blockSeparators,
@@ -455,7 +442,7 @@ const PreviewAreaInner = forwardRef<HTMLDivElement, PreviewAreaProps>(({
     }
     setIsOverflowing(hasOverflow);
   }, [
-      settings.text, settings.customColorTags, settings.imageTags, // Added imageTags
+      settings.text, settings.customColorTags, settings.imageTags, 
       settings.systemFont, settings.bitmapFont, settings.currentFontType,
       settings.transform, settings.previewWidth, settings.previewHeight,
       settings.overflowDetectionMode, settings.maxCharacters, settings.hideTagsInPreview,
@@ -466,132 +453,8 @@ const PreviewAreaInner = forwardRef<HTMLDivElement, PreviewAreaProps>(({
     ]);
 
 
-  useEffect(() => {
-    if (settings.currentFontType === 'bitmap' && settings.bitmapFont.enabled && settings.bitmapFont.imageUrl && !simplifiedRender) {
-        const img = new Image();
-        img.crossOrigin = "anonymous";
-        img.src = settings.bitmapFont.imageUrl;
-        img.onload = () => {
-            const newCache = new Map<string, HTMLCanvasElement | null>();
-            const {
-              charWidth, charHeight, charMap,
-              colorToRemove, enableColorRemoval, colorRemovalTolerance,
-              enablePixelScanning, spaceWidthOverride
-            } = settings.bitmapFont;
-
-            if (charWidth <= 0 || charHeight <= 0) {
-                console.error("Bitmap font charWidth or charHeight is zero or negative.");
-                bitmapCharCache.current.clear();
-                setBitmapCacheId(id => id + 1);
-                return;
-            }
-
-            const charsPerRow = Math.floor(img.width / charWidth);
-            const targetRgb = enableColorRemoval ? hexToRgb(colorToRemove) : null;
-
-            for (let i = 0; i < charMap.length; i++) {
-                const char = charMap[i];
-                let effectiveCharWidth = charWidth; 
-
-                if (char === ' ') {
-                    if (spaceWidthOverride > 0) {
-                        effectiveCharWidth = spaceWidthOverride;
-                    } else {
-                        effectiveCharWidth = enablePixelScanning 
-                            ? Math.max(1, Math.floor(charWidth / 4)) 
-                            : charWidth;
-                    }
-                    const spaceCanvas = document.createElement('canvas');
-                    spaceCanvas.width = effectiveCharWidth;
-                    spaceCanvas.height = charHeight;
-                    newCache.set(char, spaceCanvas);
-                    continue; 
-                }
-
-                const tileX = (i % charsPerRow) * charWidth;
-                const tileY = Math.floor(i / charsPerRow) * charHeight;
-
-                const baseCharCanvas = document.createElement('canvas'); 
-                baseCharCanvas.width = charWidth;
-                baseCharCanvas.height = charHeight;
-                const baseCtx = baseCharCanvas.getContext('2d', { willReadFrequently: true });
-                if (!baseCtx) continue;
-                baseCtx.drawImage(img, tileX, tileY, charWidth, charHeight, 0, 0, charWidth, charHeight);
-
-                if (enableColorRemoval && targetRgb) {
-                    const imageData = baseCtx.getImageData(0, 0, charWidth, charHeight);
-                    const data = imageData.data;
-                    for (let p = 0; p < data.length; p += 4) {
-                        const r = data[p]; const g = data[p + 1]; const b = data[p + 2];
-                        if (Math.abs(r - targetRgb.r) <= colorRemovalTolerance &&
-                            Math.abs(g - targetRgb.g) <= colorRemovalTolerance &&
-                            Math.abs(b - targetRgb.b) <= colorRemovalTolerance) {
-                            data[p + 3] = 0; 
-                        }
-                    }
-                    baseCtx.putImageData(imageData, 0, 0);
-                }
-                
-                if (enablePixelScanning) {
-                    const imageData = baseCtx.getImageData(0, 0, charWidth, charHeight);
-                    const data = imageData.data;
-                    let rightmostPixel = -1;
-                    for (let yPx = 0; yPx < charHeight; yPx++) {
-                        for (let xPx = 0; xPx < charWidth; xPx++) {
-                            const alphaIndex = (yPx * charWidth + xPx) * 4 + 3;
-                            if (data[alphaIndex] > 10) { 
-                                if (xPx > rightmostPixel) {
-                                    rightmostPixel = xPx;
-                                }
-                            }
-                        }
-                    }
-                    effectiveCharWidth = (rightmostPixel === -1) ? 0 : rightmostPixel + 1;
-                }
-                
-                if (enablePixelScanning && effectiveCharWidth === 0) { 
-                    newCache.set(char, null);
-                } else {
-                    if (enablePixelScanning && effectiveCharWidth !== charWidth && effectiveCharWidth > 0) {
-                        const finalScannedCanvas = document.createElement('canvas');
-                        finalScannedCanvas.width = effectiveCharWidth;
-                        finalScannedCanvas.height = charHeight;
-                        const finalScannedCtx = finalScannedCanvas.getContext('2d');
-                        if (finalScannedCtx) {
-                           finalScannedCtx.drawImage(baseCharCanvas, 0, 0, effectiveCharWidth, charHeight, 0, 0, effectiveCharWidth, charHeight);
-                           newCache.set(char, finalScannedCanvas);
-                        } else {
-                           newCache.set(char, baseCharCanvas); 
-                        }
-                    } else {
-                         newCache.set(char, baseCharCanvas); 
-                    }
-                }
-            }
-            bitmapCharCache.current = newCache;
-            setBitmapCacheId(id => id + 1);
-        };
-        img.onerror = () => {
-            console.error("Failed to load bitmap font image.");
-            bitmapCharCache.current.clear();
-            setBitmapCacheId(id => id + 1);
-        }
-    } else {
-        bitmapCharCache.current.clear();
-        if (settings.currentFontType === 'bitmap' || simplifiedRender) { 
-             setBitmapCacheId(id => id + 1);
-        }
-    }
-  }, [
-      settings.bitmapFont.imageUrl, settings.bitmapFont.charWidth, settings.bitmapFont.charHeight,
-      settings.bitmapFont.charMap, 
-      settings.bitmapFont.enableColorRemoval, settings.bitmapFont.colorToRemove,
-      settings.bitmapFont.colorRemovalTolerance, settings.bitmapFont.enablePixelScanning,
-      settings.bitmapFont.spaceWidthOverride,
-      settings.currentFontType, settings.bitmapFont.enabled,
-      simplifiedRender
-    ]);
-
+  // Removed the local useEffect for bitmapCharCache generation.
+  // It's now handled by App.tsx and passed via props.
 
   const handleMouseDown = (event: React.MouseEvent<HTMLDivElement>) => {
     if (isReadOnlyPreview || event.button !== 0 || simplifiedRender) return; 
@@ -655,7 +518,21 @@ const PreviewAreaInner = forwardRef<HTMLDivElement, PreviewAreaProps>(({
     }
 
     if (settings.currentFontType === 'bitmap' && settings.bitmapFont.enabled && settings.bitmapFont.imageUrl && !simplifiedRender) {
-      const { charHeight, spacing, zoom: bitmapZoom, enableTintColor, color: globalTintColor } = settings.bitmapFont;
+      if (!bitmapCharCache) { // Cache might not be ready or failed to load
+        const placeholderStyle: CSSProperties = {
+            ...textTransformStyle, display: 'flex', alignItems: 'center', justifyContent: 'center',
+            width: '100%', height: '100%', fontFamily: 'Arial, sans-serif', fontSize: '12px',
+            color: 'var(--bv-text-secondary)', fontStyle: 'italic', padding: '10px', boxSizing: 'border-box',
+            textAlign: 'center',
+        };
+        return (
+            <div style={{ width: '100%', height: '100%', display: 'flex', alignItems: alignItems, justifyContent: settings.systemFont.textAlignHorizontal === 'center' ? 'center' : settings.systemFont.textAlignHorizontal === 'right' ? 'flex-end' : 'flex-start', padding: '8px', boxSizing: 'border-box' }}>
+                <div ref={textContainerRef} style={placeholderStyle}>Bitmap font cache loading...</div>
+            </div>
+        );
+      }
+      
+      const { charHeight, spacing, zoom: bitmapZoom } = settings.bitmapFont;
       const baseCharPixelHeight = charHeight * bitmapZoom;
       const effectiveSpacing = spacing * bitmapZoom;
       
@@ -665,14 +542,13 @@ const PreviewAreaInner = forwardRef<HTMLDivElement, PreviewAreaProps>(({
         padding: '2px', boxSizing: 'border-box', imageRendering: 'pixelated',
       };
 
-      // Group segments by lines for bitmap rendering
       const linesOfSegments: FinalDisplaySegment[][] = [];
       let currentLine: FinalDisplaySegment[] = [];
       finalDisplaySegments.forEach(segment => {
         if (segment.type === 'text') {
           const textLines = trimLeadingAndTrailingEmptyLines(segment.text.replace(/\r/g, '')).split('\n');
           textLines.forEach((lineText, index) => {
-            if (lineText || textLines.length === 1) { // Add segment even if lineText is empty if it's the only part of this text segment
+            if (lineText || textLines.length === 1) { 
                  currentLine.push({ ...segment, text: lineText });
             }
             if (index < textLines.length - 1) {
@@ -680,7 +556,7 @@ const PreviewAreaInner = forwardRef<HTMLDivElement, PreviewAreaProps>(({
               currentLine = [];
             }
           });
-        } else { // Image segment
+        } else { 
           currentLine.push(segment);
         }
       });
@@ -704,35 +580,26 @@ const PreviewAreaInner = forwardRef<HTMLDivElement, PreviewAreaProps>(({
                     if (segment.type === 'image') {
                       return <img key={segIdx} src={segment.imageUrl} alt={segment.altText} style={{ width: `${segment.width * bitmapZoom}px`, height: `${segment.height * bitmapZoom}px`, marginRight: `${effectiveSpacing}px`, imageRendering: 'pixelated', verticalAlign: 'middle' }} />;
                     }
-                    // Text segment for bitmap
+                    
                     return segment.text.split('').map((char, charIndex) => {
-                      const baseCachedCanvas = bitmapCharCache.current.get(char);
-                      if (baseCachedCanvas === null) return <div key={charIndex} style={{ width: 0, height: `${baseCharPixelHeight}px`, marginRight: `${effectiveSpacing}px` }} />;
-                      if (baseCachedCanvas instanceof HTMLCanvasElement) {
-                        let charToRenderCanvas = baseCachedCanvas;
-                        if (enableTintColor) {
-                          const tintToApply = globalTintColor; // Bitmap currently doesn't use color segments from custom tags for tinting characters
-                          if (tintToApply) {
-                            const tintedCanvas = document.createElement('canvas');
-                            tintedCanvas.width = baseCachedCanvas.width;
-                            tintedCanvas.height = baseCachedCanvas.height;
-                            const ctx = tintedCanvas.getContext('2d');
-                            if (ctx) {
-                              ctx.drawImage(baseCachedCanvas, 0, 0);
-                              ctx.globalCompositeOperation = 'source-in';
-                              ctx.fillStyle = tintToApply;
-                              ctx.fillRect(0, 0, tintedCanvas.width, tintedCanvas.height);
-                              charToRenderCanvas = tintedCanvas;
-                            }
-                          }
-                        }
-                        const displayWidth = charToRenderCanvas.width * bitmapZoom; 
-                        const displayHeight = charToRenderCanvas.height * bitmapZoom; 
-                        if (displayWidth === 0 && char !== ' ') return <div key={charIndex} style={{ width: 0, height: `${baseCharPixelHeight}px`, marginRight: `${effectiveSpacing}px` }} />;
-                        return <img key={charIndex} src={charToRenderCanvas.toDataURL()} alt={char} style={{ width: `${displayWidth}px`, height: `${displayHeight}px`, marginRight: `${effectiveSpacing}px`, imageRendering: 'pixelated' }} />;
+                      const cachedCharData = bitmapCharCache.get(char); // Use global cache
+                      if (!cachedCharData || !cachedCharData.canvas) { 
+                        const emptyCharWidth = (char === ' ' && cachedCharData && cachedCharData.canvas) ? cachedCharData.canvas.width * bitmapZoom : 0;
+                        return <div key={charIndex} style={{ width: `${emptyCharWidth}px`, height: `${baseCharPixelHeight}px`, marginRight: `${effectiveSpacing}px` }} />;
                       }
-                      if (char === '\r') return null; 
-                      return <span key={charIndex} style={{width: `${settings.bitmapFont.charWidth * bitmapZoom}px`, height: `${baseCharPixelHeight}px`, marginRight: `${effectiveSpacing}px`}}>{char === ' ' ? '\u00A0' : '?'}</span>;
+                      
+                      const finalCachedCanvas = cachedCharData.canvas;
+                      const dataURL = cachedCharData.dataURL;
+
+                      if (!dataURL) { 
+                          return <span key={charIndex} style={{width: `${settings.bitmapFont.charWidth * bitmapZoom}px`, height: `${baseCharPixelHeight}px`, marginRight: `${effectiveSpacing}px`}}>{char === ' ' ? '\u00A0' : '?'}</span>;
+                      }
+
+                      const displayWidth = finalCachedCanvas.width * bitmapZoom; 
+                      const displayHeight = finalCachedCanvas.height * bitmapZoom; 
+                      if (displayWidth === 0 && char !== ' ') return <div key={charIndex} style={{ width: 0, height: `${baseCharPixelHeight}px`, marginRight: `${effectiveSpacing}px` }} />;
+                      
+                      return <img key={charIndex} src={dataURL} alt={char} style={{ width: `${displayWidth}px`, height: `${displayHeight}px`, marginRight: `${effectiveSpacing}px`, imageRendering: 'pixelated' }} />;
                     });
                   })}
                 </div>
@@ -755,7 +622,6 @@ const PreviewAreaInner = forwardRef<HTMLDivElement, PreviewAreaProps>(({
         textShadow: textShadowValue !== 'none' ? textShadowValue : undefined,
     };
     
-    // System Font Rendering with Image Tags
     const linesOfSystemSegments: (FinalTextSegment | FinalImageSegment)[][] = [];
     let currentSystemLine: (FinalTextSegment | FinalImageSegment)[] = [];
 
@@ -763,7 +629,7 @@ const PreviewAreaInner = forwardRef<HTMLDivElement, PreviewAreaProps>(({
       if (segment.type === 'text') {
         const textLines = trimLeadingAndTrailingEmptyLines(segment.text).split('\n');
         textLines.forEach((lineText, i) => {
-          if (lineText || textLines.length === 1 && currentSystemLine.length === 0 && i === 0 && segment.text.trim() === '') { // Keep empty line if it's the only content from an originally empty segment part
+          if (lineText || textLines.length === 1 && currentSystemLine.length === 0 && i === 0 && segment.text.trim() === '') { 
              currentSystemLine.push({ ...segment, text: lineText });
           } else if (lineText) {
              currentSystemLine.push({ ...segment, text: lineText });
@@ -774,12 +640,12 @@ const PreviewAreaInner = forwardRef<HTMLDivElement, PreviewAreaProps>(({
             currentSystemLine = [];
           }
         });
-      } else { // Image segment
+      } else { 
         currentSystemLine.push(segment);
       }
     });
     if (currentSystemLine.length > 0) linesOfSystemSegments.push(currentSystemLine);
-    if (finalDisplaySegments.length === 0 && settings.text.trim() === '') { // Handle case of only whitespace input
+    if (finalDisplaySegments.length === 0 && settings.text.trim() === '') { 
         linesOfSystemSegments.push([{type: 'text', text: '', color: settings.systemFont.color}]);
     }
 
@@ -789,11 +655,11 @@ const PreviewAreaInner = forwardRef<HTMLDivElement, PreviewAreaProps>(({
         <div ref={textContainerRef} style={measurableDivStyle}>
             <div style={{...baseTextSpanStyle, display: 'block' }}>
             {linesOfSystemSegments.map((lineSegments, lineIdx) => (
-              <div key={lineIdx} style={{ minHeight: `${settings.systemFont.fontSize * settings.globalLineHeightFactor}px` /* Ensure empty lines have height */ }}>
+              <div key={lineIdx} style={{ minHeight: `${settings.systemFont.fontSize * settings.globalLineHeightFactor}px` }}>
                 {lineSegments.map((segment, segIdx) => (
                   segment.type === 'image' 
                   ? <img key={`${lineIdx}-${segIdx}`} src={segment.imageUrl} alt={segment.altText} style={{ width: `${segment.width}px`, height: `${segment.height}px`, display: 'inline-block', verticalAlign: 'middle', margin: '0 1px' }} />
-                  : <span key={`${lineIdx}-${segIdx}`} style={{ color: segment.color || settings.systemFont.color }}>{segment.text === '' && lineSegments.length === 1 ? '\u00A0' : segment.text /* Render non-breaking space for truly empty lines */}</span>
+                  : <span key={`${lineIdx}-${segIdx}`} style={{ color: segment.color || settings.systemFont.color }}>{segment.text === '' && lineSegments.length === 1 ? '\u00A0' : segment.text }</span>
                 ))}
               </div>
             ))}
