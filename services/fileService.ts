@@ -98,6 +98,12 @@ export const importSettingsFromJson = (file: File): Promise<{ appSettings: AppSe
           bitmapFont: {
              ...DEFAULT_SETTINGS.bitmapFont,
             ...(importedAppSettings.bitmapFont || {}),
+            separationX: typeof importedAppSettings.bitmapFont?.separationX === 'number'
+              ? importedAppSettings.bitmapFont.separationX
+              : DEFAULT_SETTINGS.bitmapFont.separationX,
+            separationY: typeof importedAppSettings.bitmapFont?.separationY === 'number'
+              ? importedAppSettings.bitmapFont.separationY
+              : DEFAULT_SETTINGS.bitmapFont.separationY,
           },
           transform: {
             ...DEFAULT_SETTINGS.transform,

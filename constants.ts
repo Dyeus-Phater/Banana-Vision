@@ -2,7 +2,105 @@
 
 import type { AppSettings, GitHubSettings, CustomThemeColors, ResolvedThemeColors, ThemeKey } from './types';
 
-const DEFAULT_SAMPLE_BYTE_MAP_STRING = `A=1\nB=1\nC=1\nD=1\nE=1\nF=1\nG=1\nH=1\nI=1\nJ=1\nK=1\nL=1\nM=1\nN=1\nO=1\nP=1\nQ=1\nR=1\nS=1\nT=1\nU=1\nV=1\nW=1\nX=1\nY=1\nZ=1\na=1\nb=1\nc=1\nd=1\ne=1\nf=1\ng=1\nh=1\ni=1\nj=1\nk=1\nl=1\nm=1\nn=1\no=1\np=1\nq=1\nr=1\ns=1\nt=1\nu=1\nv=1\nw=1\nx=1\ny=1\nz=1\n0=1\n1=1\n2=1\n3=1\n4=1\n5=1\n6=1\n7=1\n8=1\n9=1\n =1\n.=1\n,=1\n!=1\n?=1\n(=1\n)=1\n[=1\n]=1\n{=1\n}=1\n<=1\n>=1\n/=1\n\\=1\n-=1\n_=1\n+=1\n*=1\n&=1\n^=1\n%=1\n$=1\n#=1\n@=1\n~=1\n\`=1\n'=1\n"=1\n:=1\n;=1\n|=1\n€=3\n£=2\n¥=2\n©=2\n®=2`;
+const DEFAULT_SAMPLE_BYTE_MAP_STRING = `A=1
+B=1
+C=1
+D=1
+E=1
+F=1
+G=1
+H=1
+I=1
+J=1
+K=1
+L=1
+M=1
+N=1
+O=1
+P=1
+Q=1
+R=1
+S=1
+T=1
+U=1
+V=1
+W=1
+X=1
+Y=1
+Z=1
+a=1
+b=1
+c=1
+d=1
+e=1
+f=1
+g=1
+h=1
+i=1
+j=1
+k=1
+l=1
+m=1
+n=1
+o=1
+p=1
+q=1
+r=1
+s=1
+t=1
+u=1
+v=1
+w=1
+x=1
+y=1
+z=1
+0=1
+1=1
+2=1
+3=1
+4=1
+5=1
+6=1
+7=1
+8=1
+9=1
+ =1
+.=1
+,=1
+!=1
+?=1
+(=1
+)=1
+[=1
+]=1
+{=1
+}=1
+<=1
+>=1
+/=1
+\\=1
+-=1
+_=1
++=1
+*=1
+&=1
+^=1
+%=1
+$=1
+#=1
+@=1
+~=1
+\`=1
+'=1
+"=1
+:=1
+;=1
+|=1
+€=3
+£=2
+¥=2
+©=2
+®=2`;
 
 // Default AppSettings
 export const DEFAULT_SETTINGS: AppSettings = {
@@ -50,6 +148,8 @@ export const DEFAULT_SETTINGS: AppSettings = {
     colorRemovalTolerance: 0,
     enablePixelScanning: false,
     spaceWidthOverride: 0,
+    separationX: 0, // New default
+    separationY: 0, // New default
   },
   transform: {
     positionX: 13,

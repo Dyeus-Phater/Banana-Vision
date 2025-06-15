@@ -40,6 +40,8 @@ export interface BitmapFontSettings {
   colorRemovalTolerance: number; // Tolerance for color removal (0-255, or a scaled range)
   enablePixelScanning: boolean; // Dynamically adjust character width based on pixels
   spaceWidthOverride: number; // Existing: Custom width for space character, 0 for auto
+  separationX: number; // New: Horizontal pixels separating tiles
+  separationY: number; // New: Vertical pixels separating tiles
 }
 
 export interface LineMetricDetail {

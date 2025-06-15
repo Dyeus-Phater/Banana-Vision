@@ -459,7 +459,8 @@ const App: React.FC = () => {
           charWidth, charHeight, charMap,
           colorToRemove, enableColorRemoval, colorRemovalTolerance,
           enablePixelScanning, spaceWidthOverride,
-          enableTintColor, color: globalTintColor
+          enableTintColor, color: globalTintColor,
+          separationX, separationY // New: separations
         } = settings.bitmapFont;
 
         if (charWidth <= 0 || charHeight <= 0) {
@@ -469,25 +470,28 @@ const App: React.FC = () => {
           return;
         }
 
-        const charsPerRow = Math.floor(img.width / charWidth);
+        const effectiveTileWidth = charWidth + separationX;
+        const effectiveTileHeight = charHeight + separationY;
+        
+        const charsPerRow = (effectiveTileWidth > 0) ? Math.floor((img.width + separationX) / effectiveTileWidth) : 1;
         const targetRgb = enableColorRemoval ? hexToRgb(colorToRemove) : null;
 
         for (let i = 0; i < charMap.length; i++) {
           const char = charMap[i];
-          let effectiveCharWidth = charWidth;
+          let effectiveCharWidthForRender = charWidth; // This is the width of the actual character data to draw
           let charSpecificCanvas: HTMLCanvasElement | null = document.createElement('canvas');
 
           if (char === ' ') {
             if (spaceWidthOverride > 0) {
-              effectiveCharWidth = spaceWidthOverride;
+              effectiveCharWidthForRender = spaceWidthOverride;
             } else {
-              effectiveCharWidth = enablePixelScanning
-                ? Math.max(1, Math.floor(charWidth / 4))
-                : charWidth;
+              effectiveCharWidthForRender = enablePixelScanning
+                ? Math.max(1, Math.floor(charWidth / 4)) // For space, use 1/4 of charWidth if pixel scanning
+                : charWidth; // Default space width is full charWidth
             }
             if (charSpecificCanvas) {
-              charSpecificCanvas.width = effectiveCharWidth;
-              charSpecificCanvas.height = charHeight;
+              charSpecificCanvas.width = effectiveCharWidthForRender;
+              charSpecificCanvas.height = charHeight; // Space height is still charHeight
             }
             newCache.set(char, { canvas: charSpecificCanvas, dataURL: charSpecificCanvas?.toDataURL() });
             continue;
@@ -498,14 +502,20 @@ const App: React.FC = () => {
             continue;
           }
 
-          charSpecificCanvas.width = charWidth;
+          charSpecificCanvas.width = charWidth; // Canvas for extraction matches character data size
           charSpecificCanvas.height = charHeight;
           const ctx = charSpecificCanvas.getContext('2d', { willReadFrequently: true });
           if (!ctx) {
             newCache.set(char, { canvas: null });
             continue;
           }
-          ctx.drawImage(img, (i % charsPerRow) * charWidth, Math.floor(i / charsPerRow) * charHeight, charWidth, charHeight, 0, 0, charWidth, charHeight);
+
+          // Calculate source X and Y including separations
+          const sx = (i % charsPerRow) * effectiveTileWidth;
+          const sy = Math.floor(i / charsPerRow) * effectiveTileHeight;
+          
+          // Draw the character tile (charWidth x charHeight) from the source image
+          ctx.drawImage(img, sx, sy, charWidth, charHeight, 0, 0, charWidth, charHeight);
 
           if (enableColorRemoval && targetRgb) {
             const imageData = ctx.getImageData(0, 0, charWidth, charHeight);
@@ -515,7 +525,7 @@ const App: React.FC = () => {
               if (Math.abs(r - targetRgb.r) <= colorRemovalTolerance &&
                   Math.abs(g - targetRgb.g) <= colorRemovalTolerance &&
                   Math.abs(b - targetRgb.b) <= colorRemovalTolerance) {
-                data[p + 3] = 0;
+                data[p + 3] = 0; // Make transparent
               }
             }
             ctx.putImageData(imageData, 0, 0);
@@ -528,27 +538,49 @@ const App: React.FC = () => {
             for (let yPx = 0; yPx < charHeight; yPx++) {
               for (let xPx = 0; xPx < charWidth; xPx++) {
                 const alphaIndex = (yPx * charWidth + xPx) * 4 + 3;
-                if (data[alphaIndex] > 10) {
+                if (data[alphaIndex] > 10) { // Consider pixel opaque if alpha > 10
                   if (xPx > rightmostPixel) rightmostPixel = xPx;
                 }
               }
             }
-            effectiveCharWidth = (rightmostPixel === -1) ? 0 : rightmostPixel + 1;
+            effectiveCharWidthForRender = (rightmostPixel === -1) ? 0 : rightmostPixel + 1;
 
-            if (effectiveCharWidth === 0) {
-              newCache.set(char, { canvas: null });
+            if (effectiveCharWidthForRender === 0 && char !== ' ') { // If char is not space and scanned width is 0
+              newCache.set(char, { canvas: null }); // Treat as empty/not drawable
               continue;
-            } else if (effectiveCharWidth < charWidth) {
+            } else if (effectiveCharWidthForRender < charWidth) {
               const scannedCanvas = document.createElement('canvas');
-              scannedCanvas.width = effectiveCharWidth;
+              scannedCanvas.width = effectiveCharWidthForRender;
               scannedCanvas.height = charHeight;
               const scannedCtx = scannedCanvas.getContext('2d');
               if (scannedCtx) {
-                scannedCtx.drawImage(charSpecificCanvas, 0, 0, effectiveCharWidth, charHeight, 0, 0, effectiveCharWidth, charHeight);
-                charSpecificCanvas = scannedCanvas;
+                // Copy only the scanned portion from the original extracted tile
+                scannedCtx.drawImage(charSpecificCanvas, 0, 0, effectiveCharWidthForRender, charHeight, 0, 0, effectiveCharWidthForRender, charHeight);
+                charSpecificCanvas = scannedCanvas; // Replace with the narrower canvas
               }
+            } else {
+                 effectiveCharWidthForRender = charWidth; // Ensure it does not exceed original if scanning doesn't reduce it
             }
+          } else {
+             effectiveCharWidthForRender = charWidth; // Not pixel scanning, use original charWidth
           }
+          
+          // Ensure final canvas for cache reflects the true renderable width
+          if (charSpecificCanvas && charSpecificCanvas.width !== effectiveCharWidthForRender) {
+              if (effectiveCharWidthForRender === 0 && char !== ' ') { // Safety for completely blank scanned chars
+                  newCache.set(char, { canvas: null });
+                  continue;
+              }
+              const finalWidthCanvas = document.createElement('canvas');
+              finalWidthCanvas.width = effectiveCharWidthForRender;
+              finalWidthCanvas.height = charHeight;
+              const finalCtx = finalWidthCanvas.getContext('2d');
+              if (finalCtx) {
+                  finalCtx.drawImage(charSpecificCanvas, 0, 0, effectiveCharWidthForRender, charHeight, 0,0, effectiveCharWidthForRender, charHeight);
+                  charSpecificCanvas = finalWidthCanvas;
+              }
+          }
+
 
           let finalCanvasForCache = charSpecificCanvas;
           if (enableTintColor && globalTintColor && finalCanvasForCache) {
@@ -588,6 +620,7 @@ const App: React.FC = () => {
     settings.bitmapFont.charMap, settings.bitmapFont.enableColorRemoval, settings.bitmapFont.colorToRemove,
     settings.bitmapFont.colorRemovalTolerance, settings.bitmapFont.enablePixelScanning,
     settings.bitmapFont.spaceWidthOverride, settings.bitmapFont.enableTintColor, settings.bitmapFont.color,
+    settings.bitmapFont.separationX, settings.bitmapFont.separationY, // Added dependencies
     settings.currentFontType, settings.bitmapFont.enabled
   ]);
 
@@ -1042,7 +1075,18 @@ const App: React.FC = () => {
     if (activeMainScript.blocks.length === 0) {
         scriptContent = ""; 
     } else if (activeMainScript.parsedWithLineAsBlock) {
-        scriptContent = activeMainScript.blocks.map(block => block.content).join('\n');
+        // Fix for extra newlines when parsedWithLineAsBlock
+        let contentParts: string[] = [];
+        for (let i = 0; i < activeMainScript.blocks.length; i++) {
+            const currentBlockContent = activeMainScript.blocks[i].content;
+            contentParts.push(currentBlockContent);
+            if (i < activeMainScript.blocks.length - 1) { // If not the last block
+                if (!currentBlockContent.endsWith('\n')) {
+                    contentParts.push('\n');
+                }
+            }
+        }
+        scriptContent = contentParts.join('');
     } else if (activeMainScript.parsedWithCustomSeparators) {
       scriptContent = activeMainScript.blocks.map(block => block.content).join('');
     } else {
@@ -1070,7 +1114,18 @@ const App: React.FC = () => {
       if (script.blocks.length === 0) {
         currentSerializedContent = "";
       } else if (script.parsedWithLineAsBlock) {
-        currentSerializedContent = script.blocks.map(block => block.content).join('\n');
+        // Fix for extra newlines when parsedWithLineAsBlock
+        let contentParts: string[] = [];
+        for (let i = 0; i < script.blocks.length; i++) {
+            const currentBlockContent = script.blocks[i].content;
+            contentParts.push(currentBlockContent);
+            if (i < script.blocks.length - 1) { // If not the last block
+                if (!currentBlockContent.endsWith('\n')) {
+                    contentParts.push('\n');
+                }
+            }
+        }
+        currentSerializedContent = contentParts.join('');
       } else if (script.parsedWithCustomSeparators) {
         currentSerializedContent = script.blocks.map(block => block.content).join('');
       } else {
@@ -2166,7 +2221,18 @@ const handleCurrentBlockContentChangeInSingleView = useCallback((newContent: str
     if (activeMainScript.blocks.length === 0) {
         scriptContent = ""; 
     } else if (activeMainScript.parsedWithLineAsBlock) {
-      scriptContent = activeMainScript.blocks.map(block => block.content).join('\n');
+      // Fix for extra newlines when parsedWithLineAsBlock
+      let contentParts: string[] = [];
+      for (let i = 0; i < activeMainScript.blocks.length; i++) {
+          const currentBlockContent = activeMainScript.blocks[i].content;
+          contentParts.push(currentBlockContent);
+          if (i < activeMainScript.blocks.length - 1) { // If not the last block
+              if (!currentBlockContent.endsWith('\n')) {
+                  contentParts.push('\n');
+              }
+          }
+      }
+      scriptContent = contentParts.join('');
     } else if (activeMainScript.parsedWithCustomSeparators) {
       scriptContent = activeMainScript.blocks.map(block => block.content).join('');
     } else {
@@ -2244,7 +2310,18 @@ const handleSaveAllToGitHubFolder = useCallback(async () => {
         if (script.blocks.length === 0) {
             currentScriptContent = "";
         } else if (script.parsedWithLineAsBlock) {
-          currentScriptContent = script.blocks.map(block => block.content).join('\n');
+          // Fix for extra newlines when parsedWithLineAsBlock
+          let contentParts: string[] = [];
+          for (let i = 0; i < script.blocks.length; i++) {
+              const currentBlockContent = script.blocks[i].content;
+              contentParts.push(currentBlockContent);
+              if (i < script.blocks.length - 1) { // If not the last block
+                  if (!currentBlockContent.endsWith('\n')) {
+                      contentParts.push('\n');
+                  }
+              }
+          }
+          currentScriptContent = contentParts.join('');
         } else if (script.parsedWithCustomSeparators) {
           currentScriptContent = script.blocks.map(block => block.content).join('');
         } else {
@@ -2596,7 +2673,7 @@ const handleSaveAllToGitHubFolder = useCallback(async () => {
                             bitmapCacheId={globalBitmapCacheId}
                           />
                           {activeScriptBlocks[currentBlockIndex || 0]?.isOverflowing && (
-                            <div className="absolute top-0 right-1 mt-1 mr-1 bg-red-500 text-white text-xs px-2 py-1 rounded z-20">
+                            <div className="absolute top-0 right-1 mt-1 mr-1 bg-red-500 text-white text-xs px-2 py-0.5 rounded-full z-20">
                               Overflow!
                             </div>
                           )}
