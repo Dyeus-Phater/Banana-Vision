@@ -1,12 +1,15 @@
 
+
 import React, { useRef } from 'react';
 
 interface FileInputProps {
-  onChange: (files: FileList) => void;
+  onChange: (files: FileList | null) => void; // Allow null for cancellation
   accept?: string;
   buttonLabel?: string;
   buttonClassName?: string;
   multiple?: boolean;
+  id?: string; // For label association
+  inputRef?: React.RefObject<HTMLInputElement>; // For programmatic click
 }
 
 const FileInput: React.FC<FileInputProps> = ({ 
@@ -14,17 +17,24 @@ const FileInput: React.FC<FileInputProps> = ({
   accept, 
   buttonLabel = "Upload File", 
   buttonClassName,
-  multiple = false 
+  multiple = false,
+  id,
+  inputRef: externalInputRef
 }) => {
-  const inputRef = useRef<HTMLInputElement>(null);
+  const internalInputRef = useRef<HTMLInputElement>(null);
+  const inputRef = externalInputRef || internalInputRef;
+
 
   const handleFileChange = (event: React.ChangeEvent<HTMLInputElement>) => {
     const files = event.target.files;
     if (files && files.length > 0) {
       onChange(files);
-      if (inputRef.current) {
-        inputRef.current.value = ""; 
-      }
+    } else {
+      onChange(null); // Pass null if no files selected (e.g., user cancelled dialog)
+    }
+    // Reset input value to allow selecting the same file again if needed
+    if (inputRef.current) {
+      inputRef.current.value = ""; 
     }
   };
 
@@ -42,6 +52,7 @@ const FileInput: React.FC<FileInputProps> = ({
     <>
       <input
         type="file"
+        id={id}
         ref={inputRef}
         onChange={handleFileChange}
         accept={accept}

@@ -1,5 +1,6 @@
 
-import React, {useState, useEffect, useCallback, useMemo} from 'react';
+
+import React, {useState, useEffect, useCallback, useMemo, useRef} from 'react';
 import { AppSettings, Block, NestedAppSettingsObjectKeys, ScriptFile, GitHubSettings, ThemeKey, CustomColorTag, ImageTag } from '../types';
 import { FindScope, FindResultSummaryItem } from '../App';
 import { AVAILABLE_FONTS } 
@@ -247,8 +248,7 @@ const ControlsPanel: React.FC<ControlsPanelProps> = (props) => {
     activeThemeKey
   } = props;
 
-  const [customFontFile, setCustomFontFile] = useState<File | null>(null);
-  const [customFontCssNameInput, setCustomFontCssNameInput] = useState<string>("");
+  const customFontFilePickerRef = useRef<HTMLInputElement>(null);
 
   const [isEditingColorTag, setIsEditingColorTag] = useState<boolean>(false);
   const [editingColorTag, setEditingColorTag] = useState<CustomColorTag | Omit<CustomColorTag, 'id'>>(DEFAULT_CUSTOM_COLOR_TAG);
@@ -260,16 +260,6 @@ const ControlsPanel: React.FC<ControlsPanelProps> = (props) => {
   const [editingImageTagId, setEditingImageTagId] = useState<string | null>(null);
   const [editingImageTagFile, setEditingImageTagFile] = useState<File | null>(null);
   const [editingImageTagPreviewUrl, setEditingImageTagPreviewUrl] = useState<string | null>(null);
-
-
-  useEffect(() => {
-    if (loadedCustomFontName && settings.systemFont.fontFamily === loadedCustomFontName) {
-      setCustomFontCssNameInput(loadedCustomFontName);
-    } else if (settings.systemFont.fontFamily === "Custom...") {
-        if (!customFontFile) setCustomFontCssNameInput("");
-    }
-  }, [settings.systemFont.fontFamily, loadedCustomFontName, customFontFile]);
-
 
   
   useEffect(() => {
@@ -327,22 +317,52 @@ const ControlsPanel: React.FC<ControlsPanelProps> = (props) => {
   };
 
 
-  const handleFontFileSelected = (files: FileList) => {
+  const handleFontFileSelected = (files: FileList | null) => {
     if (files && files.length > 0) {
       const file = files[0];
-      setCustomFontFile(file);
-      if (!customFontCssNameInput.trim()) {
-        const fileNameWithoutExtension = file.name.split('.').slice(0, -1).join('.');
-        setCustomFontCssNameInput(fileNameWithoutExtension || "My Custom Font");
+      let fileNamePart = file.name.split('.').slice(0, -1).join('.');
+      if (!fileNamePart && file.name.startsWith('.')) { // Handle names like ".myfont"
+          fileNamePart = file.name.substring(1).split('.').slice(0, -1).join('.');
       }
+      if (!fileNamePart) { // Fallback if still no name part (e.g. filename is just ".ttf")
+          fileNamePart = "My Custom Font";
+      }
+  
+      let cssName = fileNamePart
+        .replace(/[^a-zA-Z0-9\s_-]/g, '') 
+        .trim() 
+        .replace(/\s+/g, '-') 
+        .replace(/_+/g, '_'); 
+  
+      if (!/^[a-zA-Z]/.test(cssName)) {
+        cssName = "Custom-" + cssName;
+      }
+      if (!cssName || cssName === "Custom-") { 
+          cssName = "My-Custom-Font";
+      }
+      
+      onLoadCustomFont(file, cssName);
+    } else {
+      // User cancelled file dialog or no file was selected
+      // Revert font family to previously loaded custom font or a default system font
+      if (loadedCustomFontName && settings.systemFont.fontFamily !== loadedCustomFontName) {
+        onNestedSettingsChange('systemFont', 'fontFamily', loadedCustomFontName);
+      } else if (!loadedCustomFontName) {
+        onNestedSettingsChange('systemFont', 'fontFamily', AVAILABLE_FONTS[0]);
+      }
+      // If settings.systemFont.fontFamily was already the loadedCustomFontName, no change needed.
     }
   };
 
-  const handleLoadCustomFontClick = () => {
-    if (customFontFile && customFontCssNameInput.trim()) {
-      onLoadCustomFont(customFontFile, customFontCssNameInput.trim());
-    } else {
-      alert("Please select a font file and provide a CSS name.");
+  const handleFontFamilyChange = (e: React.ChangeEvent<HTMLSelectElement>) => {
+    const newFontFamily = e.target.value;
+    onNestedSettingsChange('systemFont', 'fontFamily', newFontFamily);
+
+    if (newFontFamily === "Custom...") {
+      // Defer clicking the file input until after the state update has rendered the FileInput
+      setTimeout(() => {
+        customFontFilePickerRef.current?.click();
+      }, 0);
     }
   };
 
@@ -923,7 +943,7 @@ const ControlsPanel: React.FC<ControlsPanelProps> = (props) => {
               <div className="mt-3 pt-3 border-t border-[var(--bv-border-color-light)]">
                 <h4 className="text-md font-semibold mb-1 text-[var(--bv-accent-primary)]">System Font Specifics</h4>
                 <LabelInputContainer label="Font Family" htmlFor="fontFamily">
-                  <SelectInput id="fontFamily" value={settings.systemFont.fontFamily} onChange={(e) => { const newFontFamily = e.target.value; onNestedSettingsChange('systemFont', 'fontFamily', newFontFamily); if (newFontFamily !== "Custom..." && newFontFamily !== loadedCustomFontName) { setCustomFontFile(null); } else if (newFontFamily === "Custom...") { setCustomFontFile(null); setCustomFontCssNameInput(""); } }}>
+                  <SelectInput id="fontFamily" value={settings.systemFont.fontFamily} onChange={handleFontFamilyChange}>
                     {AVAILABLE_FONTS.map(font => <option key={font} value={font}>{font.split(',')[0]}</option>)}
                     {loadedCustomFontName && !AVAILABLE_FONTS.includes(loadedCustomFontName) && loadedCustomFontName !== "Custom..." && (<option value={loadedCustomFontName}>{loadedCustomFontName}</option>)}
                     <option value="Custom...">Custom (Load from file)...</option>
@@ -931,10 +951,22 @@ const ControlsPanel: React.FC<ControlsPanelProps> = (props) => {
                 </LabelInputContainer>
                 {showCustomFontLoadUI && (
                   <div className="mt-2 p-2 border border-[var(--bv-border-color)] rounded-md space-y-2">
-                    <LabelInputContainer label="Font File (.ttf, .otf, .woff, .woff2)" htmlFor="customFontFile"><FileInput accept=".ttf,.otf,.woff,.woff2,font/ttf,font/otf,font/woff,font/woff2" onChange={handleFontFileSelected} buttonLabel={customFontFile ? `Selected: ${customFontFile.name}` : "Choose Font File"} /></LabelInputContainer>
-                    <LabelInputContainer label="Desired CSS Font Name" htmlFor="customFontCssName"><TextInput id="customFontCssName" type="text" placeholder="e.g., My Awesome Font" value={customFontCssNameInput} onChange={(e) => setCustomFontCssNameInput(e.target.value)} /></LabelInputContainer>
-                    <Button onClick={handleLoadCustomFontClick} disabled={!customFontFile || !customFontCssNameInput.trim()}>Load Font from File</Button>
-                    {customFontFile && <p className="text-xs text-[var(--bv-text-secondary)]">Selected file: {customFontFile.name}</p>}
+                     <LabelInputContainer 
+                        label={loadedCustomFontName && settings.systemFont.fontFamily === loadedCustomFontName ? `Loaded: ${loadedCustomFontName}` : "Custom Font"} 
+                        htmlFor="customFontFileInput"
+                    >
+                        <FileInput
+                            id="customFontFileInput"
+                            inputRef={customFontFilePickerRef}
+                            accept=".ttf,.otf,.woff,.woff2,font/ttf,font/otf,font/woff,font/woff2"
+                            onChange={handleFontFileSelected}
+                            buttonLabel={
+                                loadedCustomFontName && settings.systemFont.fontFamily === loadedCustomFontName 
+                                ? `Change Font... (${loadedCustomFontName.substring(0,15)}${loadedCustomFontName.length > 15 ? '...' : ''})` 
+                                : "Choose Font File..."
+                            }
+                        />
+                    </LabelInputContainer>
                   </div>
                 )}
                 <InputWithSlider label="Font Size" unit="px" id="fontSize" value={settings.systemFont.fontSize} onChange={(val) => onNestedSettingsChange('systemFont', 'fontSize', val)} min={6} max={120} step={1} />
@@ -1020,7 +1052,7 @@ const ControlsPanel: React.FC<ControlsPanelProps> = (props) => {
     onTextFileUpload, mainScripts, activeMainScriptId, onSetActiveMainScriptId, onClearMainScripts,
     activeScriptBlocks, currentBlockIndex, onSetCurrentBlockIndex,
     showOnlyOverflowingBlocks, onShowOnlyOverflowingBlocksChange, displayedBlocksForView,
-    onLoadCustomFont, loadedCustomFontName, customFontFile, customFontCssNameInput,
+    onLoadCustomFont, loadedCustomFontName, 
     overflowSettingsPanelOpen,
     originalScripts, onOriginalScriptUpload, matchedOriginalScriptName, onClearOriginalScripts,
     viewMode, onViewModeChange,
@@ -1035,7 +1067,8 @@ const ControlsPanel: React.FC<ControlsPanelProps> = (props) => {
     isEditingColorTag, editingColorTag, editingColorTagId,
     isEditingImageTag, editingImageTagFields, editingImageTagId, editingImageTagFile, editingImageTagPreviewUrl,
     handlePrimaryBgImageUpload, handleSecondaryBgImageUpload, handleBitmapFontImageUpload,
-    handleTagPatternsChange, handleBlockSeparatorsChange, handleCustomLineBreakTagsChange
+    handleTagPatternsChange, handleBlockSeparatorsChange, handleCustomLineBreakTagsChange, handleFontFamilyChange,
+    customFontFilePickerRef // Add ref to dependency array
   ]);
 
 
