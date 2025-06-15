@@ -9,15 +9,17 @@
     "preview": "vite preview"
   },
   "dependencies": {
-    "react": "^19.1.0",
-    "react-dom": "^19.1.0",
-    "html2canvas": "^1.4.1",
+    "@octokit/rest": "^20.0.0",
     "@vercel/analytics": "latest",
+    "html2canvas": "^1.4.1",
     "jszip": "3.10.1",
-    "@octokit/rest": "^20.0.0"
+    "react": "^19.1.0",
+    "react-dom": "^19.1.0"
   },
   "devDependencies": {
     "@types/node": "^22.14.0",
+    "postcss": "^8.5.5",
+    "tailwindcss": "^4.1.10",
     "typescript": "~5.7.2",
     "vite": "^6.2.0"
   }

@@ -973,7 +973,7 @@ const ControlsPanel: React.FC<ControlsPanelProps> = (props) => {
   ]);
 
 
-  const basePanelSections = useMemo(() => getPanelSectionsConfig(props), [props, getPanelSectionsConfig]);
+  const basePanelSections = useMemo(() => getPanelSectionsConfig(props), [props]);
   const [sectionOrder, setSectionOrder] = useState<string[]>(() => basePanelSections.map((s: PanelSectionItem) => s.id));
   const [openSections, setOpenSections] = useState<Record<string, boolean>>({});
   const [draggingItemIndex, setDraggingItemIndex] = useState<number | null>(null);
