@@ -14,7 +14,7 @@ export default defineConfig(({ mode }) => {
         }
       },
       server: {
-        port: 5007
+        port: 5002
       }
     };
 });

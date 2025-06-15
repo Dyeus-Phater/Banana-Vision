@@ -4,7 +4,7 @@ import JSZip from 'jszip';
 import { Octokit } from '@octokit/rest';
 import { 
   AppSettings, Block, NestedAppSettingsObjectKeys, ScriptFile, GitHubSettings, Profile, MainViewMode,
-  ThemeKey, CustomThemeColors, AppThemeSettings, ResolvedThemeColors
+  ThemeKey, CustomThemeColors, AppThemeSettings
 } from './types';
 import { DEFAULT_SETTINGS, DEFAULT_GITHUB_SETTINGS, ALL_THEME_DEFINITIONS, DEFAULT_CUSTOM_THEME_TEMPLATE } from './constants';
 import ControlsPanel from './components/ControlsPanel';
@@ -320,11 +320,14 @@ const App: React.FC = () => {
 
   // Effect to generate global bitmap character cache
   useEffect(() => {
+    let isCancelled = false;
+    
     if (settings.currentFontType === 'bitmap' && settings.bitmapFont.enabled && settings.bitmapFont.imageUrl) {
       const img = new Image();
       img.crossOrigin = "anonymous";
       img.src = settings.bitmapFont.imageUrl;
       img.onload = () => {
+        if (isCancelled) return;
         const newCache: BitmapCharCache = new Map();
         const {
           charWidth, charHeight, charMap,
@@ -441,6 +444,7 @@ const App: React.FC = () => {
         setGlobalBitmapCacheId(id => id + 1);
       };
       img.onerror = () => {
+        if (isCancelled) return;
         console.error("Global Bitmap Cache: Failed to load bitmap font image.");
         setGlobalBitmapCharCache(new Map());
         setGlobalBitmapCacheId(id => id + 1);
@@ -449,6 +453,10 @@ const App: React.FC = () => {
       setGlobalBitmapCharCache(null); // Clear cache if not bitmap or not enabled
       setGlobalBitmapCacheId(id => id + 1);
     }
+
+    return () => {
+      isCancelled = true;
+    };
   }, [
     settings.bitmapFont.imageUrl, settings.bitmapFont.charWidth, settings.bitmapFont.charHeight,
     settings.bitmapFont.charMap, settings.bitmapFont.enableColorRemoval, settings.bitmapFont.colorToRemove,
@@ -1170,6 +1178,7 @@ const App: React.FC = () => {
     if (findScope === 'activeScript' && activeMainScript) {
       activeMainScript.blocks.forEach(block => {
         const blockRegex = new RegExp(regex); 
+        // eslint-disable-next-line @typescript-eslint/no-unused-vars
         let match;
         let countInBlock = 0;
         while ((match = blockRegex.exec(block.content)) !== null) {
@@ -1192,6 +1201,7 @@ const App: React.FC = () => {
         let countInScript = 0;
         script.blocks.forEach(block => {
           const blockRegex = new RegExp(regex); 
+          // eslint-disable-next-line @typescript-eslint/no-unused-vars
           let match;
           while ((match = blockRegex.exec(block.content)) !== null) {
             countInScript++;
@@ -1576,14 +1586,14 @@ const App: React.FC = () => {
         if (match) {
           const matchDetails: FoundMatch = {
             scriptId: item.scriptId,
-            blockIndex: item.blockOriginalIndex,
+            blockIndex: item.blockOriginalIndex || 0,
             charStartIndex: match.index,
             charEndIndex: regex.lastIndex,
           };
           setCurrentFindMatch(matchDetails); 
           setLastSearchIterationDetails({
             scriptId: item.scriptId,
-            blockOriginalIndex: item.blockOriginalIndex,
+            blockOriginalIndex: item.blockOriginalIndex || 0,
             searchStartIndexInBlock: regex.lastIndex,
           });
           setFindResultsMessage(`Navigated to ${item.name}. Match highlighted.`);
@@ -2009,7 +2019,17 @@ const handleSaveAllToGitHubFolder = useCallback(async () => {
     reader.onerror = (error) => {
       console.error("Error reading font file:", error);
       alert("Failed to read font file.");
+      reader.onload = null;
+      reader.onerror = null;
     };
+    
+    const originalOnLoad = reader.onload;
+    reader.onload = (event) => {
+      if (originalOnLoad) originalOnLoad.call(reader, event);
+      reader.onload = null;
+      reader.onerror = null;
+    };
+    
     reader.readAsDataURL(file);
   }, [loadedCustomFontInfo, handleNestedSettingsChange]);
 

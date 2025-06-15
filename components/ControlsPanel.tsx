@@ -1,5 +1,5 @@
 
-import React, {useState, useEffect, useCallback} from 'react';
+import React, {useState, useEffect, useCallback, useMemo} from 'react';
 import { AppSettings, Block, NestedAppSettingsObjectKeys, ScriptFile, GitHubSettings, ThemeKey, CustomColorTag, ImageTag } from '../types';
 import { FindScope, FindResultSummaryItem } from '../App';
 import { AVAILABLE_FONTS } // Removed DEFAULT_THEME_COLORS
@@ -538,16 +538,16 @@ const ControlsPanel: React.FC<ControlsPanelProps> = (props) => {
   };
 
 
+  const handleTagPatternsChange = useCallback((value: string) => {
+    onSettingsChange('tagPatternsToHide', value.split('\n'));
+  }, [onSettingsChange]);
+
+  const handleBlockSeparatorsChange = useCallback((value: string) => {
+    onSettingsChange('blockSeparators', value.split(',').map(s => s.trim()).filter(s => s.length > 0));
+  }, [onSettingsChange]);
+
   const getPanelSectionsConfig = useCallback((currentProps: ControlsPanelProps): PanelSectionItem[] => {
     const { settings, onSettingsChange, onNestedSettingsChange, ...restOfProps } = currentProps;
-
-    const handleTagPatternsChange = (value: string) => {
-      onSettingsChange('tagPatternsToHide', value.split('\n'));
-    };
-
-    const handleBlockSeparatorsChange = (value: string) => {
-      onSettingsChange('blockSeparators', value.split(',').map(s => s.trim()).filter(s => s.length > 0));
-    };
 
 
     return [
@@ -949,7 +949,6 @@ const ControlsPanel: React.FC<ControlsPanelProps> = (props) => {
         )
       }
     ];
-  // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [
     settings, onSettingsChange, onNestedSettingsChange,
     onTextFileUpload, mainScripts, activeMainScriptId, onSetActiveMainScriptId, onClearMainScripts,
@@ -969,64 +968,61 @@ const ControlsPanel: React.FC<ControlsPanelProps> = (props) => {
     activeThemeKey, 
     isEditingColorTag, editingColorTag, editingColorTagId,
     isEditingImageTag, editingImageTagFields, editingImageTagId, editingImageTagFile, editingImageTagPreviewUrl,
-    handlePrimaryBgImageUpload, handleSecondaryBgImageUpload, handleBitmapFontImageUpload
+    handlePrimaryBgImageUpload, handleSecondaryBgImageUpload, handleBitmapFontImageUpload,
+    handleTagPatternsChange, handleBlockSeparatorsChange
   ]);
 
 
-  const [panelSections, setPanelSections] = useState<PanelSectionItem[]>(() => getPanelSectionsConfig(props));
+  const basePanelSections = useMemo(() => getPanelSectionsConfig(props), [props, getPanelSectionsConfig]);
+  const [sectionOrder, setSectionOrder] = useState<string[]>(() => basePanelSections.map((s: PanelSectionItem) => s.id));
   const [openSections, setOpenSections] = useState<Record<string, boolean>>({});
   const [draggingItemIndex, setDraggingItemIndex] = useState<number | null>(null);
   const [dragOverItemIndex, setDragOverItemIndex] = useState<number | null>(null);
 
+  // Update section order when base sections change
   useEffect(() => {
-    setPanelSections(getPanelSectionsConfig(props));
-  }, [props, getPanelSectionsConfig]);
+    const newIds = basePanelSections.map((s: PanelSectionItem) => s.id);
+    setSectionOrder(prevOrder => {
+      const validIds = prevOrder.filter((id: string) => newIds.includes(id));
+      const missingIds = newIds.filter(id => !validIds.includes(id));
+      return [...validIds, ...missingIds];
+    });
+  }, [basePanelSections]);
+
+  // Create ordered panel sections based on current order
+  const panelSections = useMemo((): PanelSectionItem[] => {
+    return sectionOrder.map((id: string) => basePanelSections.find((s: PanelSectionItem) => s.id === id)).filter(Boolean) as PanelSectionItem[];
+  }, [basePanelSections, sectionOrder]);
 
 
   useEffect(() => {
     setOpenSections(prevOpenSections => {
-      let newOpenState: Record<string, boolean> = {};
-      let hasChanged = false;
-      const currentPanelSectionIds = new Set<string>();
+      const newOpenSectionsState = { ...prevOpenSections };
+      let hasChanges = false;
 
-      // Populate newOpenState based on current panelSections
-      // and determine if any individual section's open state needs to change
-      panelSections.forEach(section => {
-        currentPanelSectionIds.add(section.id);
-        let intendedSectionOpenState: boolean;
-
+      panelSections.forEach((section: PanelSectionItem) => {
         if (section.id === 'overflow-settings-section') {
-          intendedSectionOpenState = overflowSettingsPanelOpen;
+          if (newOpenSectionsState[section.id] !== overflowSettingsPanelOpen) {
+            newOpenSectionsState[section.id] = overflowSettingsPanelOpen;
+            hasChanges = true;
+          }
         } else {
-          // If section was previously known, keep its state, otherwise initialize from defaultOpen
-          intendedSectionOpenState = (section.id in prevOpenSections)
-            ? prevOpenSections[section.id]!
-            : (section.defaultOpen !== undefined ? section.defaultOpen : true);
-        }
-        
-        newOpenState[section.id] = intendedSectionOpenState;
-
-        // Check if this specific section's state has changed from prevOpenSections or if it's a new section
-        if (newOpenState[section.id] !== prevOpenSections[section.id]) {
-          hasChanged = true;
+          if (newOpenSectionsState[section.id] === undefined) {
+            newOpenSectionsState[section.id] = section.defaultOpen !== undefined ? section.defaultOpen : true;
+            hasChanges = true;
+          }
         }
       });
 
-      // Check for removed sections: if a key in prevOpenSections is not in currentPanelSectionIds
-      for (const idInPrev in prevOpenSections) {
-        if (!currentPanelSectionIds.has(idInPrev)) {
-          hasChanged = true; // A section was removed
-          // No need to delete from newOpenState as it's built fresh from panelSections
-          break; 
+      const currentSectionIds = new Set(panelSections.map(s => s.id));
+      for (const idInState in newOpenSectionsState) {
+        if (!currentSectionIds.has(idInState)) {
+          delete newOpenSectionsState[idInState];
+          hasChanges = true;
         }
       }
-      
-      // If the set of keys is different, it's a change
-      if (Object.keys(newOpenState).length !== Object.keys(prevOpenSections).length) {
-          hasChanged = true;
-      }
 
-      return hasChanged ? newOpenState : prevOpenSections;
+      return hasChanges ? newOpenSectionsState : prevOpenSections;
     });
   }, [panelSections, overflowSettingsPanelOpen]);
 
@@ -1067,11 +1063,12 @@ const ControlsPanel: React.FC<ControlsPanelProps> = (props) => {
       return;
     }
 
-    const newSections = [...panelSections];
-    const [draggedItem] = newSections.splice(draggingItemIndex, 1);
-    newSections.splice(targetIndex, 0, draggedItem);
-
-    setPanelSections(newSections);
+    setSectionOrder(prevOrder => {
+      const newOrder = [...prevOrder];
+      const [draggedId] = newOrder.splice(draggingItemIndex, 1);
+      newOrder.splice(targetIndex, 0, draggedId);
+      return newOrder;
+    });
     setDraggingItemIndex(null);
     setDragOverItemIndex(null);
   };
@@ -1084,7 +1081,7 @@ const ControlsPanel: React.FC<ControlsPanelProps> = (props) => {
 
   return (
     <div className="space-y-0">
-      {panelSections.map((section, index) => (
+      {panelSections.map((section: PanelSectionItem, index: number) => (
          <DraggableSectionWrapper
             key={section.id}
             onDragEnter={() => handleDragEnter(index)}
