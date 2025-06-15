@@ -49,7 +49,7 @@ type FinalDisplaySegment = FinalTextSegment | FinalImageSegment;
 
 
 const parseTextWithCustomColorTags = (
-  rawText: string,
+  rawText: string, // This text should ALREADY have general tags hidden if applicable
   customColorTags: CustomColorTag[],
   defaultColor: string | null = null
 ): ColorSegment[] => {
@@ -61,12 +61,16 @@ const parseTextWithCustomColorTags = (
   if (enabledTags.length === 0) {
     return [{ text: rawText, color: defaultColor }];
   }
+  
+  // Sort by combined length of opening and closing tags to handle nesting: longer tags first.
+  // This helps prevent a shorter tag from prematurely matching part of a longer tag.
   const sortedTags = [...enabledTags].sort((a,b) => 
-    Math.max(b.openingTag.length, b.closingTag.length) - Math.max(a.openingTag.length, a.closingTag.length)
+    (b.openingTag.length + b.closingTag.length) - (a.openingTag.length + a.closingTag.length)
   );
 
   const tagParts: string[] = [];
   sortedTags.forEach(tag => {
+    // Escape regex special characters in tags
     tagParts.push(tag.openingTag.replace(/[.*+?^${}()|[\]\\]/g, '\\$&'));
     tagParts.push(tag.closingTag.replace(/[.*+?^${}()|[\]\\]/g, '\\$&'));
   });
@@ -81,11 +85,11 @@ const parseTextWithCustomColorTags = (
   let currentTextSegment = "";
 
   for (const part of splitText) {
-    if (!part) continue;
+    if (!part) continue; // Skip empty strings from split
     let isTag = false;
-    for (const tag of enabledTags) {
+    for (const tag of sortedTags) { // Check against sorted tags
       if (part === tag.openingTag) {
-        if (currentTextSegment) {
+        if (currentTextSegment) { // Push preceding text
           segments.push({ text: currentTextSegment, color: colorStack.length > 0 ? colorStack[colorStack.length - 1].color : defaultColor });
           currentTextSegment = "";
         }
@@ -93,13 +97,16 @@ const parseTextWithCustomColorTags = (
         isTag = true;
         break;
       } else if (part === tag.closingTag) {
-        if (currentTextSegment) {
+        if (currentTextSegment) { // Push preceding text
           segments.push({ text: currentTextSegment, color: colorStack.length > 0 ? colorStack[colorStack.length - 1].color : defaultColor });
           currentTextSegment = "";
         }
+        // Pop only if the closing tag matches the top of the stack
         if (colorStack.length > 0 && colorStack[colorStack.length - 1].closingTag === part) {
           colorStack.pop();
         } else {
+          // This case means a closing tag was found without a matching opening tag on stack (or wrong order)
+          // Treat it as literal text instead of a valid closing tag for current context
            currentTextSegment += part;
         }
         isTag = true;
@@ -110,21 +117,24 @@ const parseTextWithCustomColorTags = (
       currentTextSegment += part;
     }
   }
-  if (currentTextSegment) {
+  if (currentTextSegment) { // Push any remaining text
     segments.push({ text: currentTextSegment, color: colorStack.length > 0 ? colorStack[colorStack.length - 1].color : defaultColor });
   }
-  return segments.filter(s => s.text.length > 0);
+  return segments.filter(s => s.text.length > 0); // Filter out segments that became empty
 };
 
 const hideGeneralTagsFromText = (
   text: string,
-  hideTags: boolean,
+  hideTags: boolean, // This is settings.hideTagsInPreview
   tagPatterns: string[], 
   blockSeparatorsToHide: string[],
   useCustomBlockSeparator: boolean
 ): string => {
-  if (!hideTags) return text;
+  if (!hideTags) return text; // Only proceed if hideTagsInPreview is true
+  
   let processedText = text;
+
+  // Hide general tag patterns
   if (tagPatterns.length > 0) {
     tagPatterns.forEach(patternStr => {
       const trimmedPattern = patternStr.trim();
@@ -132,9 +142,13 @@ const hideGeneralTagsFromText = (
       try {
         const regex = new RegExp(trimmedPattern, 'g');
         processedText = processedText.replace(regex, '');
-      } catch (error) {/* console.warn for regex errors */}
+      } catch (error) {
+         console.warn(`Invalid RegEx pattern for general tag hiding: ${trimmedPattern}`, error);
+      }
     });
   }
+
+  // Hide block separators if custom ones are used and hideTags is on
   if (useCustomBlockSeparator && blockSeparatorsToHide && blockSeparatorsToHide.length > 0) {
     blockSeparatorsToHide.forEach(separator => {
       if (separator.trim().length > 0) {
@@ -142,7 +156,9 @@ const hideGeneralTagsFromText = (
           const escapedSeparator = separator.replace(/[-\/\\^$*+?.()|[\]\\]/g, '\\$&');
           const regex = new RegExp(escapedSeparator, 'g');
           processedText = processedText.replace(regex, '');
-        } catch (error) { /* console.warn for regex errors */ }
+        } catch (error) {
+          console.warn(`Invalid RegEx pattern for block separator hiding: ${separator}`, error);
+        }
       }
     });
   }
@@ -156,34 +172,61 @@ const generateDisplaySegments = (
 ): FinalDisplaySegment[] => {
   const finalSegments: FinalDisplaySegment[] = [];
   
-  const enabledImageTags = settings.imageTags.filter(it => it.enabled && it.tag);
+  let currentWorkingText = rawText;
 
-  if (simplifiedRender || enabledImageTags.length === 0) {
-    const colorSegments = parseTextWithCustomColorTags(
-      rawText,
-      settings.customColorTags,
-      settings.currentFontType === 'system' ? settings.systemFont.color : null
-    );
-    colorSegments.forEach(cs => {
-      const generalTagsHiddenText = hideGeneralTagsFromText(
-        cs.text,
+  // 1. Apply Custom Line Breaks
+  if (settings.useCustomLineBreakTags && settings.customLineBreakTags.length > 0) {
+    settings.customLineBreakTags.forEach(tag => {
+      if (tag.trim()) { // Ensure tag is not just whitespace
+        const escapedTag = tag.replace(/[.*+?^${}()|[\]\\]/g, '\\$&'); // Escape for RegExp
+        try {
+            currentWorkingText = currentWorkingText.replace(new RegExp(escapedTag, 'g'), '\n');
+        } catch (e) {
+            console.warn(`Error applying custom line break tag "${tag}":`, e);
+        }
+      }
+    });
+  }
+
+  // 2. Apply General Tag Hiding (if enabled)
+  // This function internally checks settings.hideTagsInPreview but we pass it for clarity.
+  // It also hides block separators if settings.hideTagsInPreview and settings.useCustomBlockSeparator are true.
+  let textAfterGeneralHiding = currentWorkingText;
+  if (settings.hideTagsInPreview) {
+     textAfterGeneralHiding = hideGeneralTagsFromText(
+        currentWorkingText,
         settings.hideTagsInPreview,
         settings.tagPatternsToHide,
         settings.blockSeparators,
         settings.useCustomBlockSeparator
-      );
-      if (generalTagsHiddenText) {
-        finalSegments.push({ type: 'text', text: generalTagsHiddenText, color: cs.color });
+    );
+  }
+
+
+  // 3. Image Tag and Color Tag Processing
+  const enabledImageTags = settings.imageTags.filter(it => it.enabled && it.tag);
+
+  if (simplifiedRender || enabledImageTags.length === 0) {
+    // No image tags, or simplified render: process the whole text for color
+    const colorSegments = parseTextWithCustomColorTags(
+      textAfterGeneralHiding,
+      settings.customColorTags,
+      settings.currentFontType === 'system' ? settings.systemFont.color : null
+    );
+    colorSegments.forEach(cs => {
+      if (cs.text) { // Ensure segment text is not empty after all processing
+        finalSegments.push({ type: 'text', text: cs.text, color: cs.color });
       }
     });
     return finalSegments;
   }
 
-  enabledImageTags.sort((a, b) => b.tag.length - a.tag.length);
-  const imageTagPattern = enabledImageTags.map(it => it.tag.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')).join('|');
-  const splitRegex = new RegExp(`(${imageTagPattern})`);
+  // Has image tags, process in parts
+  enabledImageTags.sort((a, b) => b.tag.length - a.tag.length); // Process longer tags first
+  const imageTagPatternParts = enabledImageTags.map(it => it.tag.replace(/[.*+?^${}()|[\]\\]/g, '\\$&'));
+  const splitRegex = new RegExp(`(${imageTagPatternParts.join('|')})`);
   
-  const parts = rawText.split(splitRegex).filter(part => part !== undefined && part !== '');
+  const parts = textAfterGeneralHiding.split(splitRegex).filter(part => part !== undefined && part !== '');
 
   for (const part of parts) {
     const matchedImageTag = enabledImageTags.find(it => it.tag === part);
@@ -195,22 +238,15 @@ const generateDisplaySegments = (
         height: matchedImageTag.height,
         altText: matchedImageTag.tag,
       });
-    } else {
+    } else { // It's a text part
       const colorSegments = parseTextWithCustomColorTags(
         part,
         settings.customColorTags,
         settings.currentFontType === 'system' ? settings.systemFont.color : null
       );
       colorSegments.forEach(cs => {
-        const generalTagsHiddenText = hideGeneralTagsFromText(
-          cs.text,
-          settings.hideTagsInPreview,
-          settings.tagPatternsToHide,
-          settings.blockSeparators,
-          settings.useCustomBlockSeparator
-        );
-        if (generalTagsHiddenText) {
-          finalSegments.push({ type: 'text', text: generalTagsHiddenText, color: cs.color });
+        if (cs.text) { // Ensure segment text is not empty
+          finalSegments.push({ type: 'text', text: cs.text, color: cs.color });
         }
       });
     }
@@ -220,16 +256,13 @@ const generateDisplaySegments = (
 
 const getCleanTextForCounting = (
   rawText: string,
-  imageTags: ImageTag[],
-  generalTagPatterns: string[], 
-  customColorTags: CustomColorTag[], 
-  blockSeparators: string[],
-  useCustomBlockSeparator: boolean
+  settings: AppSettings // Pass full settings object
 ): string => {
   let cleanText = rawText;
 
-  if (imageTags && imageTags.length > 0) {
-    imageTags.forEach(imgTag => {
+  // Remove image tags
+  if (settings.imageTags && settings.imageTags.length > 0) {
+    settings.imageTags.forEach(imgTag => {
       if (imgTag.enabled && imgTag.tag) {
         try {
           const escapedTag = imgTag.tag.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
@@ -239,8 +272,9 @@ const getCleanTextForCounting = (
     });
   }
   
-  if (customColorTags && customColorTags.length > 0) {
-    customColorTags.forEach(tagDef => {
+  // Remove custom color tags
+  if (settings.customColorTags && settings.customColorTags.length > 0) {
+    settings.customColorTags.forEach(tagDef => {
       if (tagDef.enabled && tagDef.openingTag) {
         try {
           const escapedOpening = tagDef.openingTag.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
@@ -256,8 +290,9 @@ const getCleanTextForCounting = (
     });
   }
   
-  if (generalTagPatterns && generalTagPatterns.length > 0) {
-    generalTagPatterns.forEach(patternStr => {
+  // Remove general tag patterns
+  if (settings.tagPatternsToHide && settings.tagPatternsToHide.length > 0) {
+    settings.tagPatternsToHide.forEach(patternStr => {
       const trimmedPattern = patternStr.trim();
       if (trimmedPattern.length === 0) return;
       try {
@@ -267,8 +302,9 @@ const getCleanTextForCounting = (
     });
   }
 
-  if (useCustomBlockSeparator && blockSeparators && blockSeparators.length > 0) {
-    blockSeparators.forEach(separator => {
+  // Remove block separators
+  if (settings.useCustomBlockSeparator && settings.blockSeparators && settings.blockSeparators.length > 0) {
+    settings.blockSeparators.forEach(separator => {
       const trimmedSeparator = separator.trim(); 
       if (trimmedSeparator.length > 0) {
         try {
@@ -276,6 +312,20 @@ const getCleanTextForCounting = (
           const regex = new RegExp(escapedSeparator, 'g');
           cleanText = cleanText.replace(regex, '');
         } catch (error) { /* console.warn for regex errors */ }
+      }
+    });
+  }
+
+  // Remove custom line break tags (new)
+  if (settings.useCustomLineBreakTags && settings.customLineBreakTags && settings.customLineBreakTags.length > 0) {
+    settings.customLineBreakTags.forEach(tag => {
+      if (tag.trim()) {
+        const escapedTag = tag.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+        try {
+          cleanText = cleanText.replace(new RegExp(escapedTag, 'g'), ''); // Remove, not replace with \n
+        } catch (e) {
+          console.warn(`Error removing custom line break tag "${tag}" for counting:`, e);
+        }
       }
     });
   }
@@ -421,14 +471,7 @@ const PreviewAreaInner = forwardRef<HTMLDivElement, PreviewAreaProps>(({
       }
     } else if (settings.overflowDetectionMode === 'character') {
       if (settings.maxCharacters > 0) {
-        const textForCharCounting = getCleanTextForCounting(
-          settings.text, 
-          settings.imageTags, 
-          settings.tagPatternsToHide,
-          settings.customColorTags,   
-          settings.blockSeparators,
-          settings.useCustomBlockSeparator
-        );
+        const textForCharCounting = getCleanTextForCounting(settings.text, settings);
         const lines = textForCharCounting.split('\n');
         for (const line of lines) {
           if (line.length > settings.maxCharacters) {
@@ -442,11 +485,11 @@ const PreviewAreaInner = forwardRef<HTMLDivElement, PreviewAreaProps>(({
     }
     setIsOverflowing(hasOverflow);
   }, [
-      settings.text, settings.customColorTags, settings.imageTags, 
+      settings.text, settings.customColorTags, settings.imageTags, settings.tagPatternsToHide,
+      settings.blockSeparators, settings.useCustomBlockSeparator, settings.customLineBreakTags, settings.useCustomLineBreakTags,
       settings.systemFont, settings.bitmapFont, settings.currentFontType,
       settings.transform, settings.previewWidth, settings.previewHeight,
       settings.overflowDetectionMode, settings.maxCharacters, settings.hideTagsInPreview,
-      settings.tagPatternsToHide, settings.blockSeparators, settings.useCustomBlockSeparator,
       settings.maxPixelHeight, settings.pixelOverflowMargins, settings.shadowEffect,
       settings.outlineEffect, settings.globalLineHeightFactor, settings.previewZoom,
       setIsOverflowing, ref, bitmapCacheId, currentPreviewZoom, isReadOnlyPreview, simplifiedRender 

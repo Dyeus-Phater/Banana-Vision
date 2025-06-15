@@ -2,7 +2,7 @@
 import React, {useState, useEffect, useCallback, useMemo} from 'react';
 import { AppSettings, Block, NestedAppSettingsObjectKeys, ScriptFile, GitHubSettings, ThemeKey, CustomColorTag, ImageTag } from '../types';
 import { FindScope, FindResultSummaryItem } from '../App';
-import { AVAILABLE_FONTS } // Removed DEFAULT_THEME_COLORS
+import { AVAILABLE_FONTS } 
 from '../constants';
 import FileInput from './FileInput';
 import InputWithSlider from './InputWithSlider';
@@ -210,7 +210,7 @@ const DEFAULT_CUSTOM_COLOR_TAG: Omit<CustomColorTag, 'id'> = {
 
 const DEFAULT_IMAGE_TAG: Omit<ImageTag, 'id' | 'imageUrl'> = {
   tag: '',
-  width: 24, // Default sensible size for an icon/emoji
+  width: 24, 
   height: 24,
   enabled: true,
 };
@@ -254,7 +254,7 @@ const ControlsPanel: React.FC<ControlsPanelProps> = (props) => {
   const [editingColorTag, setEditingColorTag] = useState<CustomColorTag | Omit<CustomColorTag, 'id'>>(DEFAULT_CUSTOM_COLOR_TAG);
   const [editingColorTagId, setEditingColorTagId] = useState<string | null>(null);
 
-  // State for Image Tag editing
+  
   const [isEditingImageTag, setIsEditingImageTag] = useState<boolean>(false);
   const [editingImageTagFields, setEditingImageTagFields] = useState<Omit<ImageTag, 'id' | 'imageUrl'> & { imageUrl?: string }>(DEFAULT_IMAGE_TAG);
   const [editingImageTagId, setEditingImageTagId] = useState<string | null>(null);
@@ -271,21 +271,19 @@ const ControlsPanel: React.FC<ControlsPanelProps> = (props) => {
   }, [settings.systemFont.fontFamily, loadedCustomFontName, customFontFile]);
 
 
-  // Effect to cleanup object URL for image tag preview
+  
   useEffect(() => {
-    // This effect runs when isEditingImageTag changes.
-    // If we are no longer editing, and there was a preview URL, revoke it.
+    
     if (!isEditingImageTag && editingImageTagPreviewUrl) {
         URL.revokeObjectURL(editingImageTagPreviewUrl);
         setEditingImageTagPreviewUrl(null);
     }
 
-    // Return a cleanup function that will be called if the component unmounts
-    // or if isEditingImageTag becomes true again.
+    
     return () => {
         if (editingImageTagPreviewUrl) {
             URL.revokeObjectURL(editingImageTagPreviewUrl);
-            // No need to set state here as component might be unmounting
+            
         }
     };
   }, [isEditingImageTag, editingImageTagPreviewUrl]);
@@ -305,7 +303,7 @@ const ControlsPanel: React.FC<ControlsPanelProps> = (props) => {
       };
       img.onerror = () => {
         console.error("Failed to load image for dimension extraction.");
-        onSettingsChange('backgroundImageUrl', dataUrl); // Still set URL if dimensions fail
+        onSettingsChange('backgroundImageUrl', dataUrl); 
       }
       img.src = dataUrl;
     };
@@ -356,7 +354,7 @@ const ControlsPanel: React.FC<ControlsPanelProps> = (props) => {
   const isFindReplaceDisabled = mainScripts.length === 0;
 
 
-  // Custom Color Tag Management
+  
   const handleStartAddNewColorTag = () => {
     setEditingColorTag(DEFAULT_CUSTOM_COLOR_TAG);
     setEditingColorTagId(null);
@@ -380,15 +378,15 @@ const ControlsPanel: React.FC<ControlsPanelProps> = (props) => {
     }
 
     let updatedTags;
-    if (editingColorTagId) { // Editing existing
+    if (editingColorTagId) { 
       updatedTags = settings.customColorTags.map(t =>
         t.id === editingColorTagId ? { ...editingColorTag, id: editingColorTagId } as CustomColorTag : t
       );
-    } else { // Adding new
+    } else { 
       const newTag: CustomColorTag = {
         ...editingColorTag,
         id: `cct-${Date.now()}-${Math.random().toString(36).substring(2, 7)}`,
-      } as CustomColorTag; // Ensure `id` is part of it.
+      } as CustomColorTag; 
       updatedTags = [...settings.customColorTags, newTag];
     }
     onSettingsChange('customColorTags', updatedTags);
@@ -414,7 +412,7 @@ const ControlsPanel: React.FC<ControlsPanelProps> = (props) => {
     setEditingColorTag(prev => ({ ...prev, [key]: value }));
   };
 
-  // Image Tag Management
+  
   const handleStartAddNewImageTag = () => {
     setEditingImageTagFields(DEFAULT_IMAGE_TAG);
     setEditingImageTagId(null);
@@ -432,14 +430,14 @@ const ControlsPanel: React.FC<ControlsPanelProps> = (props) => {
       width: imageTag.width, 
       height: imageTag.height, 
       enabled: imageTag.enabled,
-      imageUrl: imageTag.imageUrl // Keep existing image URL for editing form
+      imageUrl: imageTag.imageUrl 
     });
     setEditingImageTagId(imageTag.id);
     setEditingImageTagFile(null);
     if (editingImageTagPreviewUrl) {
         URL.revokeObjectURL(editingImageTagPreviewUrl);
     }
-    setEditingImageTagPreviewUrl(null); // No local file preview initially when editing existing
+    setEditingImageTagPreviewUrl(null); 
     setIsEditingImageTag(true);
   };
 
@@ -478,22 +476,22 @@ const ControlsPanel: React.FC<ControlsPanelProps> = (props) => {
         alert(`Failed to read image file: ${error instanceof Error ? error.message : "Unknown error"}`);
         return;
       }
-    } else if (!editingImageTagId && !finalImageUrl) { // New tag and no file selected/no existing URL
+    } else if (!editingImageTagId && !finalImageUrl) { 
       alert("Please select an image for the new tag.");
       return;
     }
     
-    if (!finalImageUrl) { // Should only happen if editing an existing tag and somehow the URL was cleared, or new and no file
+    if (!finalImageUrl) { 
         alert("Image URL is missing.");
         return;
     }
 
 
     let updatedImageTags;
-    if (editingImageTagId) { // Editing existing
+    if (editingImageTagId) { 
       updatedImageTags = settings.imageTags.map(it =>
         it.id === editingImageTagId ? { 
-          ...it, // Keep original ID
+          ...it, 
           tag: editingImageTagFields.tag!, 
           imageUrl: finalImageUrl!, 
           width: editingImageTagFields.width!, 
@@ -501,7 +499,7 @@ const ControlsPanel: React.FC<ControlsPanelProps> = (props) => {
           enabled: editingImageTagFields.enabled! 
         } : it
       );
-    } else { // Adding new
+    } else { 
       const newImageTag: ImageTag = {
         id: `imgtag-${Date.now()}-${Math.random().toString(36).substring(2, 7)}`,
         tag: editingImageTagFields.tag!,
@@ -514,11 +512,11 @@ const ControlsPanel: React.FC<ControlsPanelProps> = (props) => {
     }
     onSettingsChange('imageTags', updatedImageTags);
     
-    if (editingImageTagPreviewUrl) { // Clean up object URL after successful save or if data URL was used
+    if (editingImageTagPreviewUrl) { 
         URL.revokeObjectURL(editingImageTagPreviewUrl);
         setEditingImageTagPreviewUrl(null);
     }
-    setIsEditingImageTag(false); // This will also trigger useEffect cleanup if somehow URL still exists
+    setIsEditingImageTag(false); 
     setEditingImageTagId(null);
     setEditingImageTagFile(null);
   };
@@ -545,6 +543,11 @@ const ControlsPanel: React.FC<ControlsPanelProps> = (props) => {
   const handleBlockSeparatorsChange = useCallback((value: string) => {
     onSettingsChange('blockSeparators', value.split(',').map(s => s.trim()).filter(s => s.length > 0));
   }, [onSettingsChange]);
+  
+  const handleCustomLineBreakTagsChange = useCallback((value: string) => {
+    onSettingsChange('customLineBreakTags', value.split('\n').filter(tag => tag.trim() !== ''));
+  }, [onSettingsChange]);
+
 
   const getPanelSectionsConfig = useCallback((currentProps: ControlsPanelProps): PanelSectionItem[] => {
     const { settings, onSettingsChange, onNestedSettingsChange, ...restOfProps } = currentProps;
@@ -585,6 +588,32 @@ const ControlsPanel: React.FC<ControlsPanelProps> = (props) => {
                 <TextInput id="blockSeparators" value={settings.blockSeparators.join(',')} onChange={(e) => handleBlockSeparatorsChange(e.target.value)} placeholder="e.g. <PAGE>,[END]" />
               </LabelInputContainer>
             )}
+
+            
+            <div className="mt-3 pt-3 border-t border-[var(--bv-border-color-light)]">
+              <h4 className="text-md font-semibold mb-2 text-[var(--bv-accent-primary)]">Custom Line Break Tags</h4>
+              <LabelInputContainer label="Use Custom Line Break Tags" htmlFor="useCustomLineBreakTags" inline>
+                <input
+                  type="checkbox"
+                  id="useCustomLineBreakTags"
+                  checked={settings.useCustomLineBreakTags}
+                  onChange={(e) => onSettingsChange('useCustomLineBreakTags', e.target.checked)}
+                  className="h-5 w-5 text-[var(--bv-accent-primary)] border-[var(--bv-input-border)] rounded focus:ring-[var(--bv-input-focus-ring)]"
+                />
+              </LabelInputContainer>
+              {settings.useCustomLineBreakTags && (
+                <LabelInputContainer label="Custom Line Break Tags (one per line):" htmlFor="customLineBreakTags" subText="These tags will be replaced with newlines in the preview.">
+                  <TextAreaInput
+                    id="customLineBreakTags"
+                    value={settings.customLineBreakTags.join('\n')}
+                    onChange={(e) => handleCustomLineBreakTagsChange(e.target.value)}
+                    rows={3}
+                    placeholder="e.g. <br>\n[NEWLINE]"
+                  />
+                </LabelInputContainer>
+              )}
+            </div>
+            
             <LabelInputContainer label="Enable Comparison Mode" htmlFor="comparisonModeEnabled" inline disabled={restOfProps.mainScripts.length === 0 || restOfProps.originalScripts.length === 0} subText={(restOfProps.mainScripts.length === 0 || restOfProps.originalScripts.length === 0) ? "Load at least one main and one original script." : "View original and edited text side-by-side."}>
               <input type="checkbox" id="comparisonModeEnabled" checked={settings.comparisonModeEnabled} onChange={(e) => onSettingsChange('comparisonModeEnabled', e.target.checked)} className="h-5 w-5 text-[var(--bv-accent-primary)] border-[var(--bv-input-border)] rounded focus:ring-[var(--bv-input-focus-ring)]" disabled={restOfProps.mainScripts.length === 0 || restOfProps.originalScripts.length === 0} />
             </LabelInputContainer>
@@ -596,6 +625,43 @@ const ControlsPanel: React.FC<ControlsPanelProps> = (props) => {
                 </SelectInput>
               </LabelInputContainer>
             </div>
+          </>
+        )
+      },
+      {
+        id: 'byte-bit-counting-section', title: 'Byte/Bit Counting & Restrictions', defaultOpen: false, content: (
+          <>
+            <LabelInputContainer label="Custom Character Byte Values (one per line)" htmlFor="customByteMapString"
+              subText="Format: char=value (e.g., A=1, €=3, [ICON]=2). Lines starting with # are comments.">
+              <TextAreaInput
+                id="customByteMapString"
+                value={settings.customByteMapString}
+                onChange={(e) => onSettingsChange('customByteMapString', e.target.value)}
+                rows={6}
+                placeholder="e.g., A=1\n€=3\n[SMILE_ICON]=2"
+              />
+            </LabelInputContainer>
+            <LabelInputContainer label="Default Byte Value for Unlisted Characters" htmlFor="defaultCharacterByteValue">
+              <TextInput
+                id="defaultCharacterByteValue"
+                type="number"
+                min="0"
+                step="1"
+                value={settings.defaultCharacterByteValue}
+                onChange={(e) => onSettingsChange('defaultCharacterByteValue', parseInt(e.target.value, 10) || 0)}
+                className="w-24"
+              />
+            </LabelInputContainer>
+            <LabelInputContainer label="Enable Byte Restriction in Comparison Mode" htmlFor="enableByteRestrictionInComparisonMode" inline
+              subText="Prevents lines in the current block from exceeding the byte count of corresponding original lines.">
+              <input
+                type="checkbox"
+                id="enableByteRestrictionInComparisonMode"
+                checked={settings.enableByteRestrictionInComparisonMode}
+                onChange={(e) => onSettingsChange('enableByteRestrictionInComparisonMode', e.target.checked)}
+                className="h-5 w-5 text-[var(--bv-accent-primary)] border-[var(--bv-input-border)] rounded focus:ring-[var(--bv-input-focus-ring)]"
+              />
+            </LabelInputContainer>
           </>
         )
       },
@@ -707,7 +773,7 @@ const ControlsPanel: React.FC<ControlsPanelProps> = (props) => {
       {
         id: 'tag-handling-section', title: 'Tag Handling & Colorization', defaultOpen: false, content: (
           <>
-            {/* General Tag Hiding */}
+            
             <LabelInputContainer label="Hide General Tags in Preview" htmlFor="hideTagsInPreview" inline>
               <input type="checkbox" id="hideTagsInPreview" checked={settings.hideTagsInPreview} onChange={(e) => onSettingsChange('hideTagsInPreview', e.target.checked)} className="h-5 w-5 text-[var(--bv-accent-primary)] border-[var(--bv-input-border)] rounded focus:ring-[var(--bv-input-focus-ring)]" />
             </LabelInputContainer>
@@ -715,7 +781,7 @@ const ControlsPanel: React.FC<ControlsPanelProps> = (props) => {
               <TextAreaInput id="tagPatternsToHide" value={settings.tagPatternsToHide.join('\n')} onChange={(e) => handleTagPatternsChange(e.target.value)} rows={3} placeholder="e.g. <[^>]*>\n\\[[^\\]]*\\]" />
             </LabelInputContainer>
             
-            {/* Custom Color Tags */}
+            
             <div className="mt-4 pt-3 border-t border-[var(--bv-border-color-light)]">
               <h4 className="text-md font-semibold mb-2 text-[var(--bv-accent-primary)]">Custom Color Tags</h4>
               {isEditingColorTag ? (
@@ -763,7 +829,7 @@ const ControlsPanel: React.FC<ControlsPanelProps> = (props) => {
               )}
             </div>
 
-            {/* Image Tags */}
+            
             <div className="mt-4 pt-3 border-t border-[var(--bv-border-color-light)]">
               <h4 className="text-md font-semibold mb-2 text-[var(--bv-accent-primary)]">Image Tags (Emojis/Icons)</h4>
               {isEditingImageTag ? (
@@ -789,8 +855,8 @@ const ControlsPanel: React.FC<ControlsPanelProps> = (props) => {
                     <Button onClick={handleSaveImageTag} className="flex-1">Save Image Tag</Button>
                     <Button onClick={() => {
                         setIsEditingImageTag(false);
-                        // The useEffect for isEditingImageTag will handle revoking editingImageTagPreviewUrl
-                        setEditingImageTagFile(null); // Explicitly clear the file selection state
+                        
+                        setEditingImageTagFile(null); 
                       }} 
                       className="flex-1 !bg-gray-500 hover:!bg-gray-600">Cancel</Button>
                   </div>
@@ -969,7 +1035,7 @@ const ControlsPanel: React.FC<ControlsPanelProps> = (props) => {
     isEditingColorTag, editingColorTag, editingColorTagId,
     isEditingImageTag, editingImageTagFields, editingImageTagId, editingImageTagFile, editingImageTagPreviewUrl,
     handlePrimaryBgImageUpload, handleSecondaryBgImageUpload, handleBitmapFontImageUpload,
-    handleTagPatternsChange, handleBlockSeparatorsChange
+    handleTagPatternsChange, handleBlockSeparatorsChange, handleCustomLineBreakTagsChange
   ]);
 
 
@@ -979,7 +1045,7 @@ const ControlsPanel: React.FC<ControlsPanelProps> = (props) => {
   const [draggingItemIndex, setDraggingItemIndex] = useState<number | null>(null);
   const [dragOverItemIndex, setDragOverItemIndex] = useState<number | null>(null);
 
-  // Update section order when base sections change
+  
   useEffect(() => {
     const newIds = basePanelSections.map((s: PanelSectionItem) => s.id);
     setSectionOrder(prevOrder => {
@@ -989,7 +1055,7 @@ const ControlsPanel: React.FC<ControlsPanelProps> = (props) => {
     });
   }, [basePanelSections]);
 
-  // Create ordered panel sections based on current order
+  
   const panelSections = useMemo((): PanelSectionItem[] => {
     return sectionOrder.map((id: string) => basePanelSections.find((s: PanelSectionItem) => s.id === id)).filter(Boolean) as PanelSectionItem[];
   }, [basePanelSections, sectionOrder]);

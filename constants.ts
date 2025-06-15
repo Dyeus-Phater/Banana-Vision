@@ -2,12 +2,14 @@
 
 import type { AppSettings, GitHubSettings, CustomThemeColors, ResolvedThemeColors, ThemeKey } from './types';
 
+const DEFAULT_SAMPLE_BYTE_MAP_STRING = `A=1\nB=1\nC=1\nD=1\nE=1\nF=1\nG=1\nH=1\nI=1\nJ=1\nK=1\nL=1\nM=1\nN=1\nO=1\nP=1\nQ=1\nR=1\nS=1\nT=1\nU=1\nV=1\nW=1\nX=1\nY=1\nZ=1\na=1\nb=1\nc=1\nd=1\ne=1\nf=1\ng=1\nh=1\ni=1\nj=1\nk=1\nl=1\nm=1\nn=1\no=1\np=1\nq=1\nr=1\ns=1\nt=1\nu=1\nv=1\nw=1\nx=1\ny=1\nz=1\n0=1\n1=1\n2=1\n3=1\n4=1\n5=1\n6=1\n7=1\n8=1\n9=1\n =1\n.=1\n,=1\n!=1\n?=1\n(=1\n)=1\n[=1\n]=1\n{=1\n}=1\n<=1\n>=1\n/=1\n\\=1\n-=1\n_=1\n+=1\n*=1\n&=1\n^=1\n%=1\n$=1\n#=1\n@=1\n~=1\n\`=1\n'=1\n"=1\n:=1\n;=1\n|=1\n€=3\n£=2\n¥=2\n©=2\n®=2`;
+
 // Default AppSettings
 export const DEFAULT_SETTINGS: AppSettings = {
   text: "Welcome to Banana Vision!\nUpload a script or type here to begin.\n\nThis is the first block if no script is loaded.",
   previewWidth: 320,
   previewHeight: 240,
-  backgroundColor: '#FFFFFF', // Initial background for preview, can be overridden by theme
+  backgroundColor: '#FFFFFF', 
   backgroundImageUrl: null,
   secondaryBackgroundImageUrl: null, 
   showSecondaryBackgroundImage: false, 
@@ -61,7 +63,9 @@ export const DEFAULT_SETTINGS: AppSettings = {
   hideTagsInPreview: true,
   tagPatternsToHide: ['<[^>]*>', '\\[[^\\]]*\\]', '\\{[^\\}]*\\}'],
   customColorTags: [],
-  imageTags: [], // Initialize image tags
+  imageTags: [], 
+  useCustomLineBreakTags: false, 
+  customLineBreakTags: [], 
   overflowDetectionMode: 'pixel',
   maxCharacters: 150,
   maxPixelHeight: 200,
@@ -75,9 +79,13 @@ export const DEFAULT_SETTINGS: AppSettings = {
   globalLineHeightFactor: 1.2,
   previewZoom: 1, 
   comparisonModeEnabled: false,
+  // New byte/bit counting defaults
+  customByteMapString: DEFAULT_SAMPLE_BYTE_MAP_STRING,
+  defaultCharacterByteValue: 1,
+  enableByteRestrictionInComparisonMode: false, // Changed default to false
 };
 
-// Default GitHub Settings
+
 export const DEFAULT_GITHUB_SETTINGS: GitHubSettings = {
   pat: '',
   repoFullName: '',
@@ -85,7 +93,7 @@ export const DEFAULT_GITHUB_SETTINGS: GitHubSettings = {
   filePath: 'script.txt',
 };
 
-// Available System Fonts
+
 export const AVAILABLE_FONTS: string[] = [
   'Arial, sans-serif',
   'Verdana, sans-serif',
@@ -97,21 +105,21 @@ export const AVAILABLE_FONTS: string[] = [
   'Comic Sans MS, cursive',
 ];
 
-// Theme Color Definitions
+
 export const DEFAULT_LIGHT_THEME_COLORS: ResolvedThemeColors = {
-  pageBackground: '#f3f4f6', // gray-100
-  elementBackground: '#ffffff', // white
-  elementBackgroundSecondary: '#f9fafb', // gray-50 (e.g. for section headers)
-  textPrimary: '#1f2937', // gray-800
-  textSecondary: '#6b7280', // gray-500
-  accentPrimary: '#fde047', // yellow-400 (banana-like)
-  accentPrimaryContent: '#422006', // dark brown/yellow-900 (for text on banana)
-  accentSecondary: '#3b82f6', // blue-500
-  accentSecondaryContent: '#ffffff', // white
-  borderColor: '#d1d5db', // gray-300
-  borderColorLight: '#e5e7eb', // gray-200
-  toolbarBackground: '#ffffff', // white
-  toolbarText: '#ca8a04', // yellow-600
+  pageBackground: '#f3f4f6', 
+  elementBackground: '#ffffff', 
+  elementBackgroundSecondary: '#f9fafb', 
+  textPrimary: '#1f2937', 
+  textSecondary: '#6b7280', 
+  accentPrimary: '#fde047', 
+  accentPrimaryContent: '#422006', 
+  accentSecondary: '#3b82f6', 
+  accentSecondaryContent: '#ffffff', 
+  borderColor: '#d1d5db', 
+  borderColorLight: '#e5e7eb', 
+  toolbarBackground: '#ffffff', 
+  toolbarText: '#ca8a04', 
   inputBackground: '#ffffff',
   inputText: '#1f2937',
   inputBorder: '#d1d5db',
@@ -124,19 +132,19 @@ export const DEFAULT_LIGHT_THEME_COLORS: ResolvedThemeColors = {
 };
 
 export const DEFAULT_DARK_THEME_COLORS: ResolvedThemeColors = {
-  pageBackground: '#1f2937', // gray-800
-  elementBackground: '#374151', // gray-700
-  elementBackgroundSecondary: '#4b5563', // gray-600
-  textPrimary: '#f3f4f6', // gray-100
-  textSecondary: '#9ca3af', // gray-400
-  accentPrimary: '#fde047', // yellow-400 (banana-like)
-  accentPrimaryContent: '#422006', // dark brown for text on banana
-  accentSecondary: '#60a5fa', // blue-400
-  accentSecondaryContent: '#ffffff', // white
-  borderColor: '#4b5563', // gray-600
-  borderColorLight: '#374151', // gray-700
-  toolbarBackground: '#111827', // gray-900
-  toolbarText: '#fde047', // yellow-400
+  pageBackground: '#1f2937', 
+  elementBackground: '#374151', 
+  elementBackgroundSecondary: '#4b5563', 
+  textPrimary: '#f3f4f6', 
+  textSecondary: '#9ca3af', 
+  accentPrimary: '#fde047', 
+  accentPrimaryContent: '#422006', 
+  accentSecondary: '#60a5fa', 
+  accentSecondaryContent: '#ffffff', 
+  borderColor: '#4b5563', 
+  borderColorLight: '#374151', 
+  toolbarBackground: '#111827', 
+  toolbarText: '#fde047', 
   inputBackground: '#4b5563',
   inputText: '#f3f4f6',
   inputBorder: '#6b7280',
@@ -149,34 +157,34 @@ export const DEFAULT_DARK_THEME_COLORS: ResolvedThemeColors = {
 };
 
 export const DEFAULT_BANANA_THEME_COLORS: ResolvedThemeColors = {
-  pageBackground: '#fef3c7', // yellow-100 (banana scheme page bg)
-  elementBackground: '#fef9c3', // yellow-200/80 with blur (main elements)
-  elementBackgroundSecondary: '#fef08a', // yellow-300 (section headers)
-  textPrimary: '#78350f', // yellow-900 (main text)
-  textSecondary: '#92400e', // yellow-800 (secondary text)
-  accentPrimary: '#facc15', // yellow-500 (main banana accent)
-  accentPrimaryContent: '#ffffff', // white (text on main accent)
-  accentSecondary: '#fbbf24', // amber-400
-  accentSecondaryContent: '#422006', // dark brown
-  borderColor: '#fde047', // yellow-400
-  borderColorLight: '#fef3c7', // yellow-100
-  toolbarBackground: '#fde047', // yellow-400
-  toolbarText: '#78350f', // yellow-900
-  inputBackground: '#fef9e7', // lighter yellow for inputs
+  pageBackground: '#fef3c7', 
+  elementBackground: '#fef9c3', 
+  elementBackgroundSecondary: '#fef08a', 
+  textPrimary: '#78350f', 
+  textSecondary: '#92400e', 
+  accentPrimary: '#facc15', 
+  accentPrimaryContent: '#ffffff', 
+  accentSecondary: '#fbbf24', 
+  accentSecondaryContent: '#422006', 
+  borderColor: '#fde047', 
+  borderColorLight: '#fef3c7', 
+  toolbarBackground: '#fde047', 
+  toolbarText: '#78350f', 
+  inputBackground: '#fef9e7', 
   inputText: '#78350f',
   inputBorder: '#fcd34d',
   inputFocusRing: '#facc15',
   scrollbarTrack: '#fef3c7',
   scrollbarThumb: '#fde047',
   scrollbarThumbHover: '#facc15',
-  modalBackground: '#fef9e7', // yellow-50ish
+  modalBackground: '#fef9e7', 
   modalText: '#78350f',
 };
 
-// This will be the starting point for user's custom theme if they haven't saved one
+
 export const DEFAULT_CUSTOM_THEME_TEMPLATE: ResolvedThemeColors = {
-  ...DEFAULT_BANANA_THEME_COLORS, // Start custom theme based on banana
-  pageBackground: '#FFFBEB', // A slightly off-white yellow for custom default
+  ...DEFAULT_BANANA_THEME_COLORS, 
+  pageBackground: '#FFFBEB', 
   elementBackground: '#FEFDF2',
 };
 

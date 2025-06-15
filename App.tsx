@@ -1,10 +1,11 @@
 
+
 import React, { useState, useCallback, useRef, useEffect, useLayoutEffect, useMemo } from 'react';
 import JSZip from 'jszip';
 import { Octokit } from '@octokit/rest';
 import { 
   AppSettings, Block, NestedAppSettingsObjectKeys, ScriptFile, GitHubSettings, Profile, MainViewMode,
-  ThemeKey, CustomThemeColors, AppThemeSettings
+  ThemeKey, CustomThemeColors, AppThemeSettings, BlockMetrics, LineMetricDetail, CharacterByteMapEntry, LineMetrics
 } from './types';
 import { DEFAULT_SETTINGS, DEFAULT_GITHUB_SETTINGS, ALL_THEME_DEFINITIONS, DEFAULT_CUSTOM_THEME_TEMPLATE } from './constants';
 import ControlsPanel from './components/ControlsPanel';
@@ -17,6 +18,7 @@ import { exportSettingsAsJson, importSettingsFromJson } from './services/fileSer
 import { exportToPng } from './services/exportService';
 import * as profileService from './services/profileService';
 import * as themeService from './services/themeService';
+import * as textMetricsService from './services/textMetricsService';
 
 
 interface LoadedCustomFontInfo {
@@ -29,21 +31,21 @@ export type FindScope = 'currentBlock' | 'activeScript' | 'allScripts';
 
 interface FoundMatch {
   scriptId: string;
-  blockIndex: number; // original index of the block in its script
-  charStartIndex: number; // character start index within block.content
-  charEndIndex: number; // character end index within block.content
+  blockIndex: number; 
+  charStartIndex: number; 
+  charEndIndex: number; 
 }
 
 export interface FindResultSummaryItem {
-  id: string; // script.id or `${script.id}-${block.originalIndex}`
-  name: string; // script.name or `Block ${block.originalIndex + 1}`
+  id: string; 
+  name: string; 
   count: number;
   type: 'script' | 'block';
   scriptId: string;
-  blockOriginalIndex?: number; // original index
+  blockOriginalIndex?: number; 
 }
 
-// For global bitmap cache
+
 type BitmapCharCache = Map<string, { canvas: HTMLCanvasElement | null; dataURL?: string }>;
 
 
@@ -68,8 +70,13 @@ interface BlockCellProps {
   onVisibilityChange: (blockOriginalIndex: number, isVisible: boolean) => void;
   scrollRootElement: HTMLDivElement | null;
   observerRootMarginValue: number;
-  globalBitmapCharCache: BitmapCharCache | null; // Added for shared cache
-  globalBitmapCacheId: number; // Added for cache refresh
+  globalBitmapCharCache: BitmapCharCache | null; 
+  globalBitmapCacheId: number; 
+  // Byte counting related props
+  parsedCustomByteMap: CharacterByteMapEntry[];
+  defaultCharacterByteValue: number;
+  enableByteRestrictionInComparisonMode: boolean;
+  activeComparisonMode: boolean; // To know if comparison mode is globally active
 }
 
 const BlockCell: React.FC<BlockCellProps> = ({
@@ -88,14 +95,37 @@ const BlockCell: React.FC<BlockCellProps> = ({
   onVisibilityChange,
   scrollRootElement,
   observerRootMarginValue,
-  globalBitmapCharCache, // Destructure new prop
-  globalBitmapCacheId   // Destructure new prop
+  globalBitmapCharCache, 
+  globalBitmapCacheId,
+  // Byte counting props
+  parsedCustomByteMap,
+  defaultCharacterByteValue,
+  enableByteRestrictionInComparisonMode,
+  activeComparisonMode,
 }) => {
   const cellRef = useRef<HTMLDivElement>(null);
   const blockOriginalIndex = block.index;
 
   const previewComponentRef = useRef<HTMLDivElement>(null);
   const previewWrapperRef = useRef<HTMLDivElement>(null);
+  const [selectedTextLengthCell, setSelectedTextLengthCell] = useState<number>(0);
+  const [blockCellMetrics, setBlockCellMetrics] = useState<BlockMetrics | null>(null);
+  const [lineMetricDetailsForDisplay, setLineMetricDetailsForDisplay] = useState<LineMetricDetail[]>([]);
+  const [activeLineIndexCell, setActiveLineIndexCell] = useState<number | null>(null);
+
+
+  const handleCellTextAreaActivity = (event: React.SyntheticEvent<HTMLTextAreaElement>) => {
+    const textarea = event.currentTarget;
+    setSelectedTextLengthCell(textarea.selectionEnd - textarea.selectionStart);
+
+    if (textarea.selectionStart === textarea.selectionEnd) {
+      const currentLine = textarea.value.substring(0, textarea.selectionStart).split('\n').length - 1;
+      setActiveLineIndexCell(currentLine);
+    } else {
+      setActiveLineIndexCell(null);
+    }
+  };
+
 
   useEffect(() => {
     if (!scrollRootElement || !cellRef.current) {
@@ -142,15 +172,55 @@ const BlockCell: React.FC<BlockCellProps> = ({
     }
   }, [isFullyVisible, appSettings, block.content, placeholderHeight, previewComponentRef, previewWrapperRef]);
 
+  useEffect(() => {
+    const metrics = textMetricsService.calculateBlockMetrics(block.content, parsedCustomByteMap, defaultCharacterByteValue);
+    setBlockCellMetrics(metrics);
+
+    if (activeComparisonMode && enableByteRestrictionInComparisonMode && comparisonOriginalContent !== null) {
+      const originalMetrics = textMetricsService.calculateBlockMetrics(comparisonOriginalContent, parsedCustomByteMap, defaultCharacterByteValue);
+      const details: LineMetricDetail[] = metrics.lineDetails.map((currentLine, index) => {
+        const originalLine = originalMetrics.lineDetails[index];
+        return {
+          currentChars: currentLine.chars,
+          currentBytes: currentLine.bytes,
+          originalChars: originalLine?.chars,
+          originalBytes: originalLine?.bytes,
+          isOverLimit: originalLine ? currentLine.bytes > originalLine.bytes : false,
+        };
+      });
+      // Handle cases where current block has more lines than original (though input should be restricted)
+      if (metrics.lineDetails.length > originalMetrics.lineDetails.length) {
+        for (let i = originalMetrics.lineDetails.length; i < metrics.lineDetails.length; i++) {
+          details[i] = { ...details[i], originalBytes: 0, isOverLimit: true };
+        }
+      }
+      setLineMetricDetailsForDisplay(details);
+    } else {
+      setLineMetricDetailsForDisplay(metrics.lineDetails.map(ld => ({
+        currentChars: ld.chars, currentBytes: ld.bytes, isOverLimit: false
+      })));
+    }
+  }, [block.content, parsedCustomByteMap, defaultCharacterByteValue, activeComparisonMode, enableByteRestrictionInComparisonMode, comparisonOriginalContent]);
+
+  const lineMetricsForActiveIndexCell = useMemo(() => {
+    if (activeLineIndexCell !== null && blockCellMetrics?.lineDetails && blockCellMetrics.lineDetails[activeLineIndexCell]) {
+      return blockCellMetrics.lineDetails[activeLineIndexCell];
+    }
+    return null;
+  }, [activeLineIndexCell, blockCellMetrics]);
+
+
   return (
     <div
       ref={cellRef}
       className="block-cell p-4 rounded-lg shadow-md border bg-[var(--bv-element-background-secondary)] border-[var(--bv-border-color)]"
     >
       <h3 className="text-md font-semibold mb-2 flex justify-between items-center text-[var(--bv-text-primary)]">
-        Block {block.index + 1}
+        <span className="truncate flex-grow mr-2" title={`Block ${block.index + 1}`}>
+           Block {block.index + 1}
+        </span>
         {block.isOverflowing && (
-          <span className="ml-2 bg-red-500 text-white text-xs px-2 py-0.5 rounded-full">Overflow!</span>
+          <span className="ml-auto bg-red-500 text-white text-xs px-2 py-0.5 rounded-full flex-shrink-0">Overflow!</span>
         )}
       </h3>
       <div
@@ -160,7 +230,7 @@ const BlockCell: React.FC<BlockCellProps> = ({
         {isFullyVisible ? (
          <PreviewArea
           ref={previewComponentRef}
-          key={`preview-cell-${block.index}-${globalBitmapCacheId}`} // Add cache ID to key if it matters
+          key={`preview-cell-${block.index}-${globalBitmapCacheId}`} 
           baseSettings={appSettings}
           textOverride={block.content}
           simplifiedRender={simplifiedRender}
@@ -169,8 +239,8 @@ const BlockCell: React.FC<BlockCellProps> = ({
           showPixelMarginGuides={appSettings.pixelOverflowMargins.enabled && overflowSettingsPanelOpen}
           isReadOnlyPreview={false}
           activeThemeKey={activeThemeKey}
-          bitmapCharCache={globalBitmapCharCache} // Pass down shared cache
-          bitmapCacheId={globalBitmapCacheId}     // Pass down cache ID
+          bitmapCharCache={globalBitmapCharCache} 
+          bitmapCacheId={globalBitmapCacheId}     
         />
         ) : (
           <div
@@ -191,13 +261,38 @@ const BlockCell: React.FC<BlockCellProps> = ({
         aria-label={`Content for block ${block.index + 1}`}
         value={block.content}
         onChange={(e) => onBlockContentChange(blockOriginalIndex, e.target.value)}
-        className="w-full p-2 border rounded-md shadow-sm sm:text-sm resize-y min-h-[120px] mb-2
+        onSelect={handleCellTextAreaActivity}
+        onFocus={handleCellTextAreaActivity}
+        onBlur={() => setActiveLineIndexCell(null)}
+        onKeyUp={handleCellTextAreaActivity} 
+        onClick={handleCellTextAreaActivity}
+        className="w-full p-2 border rounded-md shadow-sm sm:text-sm resize-y min-h-[120px] mb-0.5
                    bg-[var(--bv-input-background)] border-[var(--bv-input-border)] text-[var(--bv-input-text)]
                    focus:ring-[var(--bv-input-focus-ring)] focus:border-[var(--bv-input-focus-ring)]"
       />
+      <div className="text-xs text-[var(--bv-text-secondary)] mt-0 mb-1.5 h-auto flex flex-col items-start">
+        <span>Selected: {selectedTextLengthCell} char(s)</span>
+        {activeLineIndexCell !== null && lineMetricsForActiveIndexCell ? (
+          <span>Line {activeLineIndexCell + 1}: {lineMetricsForActiveIndexCell.chars} chars, {lineMetricsForActiveIndexCell.bytes} bytes, {lineMetricsForActiveIndexCell.bytes * 8} bits</span>
+        ) : blockCellMetrics ? (
+          <span>Total: {blockCellMetrics.totalChars} chars, {blockCellMetrics.totalBytes} bytes, {blockCellMetrics.totalBits} bits</span>
+        ) : (
+          <span>Total: 0 chars, 0 bytes, 0 bits</span>
+        )}
+      </div>
+       {activeComparisonMode && enableByteRestrictionInComparisonMode && lineMetricDetailsForDisplay.length > 0 && (
+        <div className="mt-1 text-xs text-[var(--bv-text-secondary)] max-h-20 overflow-y-auto border border-[var(--bv-border-color-light)] p-1 rounded">
+          <p className="font-semibold text-[var(--bv-text-primary)]">Line Byte Limits (Current/Original):</p>
+          {lineMetricDetailsForDisplay.map((line, idx) => (
+            <div key={idx} className={`${line.isOverLimit ? 'text-red-500 font-bold' : ''}`}>
+              Line {idx + 1}: {line.currentBytes} / {line.originalBytes !== undefined ? line.originalBytes : '-'} bytes
+            </div>
+          ))}
+        </div>
+      )}
       {appSettings.comparisonModeEnabled && comparisonOriginalContent !== null && (
-        <div>
-          <h4 className="text-sm font-medium mt-2 mb-1 text-[var(--bv-text-secondary)]">Original Text (Block {block.index + 1})</h4>
+        <div className="mt-2">
+          <h4 className="text-sm font-medium mb-1 text-[var(--bv-text-secondary)] truncate" title={`Original Text (Block ${block.index + 1})`}>Original Text (Block {block.index + 1})</h4>
           <textarea
             aria-label={`Original content for block ${block.index + 1}`}
             readOnly
@@ -214,7 +309,7 @@ const BlockCell: React.FC<BlockCellProps> = ({
 
 const MemoizedBlockCell = React.memo(BlockCell);
 
-// Helper functions for UTF-8 to Base64 and vice-versa
+
 const utf8ToBase64 = (str: string): string => {
   try {
     const utf8Bytes = new TextEncoder().encode(str);
@@ -260,6 +355,8 @@ const App: React.FC = () => {
   const previewRef = useRef<HTMLDivElement>(null);
   const previewContainerRef = useRef<HTMLDivElement>(null);
   const mainTextAreaRef = useRef<HTMLTextAreaElement>(null);
+  const [selectedTextLengthMain, setSelectedTextLengthMain] = useState<number>(0);
+  const [selectedTextLengthOriginal, setSelectedTextLengthOriginal] = useState<number>(0);
 
   const [appThemeSettings, setAppThemeSettings] = useState<AppThemeSettings>(themeService.loadThemeSettings());
   const [isSpecialSettingsMenuOpen, setIsSpecialSettingsMenuOpen] = useState<boolean>(false);
@@ -306,9 +403,38 @@ const App: React.FC = () => {
   const [showTutorial, setShowTutorial] = useState<boolean>(false);
   const [currentTutorialStep, setCurrentTutorialStep] = useState<number>(0);
 
-  // Global Bitmap Font Cache
+  
   const [globalBitmapCharCache, setGlobalBitmapCharCache] = useState<BitmapCharCache | null>(null);
   const [globalBitmapCacheId, setGlobalBitmapCacheId] = useState<number>(0);
+
+  const [mainEditorMetrics, setMainEditorMetrics] = useState<BlockMetrics | null>(null);
+  const [mainEditorLineMetricDetails, setMainEditorLineMetricDetails] = useState<LineMetricDetail[]>([]);
+  const [originalBlockMetrics, setOriginalBlockMetrics] = useState<BlockMetrics | null>(null);
+  const [byteRestrictionWarning, setByteRestrictionWarning] = useState<string | null>(null);
+  const [activeLineIndexMain, setActiveLineIndexMain] = useState<number | null>(null);
+
+
+  const parsedCustomByteMap = useMemo(() => {
+    return textMetricsService.parseCustomByteMapString(settings.customByteMapString);
+  }, [settings.customByteMapString]);
+
+
+  const handleMainTextAreaActivity = (event: React.SyntheticEvent<HTMLTextAreaElement>) => {
+    const textarea = event.currentTarget;
+    setSelectedTextLengthMain(textarea.selectionEnd - textarea.selectionStart);
+
+    if (textarea.selectionStart === textarea.selectionEnd) { // Cursor, not a range selection
+      const currentLine = textarea.value.substring(0, textarea.selectionStart).split('\n').length - 1;
+      setActiveLineIndexMain(currentLine);
+    } else { // Range selection
+      setActiveLineIndexMain(null);
+    }
+  };
+
+  const handleTextSelectOriginal = (event: React.SyntheticEvent<HTMLTextAreaElement>) => {
+    const textarea = event.currentTarget;
+    setSelectedTextLengthOriginal(textarea.selectionEnd - textarea.selectionStart);
+  };
 
   useEffect(() => {
     const tutorialCompleted = localStorage.getItem(TUTORIAL_COMPLETED_KEY);
@@ -318,7 +444,7 @@ const App: React.FC = () => {
     }
   }, []);
 
-  // Effect to generate global bitmap character cache
+  
   useEffect(() => {
     let isCancelled = false;
     
@@ -338,7 +464,7 @@ const App: React.FC = () => {
 
         if (charWidth <= 0 || charHeight <= 0) {
           console.error("Global Bitmap Cache: charWidth or charHeight is zero or negative.");
-          setGlobalBitmapCharCache(new Map()); // Set to empty map
+          setGlobalBitmapCharCache(new Map()); 
           setGlobalBitmapCacheId(id => id + 1);
           return;
         }
@@ -450,7 +576,7 @@ const App: React.FC = () => {
         setGlobalBitmapCacheId(id => id + 1);
       }
     } else {
-      setGlobalBitmapCharCache(null); // Clear cache if not bitmap or not enabled
+      setGlobalBitmapCharCache(null); 
       setGlobalBitmapCacheId(id => id + 1);
     }
 
@@ -772,6 +898,67 @@ const App: React.FC = () => {
     }
   }, [currentBlockIndex, activeScriptBlocks, settings.text, viewMode, handleSettingsChange]);
 
+  // Update metrics for main editor when relevant settings or text change
+  useEffect(() => {
+    if (viewMode === 'single') {
+        const metrics = textMetricsService.calculateBlockMetrics(settings.text, parsedCustomByteMap, settings.defaultCharacterByteValue);
+        setMainEditorMetrics(metrics);
+
+        if (settings.comparisonModeEnabled && settings.enableByteRestrictionInComparisonMode && matchedOriginalScript && currentBlockIndex !== null && matchedOriginalScript.blocks[currentBlockIndex]) {
+            const originalBlockContent = matchedOriginalScript.blocks[currentBlockIndex].content;
+            const originalMetrics = textMetricsService.calculateBlockMetrics(originalBlockContent, parsedCustomByteMap, settings.defaultCharacterByteValue);
+            
+            const details: LineMetricDetail[] = metrics.lineDetails.map((currentLine, index) => {
+                const originalLine = originalMetrics.lineDetails[index];
+                return {
+                    currentChars: currentLine.chars,
+                    currentBytes: currentLine.bytes,
+                    originalChars: originalLine?.chars,
+                    originalBytes: originalLine?.bytes,
+                    isOverLimit: originalLine ? currentLine.bytes > originalLine.bytes : false,
+                };
+            });
+            // Handle cases where current block has more lines than original
+            if (metrics.lineDetails.length > originalMetrics.lineDetails.length) {
+                for (let i = originalMetrics.lineDetails.length; i < metrics.lineDetails.length; i++) {
+                    details[i] = { ...metrics.lineDetails[i], currentChars: metrics.lineDetails[i].chars, currentBytes: metrics.lineDetails[i].bytes, originalBytes: 0, isOverLimit: metrics.lineDetails[i].bytes > 0 };
+                }
+            }
+            setMainEditorLineMetricDetails(details);
+        } else {
+            setMainEditorLineMetricDetails(metrics.lineDetails.map(ld => ({
+                currentChars: ld.chars, currentBytes: ld.bytes, isOverLimit: false
+            })));
+        }
+    }
+  }, [settings.text, parsedCustomByteMap, settings.defaultCharacterByteValue, viewMode, settings.comparisonModeEnabled, settings.enableByteRestrictionInComparisonMode, matchedOriginalScript, currentBlockIndex]);
+
+  // Update metrics for the original block in comparison view
+  const currentEditableBlockForSingleView = (currentMainView === 'editor' && viewMode === 'single' && activeMainScript && currentBlockIndex !== null && activeScriptBlocks[currentBlockIndex])
+    ? activeScriptBlocks[currentBlockIndex]
+    : null;
+
+  let originalBlockForSingleViewComparison: Block | null = null;
+  if (currentMainView === 'editor' && viewMode === 'single' && settings.comparisonModeEnabled && currentEditableBlockForSingleView && matchedOriginalScript) {
+    if (matchedOriginalScript.blocks[currentEditableBlockForSingleView.index]) {
+        originalBlockForSingleViewComparison = matchedOriginalScript.blocks[currentEditableBlockForSingleView.index];
+    }
+  } else if (currentMainView === 'editor' && viewMode === 'single' && settings.comparisonModeEnabled && currentEditableBlockForSingleView) {
+      originalBlockForSingleViewComparison = {
+          ...currentEditableBlockForSingleView,
+          content: currentEditableBlockForSingleView.originalContent,
+      };
+  }
+
+  useEffect(() => {
+    if (viewMode === 'single' && settings.comparisonModeEnabled && originalBlockForSingleViewComparison) {
+      const metrics = textMetricsService.calculateBlockMetrics(originalBlockForSingleViewComparison.content, parsedCustomByteMap, settings.defaultCharacterByteValue);
+      setOriginalBlockMetrics(metrics);
+    } else {
+      setOriginalBlockMetrics(null);
+    }
+  }, [originalBlockForSingleViewComparison, parsedCustomByteMap, settings.defaultCharacterByteValue, viewMode, settings.comparisonModeEnabled]);
+
 
   const handleNestedSettingsChange = useCallback(<
     ParentK extends NestedAppSettingsObjectKeys,
@@ -1005,11 +1192,13 @@ const App: React.FC = () => {
     setCurrentFindMatch(null);
     setLastSearchIterationDetails(null);
     setFindResultSummary([]);
+    setByteRestrictionWarning(null);
   }, [handleSettingsChange]);
 
   const handleClearOriginalScripts = useCallback(() => {
     setOriginalScripts([]);
     setMatchedOriginalScript(null);
+    setByteRestrictionWarning(null);
   }, []);
 
 
@@ -1026,11 +1215,41 @@ const App: React.FC = () => {
     setFindResultsMessage("");
     setCurrentFindMatch(null);
     setLastSearchIterationDetails(null);
+    setByteRestrictionWarning(null);
   }, [mainScripts, handleSettingsChange]);
 
+const handleCurrentBlockContentChangeInSingleView = useCallback((newContent: string) => {
+    if (!activeMainScript || currentBlockIndex === null) {
+        handleSettingsChange('text', newContent); // Allow typing if no active block context
+        setByteRestrictionWarning(null);
+        return;
+    }
 
-  const handleCurrentBlockContentChangeInSingleView = useCallback((newContent: string) => {
-    if (!activeMainScript || currentBlockIndex === null) return;
+    // Byte restriction logic
+    if (settings.comparisonModeEnabled && settings.enableByteRestrictionInComparisonMode && matchedOriginalScript && matchedOriginalScript.blocks[currentBlockIndex]) {
+        const originalBlock = matchedOriginalScript.blocks[currentBlockIndex];
+        const newContentLines = newContent.split('\n');
+        const originalContentLines = originalBlock.content.split('\n');
+
+        // Check line count
+        if (newContentLines.length > originalContentLines.length) {
+            setByteRestrictionWarning(`Line count cannot exceed original (${originalContentLines.length} lines). Change prevented.`);
+            // Do not update settings.text or mainScripts, effectively reverting the input
+            return; 
+        }
+
+        // Check byte count per line
+        for (let i = 0; i < newContentLines.length; i++) {
+            const currentLineBytes = textMetricsService.calculateLineMetrics(newContentLines[i], parsedCustomByteMap, settings.defaultCharacterByteValue).bytes;
+            const originalLineBytes = textMetricsService.calculateLineMetrics(originalContentLines[i] || "", parsedCustomByteMap, settings.defaultCharacterByteValue).bytes;
+
+            if (currentLineBytes > originalLineBytes) {
+                setByteRestrictionWarning(`Line ${i + 1} exceeds original byte limit (${currentLineBytes} > ${originalLineBytes} bytes). Change prevented.`);
+                return; 
+            }
+        }
+    }
+    setByteRestrictionWarning(null); // Clear warning if all checks pass
 
     handleSettingsChange('text', newContent); 
 
@@ -1040,7 +1259,7 @@ const App: React.FC = () => {
           return {
             ...script,
             blocks: script.blocks.map((block, index) =>
-              index === currentBlockIndex ? { ...block, content: newContent } : block
+              index === currentBlockIndex ? { ...block, content: newContent, isOverflowing: false, lineMetricDetails: undefined } : block // Reset overflow and metrics
             ),
           };
         }
@@ -1049,7 +1268,8 @@ const App: React.FC = () => {
     );
     setCurrentFindMatch(null);
     setFindResultsMessage("");
-  }, [activeMainScript, currentBlockIndex, handleSettingsChange]);
+  }, [activeMainScript, currentBlockIndex, handleSettingsChange, settings.comparisonModeEnabled, settings.enableByteRestrictionInComparisonMode, matchedOriginalScript, parsedCustomByteMap, settings.defaultCharacterByteValue]);
+
 
   const displayedBlocksForView = useMemo(() => {
     const blocks = activeMainScript?.blocks || [];
@@ -1059,13 +1279,39 @@ const App: React.FC = () => {
 
   const handleBlockContentChangeForCell = useCallback((blockOriginalIndexInActiveScript: number, newContent: string) => {
     if (!activeMainScript) return;
+    
+    // Byte restriction logic for BlockCell
+    if (settings.comparisonModeEnabled && settings.enableByteRestrictionInComparisonMode && matchedOriginalScript) {
+        const originalBlock = matchedOriginalScript.blocks.find(b => b.index === blockOriginalIndexInActiveScript);
+        if (originalBlock) {
+            const newContentLines = newContent.split('\n');
+            const originalContentLines = originalBlock.content.split('\n');
+
+            if (newContentLines.length > originalContentLines.length) {
+                alert(`Error for Block ${blockOriginalIndexInActiveScript + 1}: Line count cannot exceed original (${originalContentLines.length} lines). Change not applied.`);
+                return; 
+            }
+
+            for (let i = 0; i < newContentLines.length; i++) {
+                const currentLineBytes = textMetricsService.calculateLineMetrics(newContentLines[i], parsedCustomByteMap, settings.defaultCharacterByteValue).bytes;
+                const originalLineBytes = textMetricsService.calculateLineMetrics(originalContentLines[i] || "", parsedCustomByteMap, settings.defaultCharacterByteValue).bytes;
+
+                if (currentLineBytes > originalLineBytes) {
+                    alert(`Error for Block ${blockOriginalIndexInActiveScript + 1}, Line ${i + 1}: Exceeds original byte limit (${currentLineBytes} > ${originalLineBytes} bytes). Change not applied.`);
+                    return; 
+                }
+            }
+        }
+    }
+
+
     setMainScripts(prevScripts =>
       prevScripts.map(script => {
         if (script.id === activeMainScript.id) {
           return {
             ...script,
             blocks: script.blocks.map(b =>
-              b.index === blockOriginalIndexInActiveScript ? { ...b, content: newContent } : b
+              b.index === blockOriginalIndexInActiveScript ? { ...b, content: newContent, isOverflowing: false, lineMetricDetails: undefined } : b
             )
           };
         }
@@ -1077,7 +1323,7 @@ const App: React.FC = () => {
     }
     setCurrentFindMatch(null);
     setFindResultsMessage("");
-  }, [activeMainScript, activeMainScriptId, currentBlockIndex, viewMode, handleSettingsChange]);
+  }, [activeMainScript, activeMainScriptId, currentBlockIndex, viewMode, handleSettingsChange, settings.comparisonModeEnabled, settings.enableByteRestrictionInComparisonMode, matchedOriginalScript, parsedCustomByteMap, settings.defaultCharacterByteValue]);
 
 
   const handleSetCurrentBlockIndex = useCallback((indexInActiveScript: number | null) => {
@@ -1102,6 +1348,7 @@ const App: React.FC = () => {
       setFindResultsMessage(""); 
       setCurrentFindMatch(null);
       setLastSearchIterationDetails(null); 
+      setByteRestrictionWarning(null);
   }, [activeMainScript, viewMode, handleSettingsChange]);
 
   const handleMainPreviewOverflowStatusChange = useCallback((isCurrentlyOverflowing: boolean) => {
@@ -1178,7 +1425,7 @@ const App: React.FC = () => {
     if (findScope === 'activeScript' && activeMainScript) {
       activeMainScript.blocks.forEach(block => {
         const blockRegex = new RegExp(regex); 
-        // eslint-disable-next-line @typescript-eslint/no-unused-vars
+        
         let match;
         let countInBlock = 0;
         while ((match = blockRegex.exec(block.content)) !== null) {
@@ -1201,7 +1448,7 @@ const App: React.FC = () => {
         let countInScript = 0;
         script.blocks.forEach(block => {
           const blockRegex = new RegExp(regex); 
-          // eslint-disable-next-line @typescript-eslint/no-unused-vars
+          
           let match;
           while ((match = blockRegex.exec(block.content)) !== null) {
             countInScript++;
@@ -1412,6 +1659,30 @@ const App: React.FC = () => {
     const { scriptId, blockIndex, charStartIndex, charEndIndex } = currentFindMatch;
     let success = false;
     let searchStartIndexAfterReplace = 0;
+    const oldContentForReplacementCheck = scriptId === activeMainScript?.id && blockIndex === currentBlockIndex && viewMode === 'single'
+      ? settings.text
+      : mainScripts.find(s => s.id === scriptId)?.blocks.find(b => b.index === blockIndex)?.content;
+      
+    if (!oldContentForReplacementCheck) {
+        setFindResultsMessage("Failed to replace. Original content for match not found.");
+        setCurrentFindMatch(null);
+        return;
+    }
+    
+    // Verify the match is still valid before replacing
+    const regexForVerify = getRegexForFind();
+    if (!regexForVerify) {
+         setFindResultsMessage("Failed to replace. Invalid find pattern.");
+         return;
+    }
+    regexForVerify.lastIndex = charStartIndex; // Start search from the original match position
+    const verifyMatch = regexForVerify.exec(oldContentForReplacementCheck);
+    if (!verifyMatch || verifyMatch.index !== charStartIndex || regexForVerify.lastIndex !== charEndIndex) {
+        setFindResultsMessage("Match is stale, content may have changed. Please Find Next and try again.");
+        setCurrentFindMatch(null); 
+        return;
+    }
+
 
     if (findScope === 'currentBlock' && viewMode === 'single' && activeMainScript && scriptId === activeMainScript.id && blockIndex === currentBlockIndex) {
         const currentBlockContent = settings.text;
@@ -1431,7 +1702,7 @@ const App: React.FC = () => {
                         if (script.id === activeMainScriptId && block.index === currentBlockIndex && viewMode === 'single') {
                             handleSettingsChange('text', newContent);
                         }
-                        return { ...block, content: newContent, isOverflowing: false };
+                        return { ...block, content: newContent, isOverflowing: false, lineMetricDetails: undefined };
                     }
                     return block;
                 });
@@ -1453,11 +1724,11 @@ const App: React.FC = () => {
         updateFindResultSummary(); 
         setTimeout(() => handleFindNext(), 50); 
     } else {
-        setFindResultsMessage("Failed to replace. Match might be stale.");
+        setFindResultsMessage("Failed to replace. Match might be stale or content was not found.");
         setCurrentFindMatch(null); 
     }
 
-  }, [currentFindMatch, findText, replaceText, mainScripts, activeMainScript, currentBlockIndex, viewMode, settings.text, handleFindNext, handleSettingsChange, handleCurrentBlockContentChangeInSingleView, findScope, activeMainScriptId, updateFindResultSummary]);
+  }, [currentFindMatch, findText, replaceText, mainScripts, activeMainScript, currentBlockIndex, viewMode, settings.text, handleFindNext, handleSettingsChange, handleCurrentBlockContentChangeInSingleView, findScope, activeMainScriptId, updateFindResultSummary, getRegexForFind]);
 
   const handleReplaceAll = useCallback(() => {
     if (!findText) {
@@ -1521,7 +1792,7 @@ const App: React.FC = () => {
             if (script.id === activeMainScriptId && block.index === currentBlockIndex && viewMode === 'single') {
               handleSettingsChange('text', newContent);
             }
-            return { ...block, content: newContent, isOverflowing: false };
+            return { ...block, content: newContent, isOverflowing: false, lineMetricDetails: undefined };
           }
         }
         return block;
@@ -1679,9 +1950,9 @@ const App: React.FC = () => {
         ref: gitHubSettings.branch || undefined,
       });
 
-      // @ts-ignore 
-      if (response.data && response.data.content && response.data.encoding === 'base64') {
-        // @ts-ignore
+      
+      if (response.data && 'content' in response.data && response.data.encoding === 'base64') {
+        
         const rawText = base64ToUtf8(response.data.content);
         const blocks = parseTextToBlocksInternal(rawText, settings.useCustomBlockSeparator, settings.blockSeparators);
         const newScript: ScriptFile = {
@@ -1696,7 +1967,7 @@ const App: React.FC = () => {
         setCurrentBlockIndex(newScript.blocks.length > 0 ? 0 : null);
         setGitHubStatusMessage(`Successfully loaded file: ${newScript.name}.`);
       } else {
-        setGitHubStatusMessage("Error: Could not decode file content from GitHub.");
+        setGitHubStatusMessage("Error: Could not decode file content from GitHub or content not found.");
       }
     } catch (error: any) {
       console.error("Error loading file from GitHub:", error);
@@ -1752,19 +2023,19 @@ const App: React.FC = () => {
         for (const item of folderContents) {
           if (item.type === 'file') {
             try {
-              const { data: fileContent } = await octokit.repos.getContent({
+              const { data: fileContentResponse } = await octokit.repos.getContent({
                 owner,
                 repo,
                 path: item.path,
                 ref: gitHubSettings.branch || undefined,
               });
-              // @ts-ignore
-              if (fileContent && fileContent.content && fileContent.encoding === 'base64') {
-                // @ts-ignore
+              
+              if (fileContentResponse && 'content' in fileContentResponse && fileContentResponse.encoding === 'base64') {
+                
                 let rawText = "";
                 try {
-                  // @ts-ignore
-                  rawText = base64ToUtf8(fileContent.content);
+                  
+                  rawText = base64ToUtf8(fileContentResponse.content);
                 } catch (decodeError) {
                   console.warn(`Skipped ${item.name} due to Base64 decoding error:`, decodeError);
                   statusMessages.push(`Skipped ${item.name} (decoding error).`);
@@ -1853,14 +2124,15 @@ const App: React.FC = () => {
       const octokit = new Octokit({ auth: gitHubSettings.pat });
       let existingSha: string | undefined = undefined;
       try {
-        const { data: fileData } = await octokit.repos.getContent({
+        const { data: fileDataResponse } = await octokit.repos.getContent({
           owner,
           repo,
           path: gitHubSettings.filePath,
           ref: gitHubSettings.branch || undefined,
         });
-        // @ts-ignore
-        if (fileData && fileData.sha) existingSha = fileData.sha;
+        if (fileDataResponse && 'sha' in fileDataResponse) {
+            existingSha = fileDataResponse.sha;
+        }
       } catch (e: any) {
         if (e.status !== 404) throw e;
          setGitHubStatusMessage("File not found on GitHub, creating new file...");
@@ -1936,14 +2208,15 @@ const handleSaveAllToGitHubFolder = useCallback(async () => {
         try {
           let existingSha: string | undefined = undefined;
           try {
-            const { data: fileData } = await octokit.repos.getContent({
+            const { data: fileDataResponse } = await octokit.repos.getContent({
               owner,
               repo,
               path: fullPath,
               ref: gitHubSettings.branch || undefined,
             });
-             // @ts-ignore
-            if (fileData && fileData.sha) existingSha = fileData.sha;
+            if (fileDataResponse && 'sha' in fileDataResponse) {
+                 existingSha = fileDataResponse.sha;
+            }
           } catch (e: any) {
             if (e.status !== 404) throw e; 
           }
@@ -2054,31 +2327,28 @@ const handleSaveAllToGitHubFolder = useCallback(async () => {
   }, [settings, currentBlockIndex, viewMode, activeMainScriptId, currentMainView]); 
 
 
-  const currentEditableBlockForSingleView = (currentMainView === 'editor' && viewMode === 'single' && activeMainScript && currentBlockIndex !== null && activeScriptBlocks[currentBlockIndex])
-    ? activeScriptBlocks[currentBlockIndex]
-    : null;
-
-  let originalBlockForSingleViewComparison: Block | null = null;
   let originalSourceInfoForSingleView = "";
-
   if (currentMainView === 'editor' && viewMode === 'single' && settings.comparisonModeEnabled && currentEditableBlockForSingleView && matchedOriginalScript) {
     if (matchedOriginalScript.blocks[currentEditableBlockForSingleView.index]) {
-        originalBlockForSingleViewComparison = matchedOriginalScript.blocks[currentEditableBlockForSingleView.index];
         originalSourceInfoForSingleView = `(File: ${matchedOriginalScript.name})`;
     }
   } else if (currentMainView === 'editor' && viewMode === 'single' && settings.comparisonModeEnabled && currentEditableBlockForSingleView) {
-      originalBlockForSingleViewComparison = {
-          ...currentEditableBlockForSingleView,
-          content: currentEditableBlockForSingleView.originalContent,
-      };
       originalSourceInfoForSingleView = "(Initial Load of Active Script)";
   }
+
 
   const handleToggleMainView = useCallback(() => {
     setCurrentMainView(prev => prev === 'editor' ? 'profilesGallery' : 'editor');
   }, []);
 
   const showControlsPanel = currentMainView === 'editor';
+
+  const lineMetricsForActiveIndexMain: LineMetrics | null = useMemo(() => {
+    if (activeLineIndexMain !== null && mainEditorMetrics?.lineDetails && mainEditorMetrics.lineDetails[activeLineIndexMain]) {
+      return mainEditorMetrics.lineDetails[activeLineIndexMain];
+    }
+    return null;
+  }, [activeLineIndexMain, mainEditorMetrics]);
 
 
   return (
@@ -2236,7 +2506,7 @@ const handleSaveAllToGitHubFolder = useCallback(async () => {
                     {settings.comparisonModeEnabled && currentEditableBlockForSingleView ? (
                       <div className="flex flex-row w-full gap-4">
                         <div className="w-1/2 flex flex-col items-center justify-center relative">
-                          <h3 className="text-sm font-semibold mb-1 text-[var(--bv-text-secondary)]">
+                          <h3 className="text-sm font-semibold mb-1 text-[var(--bv-text-secondary)] truncate" title={`Original ${originalSourceInfoForSingleView} (Block ${currentEditableBlockForSingleView.index + 1})`}>
                             Original {originalSourceInfoForSingleView} (Block {currentEditableBlockForSingleView.index + 1})
                           </h3>
                           <PreviewArea
@@ -2254,7 +2524,7 @@ const handleSaveAllToGitHubFolder = useCallback(async () => {
                           />
                         </div>
                         <div className="w-1/2 flex flex-col items-center justify-center relative">
-                          <h3 className="text-sm font-semibold mb-1 text-[var(--bv-text-secondary)]">
+                           <h3 className="text-sm font-semibold mb-1 text-[var(--bv-text-secondary)] truncate" title={`Editable (Block ${currentEditableBlockForSingleView.index + 1})`}>
                             Editable (Block {currentEditableBlockForSingleView.index + 1})
                           </h3>
                           <PreviewArea
@@ -2302,22 +2572,29 @@ const handleSaveAllToGitHubFolder = useCallback(async () => {
                   <div className={`mt-4 w-full flex-grow flex flex-col ${settings.comparisonModeEnabled && currentEditableBlockForSingleView ? 'sm:flex-row gap-4' : ''}`}>
                     {settings.comparisonModeEnabled && currentEditableBlockForSingleView && (
                       <div className="w-full sm:w-1/2 flex flex-col">
-                        <h2 className="text-lg font-semibold mb-2 text-[var(--bv-text-primary)]">
+                        <h2 className="text-lg font-semibold mb-2 text-[var(--bv-text-primary)] truncate" title={`Original ${originalSourceInfoForSingleView} (Block ${currentEditableBlockForSingleView.index + 1})`}>
                           Original {originalSourceInfoForSingleView} (Block {currentEditableBlockForSingleView.index + 1})
                         </h2>
                         <textarea
                           id={`original-block-content-single-${activeMainScriptId}-${currentEditableBlockForSingleView.index}`}
                           aria-label={`Original content of block ${currentEditableBlockForSingleView.index + 1}`}
                           readOnly
+                          onSelect={handleTextSelectOriginal}
                           value={originalBlockForSingleViewComparison ? originalBlockForSingleViewComparison.content : "Original content not available."}
                           className="w-full p-2 border rounded-md shadow-sm sm:text-sm flex-grow resize-y
                                       bg-[var(--bv-accent-secondary)] border-[var(--bv-border-color)] text-[var(--bv-accent-secondary-content)]
                                       cursor-not-allowed min-h-[100px]"
                         />
+                        <div className="text-xs text-[var(--bv-text-secondary)] opacity-80 mt-0.5 mb-1.5 h-auto flex flex-col items-start">
+                          <span>Selected: {selectedTextLengthOriginal} char(s)</span>
+                          {originalBlockMetrics && (
+                              <span>Total: {originalBlockMetrics.totalChars} chars, {originalBlockMetrics.totalBytes} bytes, {originalBlockMetrics.totalBits} bits</span>
+                          )}
+                        </div>
                       </div>
                     )}
                     <div className={`flex flex-col ${settings.comparisonModeEnabled && currentEditableBlockForSingleView ? 'w-full sm:w-1/2' : 'w-full flex-grow'}`}>
-                      <h2 className="text-lg font-semibold mb-2 text-[var(--bv-text-primary)]">
+                      <h2 className="text-lg font-semibold mb-2 text-[var(--bv-text-primary)] truncate" title={`Current Block Content ${settings.comparisonModeEnabled && currentEditableBlockForSingleView ? '(Editable)' : ''} ${currentBlockIndex !== null && activeScriptBlocks.length > 0 ? `(Block ${currentBlockIndex + 1} of Script: ${activeMainScript?.name || ''})` : ''}`}>
                         Current Block Content {settings.comparisonModeEnabled && currentEditableBlockForSingleView ? '(Editable)' : ''}
                         {currentBlockIndex !== null && activeScriptBlocks.length > 0 && `(Block ${currentBlockIndex + 1} of Script: ${activeMainScript?.name || ''})`}
                       </h2>
@@ -2327,12 +2604,40 @@ const handleSaveAllToGitHubFolder = useCallback(async () => {
                         aria-label="Current block content"
                         value={settings.text} 
                         onChange={(e) => handleCurrentBlockContentChangeInSingleView(e.target.value)}
+                        onSelect={handleMainTextAreaActivity}
+                        onFocus={handleMainTextAreaActivity}
+                        onBlur={() => setActiveLineIndexMain(null)}
+                        onKeyUp={handleMainTextAreaActivity} 
+                        onClick={handleMainTextAreaActivity}
                         disabled={currentBlockIndex === null && activeScriptBlocks.length > 0 && !!activeMainScriptId}
-                        className="w-full p-2 border rounded-md shadow-sm sm:text-sm flex-grow resize-y min-h-[100px]
+                        className="w-full p-2 border rounded-md shadow-sm sm:text-sm flex-grow resize-y min-h-[100px] mb-0.5
                                    bg-[var(--bv-input-background)] border-[var(--bv-input-border)] text-[var(--bv-input-text)]
                                    focus:ring-[var(--bv-input-focus-ring)] focus:border-[var(--bv-input-focus-ring)] placeholder:text-[var(--bv-text-secondary)]"
                         placeholder={activeScriptBlocks.length > 0 && currentBlockIndex === null ? "Select a block from the navigation to edit." : !activeMainScriptId ? "Load a main script to begin..." : "Type here..."}
                       />
+                      <div className="text-xs text-[var(--bv-text-secondary)] mt-0 mb-1.5 h-auto flex flex-col items-start">
+                        <span>Selected: {selectedTextLengthMain} char(s)</span>
+                        {activeLineIndexMain !== null && lineMetricsForActiveIndexMain ? (
+                            <span>Line {activeLineIndexMain + 1}: {lineMetricsForActiveIndexMain.chars} chars, {lineMetricsForActiveIndexMain.bytes} bytes, {lineMetricsForActiveIndexMain.bytes * 8} bits</span>
+                        ) : mainEditorMetrics ? (
+                            <span>Total: {mainEditorMetrics.totalChars} chars, {mainEditorMetrics.totalBytes} bytes, {mainEditorMetrics.totalBits} bits</span>
+                        ) : (
+                           <span>Total: 0 chars, 0 bytes, 0 bits</span>
+                        )}
+                      </div>
+                      {byteRestrictionWarning && (
+                        <p className="text-xs text-red-500 mb-1">{byteRestrictionWarning}</p>
+                      )}
+                      {settings.comparisonModeEnabled && settings.enableByteRestrictionInComparisonMode && mainEditorLineMetricDetails.length > 0 && (
+                        <div className="mt-1 text-xs text-[var(--bv-text-secondary)] max-h-24 overflow-y-auto border border-[var(--bv-border-color-light)] p-1 rounded">
+                            <p className="font-semibold text-[var(--bv-text-primary)]">Line Byte Limits (Current/Original):</p>
+                            {mainEditorLineMetricDetails.map((line, idx) => (
+                                <div key={idx} className={`${line.isOverLimit ? 'text-red-500 font-bold' : ''}`}>
+                                    Line {idx + 1}: {line.currentBytes} / {line.originalBytes !== undefined ? line.originalBytes : '-'} bytes
+                                </div>
+                            ))}
+                        </div>
+                      )}
                     </div>
                   </div>
                 </>
@@ -2374,6 +2679,10 @@ const handleSaveAllToGitHubFolder = useCallback(async () => {
                         observerRootMarginValue={observerRootMarginValue}
                         globalBitmapCharCache={globalBitmapCharCache}
                         globalBitmapCacheId={globalBitmapCacheId}
+                        parsedCustomByteMap={parsedCustomByteMap}
+                        defaultCharacterByteValue={settings.defaultCharacterByteValue}
+                        enableByteRestrictionInComparisonMode={settings.enableByteRestrictionInComparisonMode}
+                        activeComparisonMode={settings.comparisonModeEnabled}
                       />
                     );
                   })}

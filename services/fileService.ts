@@ -82,6 +82,12 @@ export const importSettingsFromJson = (file: File): Promise<{ appSettings: AppSe
                 enabled: typeof tag.enabled === 'boolean' ? tag.enabled : true,
             })).filter(tag => tag.imageUrl)
             : DEFAULT_SETTINGS.imageTags,
+          useCustomLineBreakTags: typeof importedAppSettings.useCustomLineBreakTags === 'boolean'
+            ? importedAppSettings.useCustomLineBreakTags
+            : DEFAULT_SETTINGS.useCustomLineBreakTags,
+          customLineBreakTags: Array.isArray(importedAppSettings.customLineBreakTags)
+            ? importedAppSettings.customLineBreakTags
+            : DEFAULT_SETTINGS.customLineBreakTags,
           showSecondaryBackgroundImage: typeof importedAppSettings.showSecondaryBackgroundImage === 'boolean' 
               ? importedAppSettings.showSecondaryBackgroundImage 
               : DEFAULT_SETTINGS.showSecondaryBackgroundImage,

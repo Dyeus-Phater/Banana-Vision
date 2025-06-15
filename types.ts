@@ -41,19 +41,28 @@ export interface BitmapFontSettings {
   spaceWidthOverride: number; // New: Custom width for space character, 0 for auto
 }
 
+export interface LineMetricDetail {
+  currentChars: number;
+  currentBytes: number;
+  originalChars?: number;
+  originalBytes?: number;
+  isOverLimit: boolean;
+}
+
 export interface Block {
   content: string;
-  originalContent: string; // New: To store the original content of the block
-  index: number; // Index within its parent ScriptFile's blocks array
+  originalContent: string; 
+  index: number; 
   isOverflowing: boolean;
+  lineMetricDetails?: LineMetricDetail[]; // For displaying per-line byte/char counts in comparison
 }
 
 export interface ScriptFile {
-  id: string; // Unique ID, e.g., timestamp + name, for React keys
+  id: string; 
   name: string;
   blocks: Block[];
-  rawText: string; // Original raw text content of the file
-  parsedWithCustomSeparators: boolean; // Indicates if settings.useCustomBlockSeparator was true when THIS file was parsed
+  rawText: string; 
+  parsedWithCustomSeparators: boolean; 
 }
 
 export interface TransformSettings {
@@ -74,7 +83,7 @@ export interface PixelOverflowMargins {
 
 export interface GitHubSettings {
   pat: string;
-  repoFullName: string; // "owner/repo"
+  repoFullName: string; 
   branch: string;
   filePath: string;
 }
@@ -83,24 +92,24 @@ export interface CustomColorTag {
   id: string;
   openingTag: string;
   closingTag: string;
-  color: string; // Hex color string e.g. #FF0000
+  color: string; 
   enabled: boolean;
 }
 
 export interface ImageTag {
   id: string;
-  tag: string; // e.g., "[SMILE]" or "<GOLD_ICON>"
-  imageUrl: string; // Data URL of the uploaded image
-  width: number; // Display width in px
-  height: number; // Display height in px
+  tag: string; 
+  imageUrl: string; 
+  width: number; 
+  height: number; 
   enabled: boolean;
 }
 
 export interface AppSettings {
-  text: string; // Represents content of the current block of the active script
+  text: string; 
   previewWidth: number;
   previewHeight: number;
-  backgroundColor: string; // Will be mapped to a CSS var or used if custom theme doesn't override preview specifics
+  backgroundColor: string; 
   backgroundImageUrl: string | null;
   secondaryBackgroundImageUrl: string | null; 
   showSecondaryBackgroundImage: boolean; 
@@ -110,12 +119,14 @@ export interface AppSettings {
   bitmapFont: BitmapFontSettings;
   transform: TransformSettings;
   currentFontType: 'system' | 'bitmap';
-  useCustomBlockSeparator: boolean; // This is a global setting for NEW uploads
-  blockSeparators: string[]; // Array of custom separator strings
+  useCustomBlockSeparator: boolean; 
+  blockSeparators: string[]; 
   hideTagsInPreview: boolean;
   tagPatternsToHide: string[];
   customColorTags: CustomColorTag[]; 
-  imageTags: ImageTag[]; // New: For user-defined image tags
+  imageTags: ImageTag[]; 
+  useCustomLineBreakTags: boolean; 
+  customLineBreakTags: string[]; 
   overflowDetectionMode: 'pixel' | 'character';
   maxCharacters: number;
   maxPixelHeight: number;
@@ -123,17 +134,19 @@ export interface AppSettings {
   globalLineHeightFactor: number;
   previewZoom: number; 
   comparisonModeEnabled: boolean;
+
+  // New settings for byte/bit counting and restrictions
+  customByteMapString: string; // Raw string from textarea, e.g., "A=1\nB=1\n€=3"
+  defaultCharacterByteValue: number; // Default byte value for chars not in the map
+  enableByteRestrictionInComparisonMode: boolean; // Toggle for the new restriction
 }
 
-// OLD Theme type, will be replaced by ThemeKey
-// export type Theme = 'light' | 'dark' | 'banana';
 
-// Helper type to get keys of T whose values are objects
 export type ObjectKeys<T> = {
   [K in keyof T]: T[K] extends object ? K : never;
 }[keyof T];
 
-// Specific type for keys of AppSettings that point to nested objects
+
 export type NestedAppSettingsObjectKeys = ObjectKeys<AppSettings>;
 
 export interface Profile {
@@ -141,60 +154,76 @@ export interface Profile {
   name: string;
   coverImageUrl: string | null;
   settings: AppSettings;
-  gitHubSettings: GitHubSettings; // Added GitHub settings to profile
+  gitHubSettings: GitHubSettings; 
 }
 
 export type MainViewMode = 'editor' | 'profilesGallery';
 
-// New Theme System Types
+
 export type ThemeKey = 'light' | 'dark' | 'banana' | 'custom';
 
 export interface CustomThemeColors {
-  // General UI
+  
   pageBackground: string;
-  elementBackground: string; // For primary elements like cards, main content area
-  elementBackgroundSecondary: string; // For secondary elements like control panel sections, headers
+  elementBackground: string; 
+  elementBackgroundSecondary: string; 
   textPrimary: string;
-  textSecondary: string; // For less prominent text, subText
-  accentPrimary: string; // Main interactive color (e.g., banana yellow)
-  accentPrimaryContent: string; // Text/icon color on accentPrimary background
-  accentSecondary: string; // Another accent, e.g., for different button types or highlights
-  accentSecondaryContent: string; // Text/icon color on accentSecondary background
-  borderColor: string; // Main border color
-  borderColorLight: string; // Lighter borders or dividers
+  textSecondary: string; 
+  accentPrimary: string; 
+  accentPrimaryContent: string; 
+  accentSecondary: string; 
+  accentSecondaryContent: string; 
+  borderColor: string; 
+  borderColorLight: string; 
 
-  // Toolbar specific (optional, can fallback to general if not provided)
+
   toolbarBackground?: string;
   toolbarText?: string;
   toolbarButtonBackground?: string;
   toolbarButtonText?: string;
   toolbarButtonHoverBackground?: string;
 
-  // Scrollbar (optional, as these are harder to style consistently with CSS vars)
+
   scrollbarTrack?: string;
   scrollbarThumb?: string;
   scrollbarThumbHover?: string;
 
-  // Input elements
+  
   inputBackground?: string;
   inputText?: string;
   inputBorder?: string;
   inputFocusRing?: string;
 
-  // Special settings menu colors (optional, can derive)
+  
   modalBackground?: string;
   modalText?: string;
 
-  // Specific components if needed, e.g.
-  // previewAreaBorder: string; (if different from general borderColor)
-  // controlsPanelBackground: string;
+  
 }
 
 export interface AppThemeSettings {
   activeThemeKey: ThemeKey;
-  customColors: CustomThemeColors; // Stores the user's custom definitions
-  // Potentially: lastActivePredefinedTheme: 'light' | 'dark' | 'banana';
+  customColors: CustomThemeColors; 
+  
 }
 
-// Represents the full set of color definitions for any given theme
+
 export type ResolvedThemeColors = CustomThemeColors;
+
+// For textMetricsService
+export interface CharacterByteMapEntry {
+  char: string;
+  bytes: number;
+}
+
+export interface LineMetrics {
+  chars: number;
+  bytes: number;
+}
+
+export interface BlockMetrics {
+  totalChars: number;
+  totalBytes: number;
+  totalBits: number;
+  lineDetails: LineMetrics[];
+}

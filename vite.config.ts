@@ -1,6 +1,11 @@
+
 import path from 'path';
 import { defineConfig, loadEnv } from 'vite';
-import path from 'path';
+import { fileURLToPath } from 'url'; // Import for ESM __dirname equivalent
+
+// ESM equivalent for __dirname
+const __filename = fileURLToPath(import.meta.url);
+const __dirname = path.dirname(__filename);
 
 export default defineConfig(({ mode }) => {
     const env = loadEnv(mode, '.', '');
@@ -15,7 +20,7 @@ export default defineConfig(({ mode }) => {
         }
       },
       server: {
-        port: 5002
+        port: 5173
       },
       build: {
         rollupOptions: {
