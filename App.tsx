@@ -706,9 +706,21 @@ const App: React.FC = () => {
 
   const activeScriptBlocks = useMemo(() => activeMainScript?.blocks || [], [activeMainScript]);
 
-  const parseTextToBlocksInternal = useCallback((rawText: string, useCustomSep: boolean, separators: string[]): Block[] => {
+  const parseTextToBlocksInternal = useCallback((
+    rawText: string, 
+    useCustomSep: boolean, 
+    separators: string[],
+    treatLineAsBlock: boolean
+  ): { blocks: Block[], parsedWithCustom: boolean, parsedWithLine: boolean } => {
     let parsedBlocksContent: { content: string, originalContent: string }[] = [];
-    if (useCustomSep && separators.length > 0 && separators.some(s => s.trim().length > 0)) {
+    let finalParsedWithCustom = false;
+    let finalParsedWithLine = false;
+
+    if (treatLineAsBlock) {
+        parsedBlocksContent = rawText.split('\n').map(line => ({ content: line, originalContent: line }));
+        finalParsedWithLine = true;
+        finalParsedWithCustom = false; // Mutually exclusive
+    } else if (useCustomSep && separators.length > 0 && separators.some(s => s.trim().length > 0)) {
         const validSeparators = separators.filter(s => s.trim().length > 0);
         const mainSeparatorRegex = new RegExp(
             '(' + validSeparators
@@ -721,31 +733,41 @@ const App: React.FC = () => {
         let blockBuilder = "";
         for (const segment of segments) {
             if (validSeparators.includes(segment)) {
-                blockBuilder += segment;
-                if (blockBuilder.trim() !== "") {
+                blockBuilder += segment; // Separator is part of the block content
+                if (blockBuilder.trim() !== "" || blockBuilder.length > 0) { // Keep blocks that might just be the separator
                    parsedBlocksContent.push({ content: blockBuilder, originalContent: blockBuilder });
                 }
-                blockBuilder = "";
+                blockBuilder = ""; 
             } else {
                 blockBuilder += segment;
             }
         }
-        if (blockBuilder.trim() !== "" || (segments.length === 1 && blockBuilder !== "")) {
+        if (blockBuilder.trim() !== "" || blockBuilder.length > 0 ) { // Push any remaining content
             parsedBlocksContent.push({ content: blockBuilder, originalContent: blockBuilder });
         }
-        parsedBlocksContent = parsedBlocksContent.filter(b => b.content.trim().length > 0);
-
+        // Filter out blocks that are entirely empty AFTER custom separation.
+        parsedBlocksContent = parsedBlocksContent.filter(b => b.content.length > 0);
+        finalParsedWithCustom = true;
+        finalParsedWithLine = false;
     } else {
-        parsedBlocksContent = rawText.split(/\n\s*\n/).map(b => b.trim()).filter(b => b.length > 0)
+        parsedBlocksContent = rawText.split(/\n\s*\n/)
+            .map(b => b.trim())
+            .filter(b => b.length > 0)
             .map(b => ({ content: b, originalContent: b }));
+        finalParsedWithCustom = false;
+        finalParsedWithLine = false;
     }
 
-    return parsedBlocksContent.map((blockData, index) => ({
+    return {
+      blocks: parsedBlocksContent.map((blockData, index) => ({
         content: blockData.content,
         originalContent: blockData.originalContent,
         index,
         isOverflowing: false,
-    }));
+      })),
+      parsedWithCustom: finalParsedWithCustom,
+      parsedWithLine: finalParsedWithLine
+    };
   }, []);
 
   useEffect(() => {
@@ -785,17 +807,23 @@ const App: React.FC = () => {
     resetAppStateForNewSettings();
 
     if (newSettings.text && newSettings.text !== DEFAULT_SETTINGS.text) {
-      const initialBlocks = parseTextToBlocksInternal(newSettings.text, newSettings.useCustomBlockSeparator, newSettings.blockSeparators);
+      const { blocks, parsedWithCustom, parsedWithLine } = parseTextToBlocksInternal(
+        newSettings.text, 
+        newSettings.useCustomBlockSeparator, 
+        newSettings.blockSeparators,
+        newSettings.treatEachLineAsBlock 
+      );
       const defaultScript: ScriptFile = {
         id: `${scriptNamePrefix}-${Date.now()}`,
         name: `${scriptNamePrefix} Script`,
-        blocks: initialBlocks,
+        blocks,
         rawText: newSettings.text,
-        parsedWithCustomSeparators: newSettings.useCustomBlockSeparator,
+        parsedWithCustomSeparators: parsedWithCustom,
+        parsedWithLineAsBlock: parsedWithLine,
       };
       setMainScripts([defaultScript]);
       setActiveMainScriptId(defaultScript.id);
-      setCurrentBlockIndex(initialBlocks.length > 0 ? 0 : null);
+      setCurrentBlockIndex(blocks.length > 0 ? 0 : null);
     } else {
       if (viewMode === 'single') {
         handleSettingsChange('text', DEFAULT_SETTINGS.text);
@@ -1013,6 +1041,8 @@ const App: React.FC = () => {
     let scriptContent = "";
     if (activeMainScript.blocks.length === 0) {
         scriptContent = ""; 
+    } else if (activeMainScript.parsedWithLineAsBlock) {
+        scriptContent = activeMainScript.blocks.map(block => block.content).join('\n');
     } else if (activeMainScript.parsedWithCustomSeparators) {
       scriptContent = activeMainScript.blocks.map(block => block.content).join('');
     } else {
@@ -1039,6 +1069,8 @@ const App: React.FC = () => {
       let currentSerializedContent = "";
       if (script.blocks.length === 0) {
         currentSerializedContent = "";
+      } else if (script.parsedWithLineAsBlock) {
+        currentSerializedContent = script.blocks.map(block => block.content).join('\n');
       } else if (script.parsedWithCustomSeparators) {
         currentSerializedContent = script.blocks.map(block => block.content).join('');
       } else {
@@ -1133,6 +1165,7 @@ const App: React.FC = () => {
     sourceNamePrefix: string = ""
   ): Promise<void> => {
     const currentUseCustomSep = settings.useCustomBlockSeparator;
+    const currentTreatLineAsBlock = settings.treatEachLineAsBlock;
     const currentBlockSeps = [...settings.blockSeparators];
 
     const scriptFilePromises = Array.from(files).map(async (file, i) => {
@@ -1141,13 +1174,19 @@ const App: React.FC = () => {
         if (rawText.includes('\uFFFD')) { 
           rawText = await readFileAsText(file, 'Windows-1252'); 
         }
-        const blocks = parseTextToBlocksInternal(rawText, currentUseCustomSep, currentBlockSeps);
+        const { blocks, parsedWithCustom, parsedWithLine } = parseTextToBlocksInternal(
+            rawText, 
+            currentUseCustomSep, 
+            currentBlockSeps,
+            currentTreatLineAsBlock
+        );
         return {
           id: `${sourceNamePrefix}${file.name}-${Date.now()}-${i}`,
           name: `${sourceNamePrefix}${file.name}`,
           blocks,
           rawText,
-          parsedWithCustomSeparators: currentUseCustomSep,
+          parsedWithCustomSeparators: parsedWithCustom,
+          parsedWithLineAsBlock: parsedWithLine,
         } as ScriptFile; 
       } catch (error) {
         console.error(`Error processing file ${file.name}:`, error);
@@ -1176,11 +1215,11 @@ const App: React.FC = () => {
 
   const handleTextFileUpload = useCallback(async (files: FileList) => {
     await processAndAddFiles(files, true);
-  }, [settings.useCustomBlockSeparator, settings.blockSeparators, activeMainScriptId, parseTextToBlocksInternal]); 
+  }, [settings.useCustomBlockSeparator, settings.treatEachLineAsBlock, settings.blockSeparators, activeMainScriptId, parseTextToBlocksInternal]); 
 
   const handleOriginalScriptUpload = useCallback(async (files: FileList) => {
     await processAndAddFiles(files, false);
-  }, [settings.useCustomBlockSeparator, settings.blockSeparators, parseTextToBlocksInternal]);
+  }, [settings.useCustomBlockSeparator, settings.treatEachLineAsBlock, settings.blockSeparators, parseTextToBlocksInternal]);
 
 
   const handleClearMainScripts = useCallback(() => {
@@ -1954,13 +1993,19 @@ const handleCurrentBlockContentChangeInSingleView = useCallback((newContent: str
       if (response.data && 'content' in response.data && response.data.encoding === 'base64') {
         
         const rawText = base64ToUtf8(response.data.content);
-        const blocks = parseTextToBlocksInternal(rawText, settings.useCustomBlockSeparator, settings.blockSeparators);
+        const { blocks, parsedWithCustom, parsedWithLine } = parseTextToBlocksInternal(
+            rawText, 
+            settings.useCustomBlockSeparator, 
+            settings.blockSeparators,
+            settings.treatEachLineAsBlock
+        );
         const newScript: ScriptFile = {
           id: `github-${owner}-${repo}-${gitHubSettings.filePath.replace(/[^a-zA-Z0-9]/g, '-')}-${Date.now()}`,
           name: `GitHub: ${gitHubSettings.filePath.split('/').pop() || gitHubSettings.filePath} (${owner}/${repo})`,
           blocks,
           rawText,
-          parsedWithCustomSeparators: settings.useCustomBlockSeparator,
+          parsedWithCustomSeparators: parsedWithCustom,
+          parsedWithLineAsBlock: parsedWithLine,
         };
         setMainScripts(prev => [newScript, ...prev.filter(s => s.id !== newScript.id)]);
         setActiveMainScriptId(newScript.id);
@@ -1975,7 +2020,7 @@ const handleCurrentBlockContentChangeInSingleView = useCallback((newContent: str
     } finally {
       setIsGitHubLoading(false);
     }
-  }, [gitHubSettings, settings.useCustomBlockSeparator, settings.blockSeparators, parseTextToBlocksInternal, setActiveMainScriptId, setCurrentBlockIndex]);
+  }, [gitHubSettings, settings.useCustomBlockSeparator, settings.treatEachLineAsBlock, settings.blockSeparators, parseTextToBlocksInternal, setActiveMainScriptId, setCurrentBlockIndex]);
 
   const sanitizeFilename = (name: string): string => {
     let sName = name.replace(/[<>:"/\\|?*]+/g, '_'); 
@@ -2049,13 +2094,19 @@ const handleCurrentBlockContentChangeInSingleView = useCallback((newContent: str
                     continue;
                 }
 
-                const blocks = parseTextToBlocksInternal(rawText, settings.useCustomBlockSeparator, settings.blockSeparators);
+                const { blocks, parsedWithCustom, parsedWithLine } = parseTextToBlocksInternal(
+                    rawText, 
+                    settings.useCustomBlockSeparator, 
+                    settings.blockSeparators,
+                    settings.treatEachLineAsBlock
+                );
                 const newScript: ScriptFile = {
                   id: `github-${owner}-${repo}-${item.path.replace(/[^a-zA-Z0-9]/g, '-')}-${Date.now()}`,
                   name: `GitHub: ${item.name} (${owner}/${repo}${gitHubSettings.filePath ? '/' + gitHubSettings.filePath : ''})`,
                   blocks,
                   rawText,
-                  parsedWithCustomSeparators: settings.useCustomBlockSeparator,
+                  parsedWithCustomSeparators: parsedWithCustom,
+                  parsedWithLineAsBlock: parsedWithLine,
                 };
                 newScripts.push(newScript);
                 loadedCount++;
@@ -2089,7 +2140,7 @@ const handleCurrentBlockContentChangeInSingleView = useCallback((newContent: str
     } finally {
       setIsGitHubLoading(false);
     }
-  }, [gitHubSettings, settings.useCustomBlockSeparator, settings.blockSeparators, parseTextToBlocksInternal, activeMainScriptId, setActiveMainScriptId, setCurrentBlockIndex]);
+  }, [gitHubSettings, settings.useCustomBlockSeparator, settings.treatEachLineAsBlock, settings.blockSeparators, parseTextToBlocksInternal, activeMainScriptId, setActiveMainScriptId, setCurrentBlockIndex]);
 
 
   const handleSaveFileToGitHub = useCallback(async () => {
@@ -2114,6 +2165,8 @@ const handleCurrentBlockContentChangeInSingleView = useCallback((newContent: str
     let scriptContent = "";
     if (activeMainScript.blocks.length === 0) {
         scriptContent = ""; 
+    } else if (activeMainScript.parsedWithLineAsBlock) {
+      scriptContent = activeMainScript.blocks.map(block => block.content).join('\n');
     } else if (activeMainScript.parsedWithCustomSeparators) {
       scriptContent = activeMainScript.blocks.map(block => block.content).join('');
     } else {
@@ -2190,6 +2243,8 @@ const handleSaveAllToGitHubFolder = useCallback(async () => {
         let currentScriptContent = "";
         if (script.blocks.length === 0) {
             currentScriptContent = "";
+        } else if (script.parsedWithLineAsBlock) {
+          currentScriptContent = script.blocks.map(block => block.content).join('\n');
         } else if (script.parsedWithCustomSeparators) {
           currentScriptContent = script.blocks.map(block => block.content).join('');
         } else {

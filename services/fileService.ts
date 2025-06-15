@@ -129,6 +129,9 @@ export const importSettingsFromJson = (file: File): Promise<{ appSettings: AppSe
           comparisonModeEnabled: typeof importedAppSettings.comparisonModeEnabled === 'boolean'
               ? importedAppSettings.comparisonModeEnabled
               : DEFAULT_SETTINGS.comparisonModeEnabled,
+          treatEachLineAsBlock: typeof importedAppSettings.treatEachLineAsBlock === 'boolean'
+              ? importedAppSettings.treatEachLineAsBlock
+              : DEFAULT_SETTINGS.treatEachLineAsBlock,
         };
 
         const validatedGitHubSettings: GitHubSettings = {

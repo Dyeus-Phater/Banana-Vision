@@ -59,8 +59,9 @@ export const DEFAULT_SETTINGS: AppSettings = {
     origin: 'top left',
   },
   currentFontType: 'system',
-  useCustomBlockSeparator: false,
+  useCustomBlockSeparator: false, 
   blockSeparators: ['<PAGE>', '<END>', '[NEXT]'],
+  treatEachLineAsBlock: false, // New setting
   hideTagsInPreview: true,
   tagPatternsToHide: ['<[^>]*>', '\\[[^\\]]*\\]', '\\{[^\\}]*\\}'],
   customColorTags: [],

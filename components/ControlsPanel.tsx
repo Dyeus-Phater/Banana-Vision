@@ -583,6 +583,19 @@ const ControlsPanel: React.FC<ControlsPanelProps> = (props) => {
   const getPanelSectionsConfig = useCallback((currentProps: ControlsPanelProps): PanelSectionItem[] => {
     const { settings, onSettingsChange, onNestedSettingsChange, ...restOfProps } = currentProps;
 
+    const handleToggleTreatEachLineAsBlock = (checked: boolean) => {
+        onSettingsChange('treatEachLineAsBlock', checked);
+        if (checked) {
+            onSettingsChange('useCustomBlockSeparator', false);
+        }
+    };
+
+    const handleToggleUseCustomBlockSeparator = (checked: boolean) => {
+        onSettingsChange('useCustomBlockSeparator', checked);
+        if (checked) {
+            onSettingsChange('treatEachLineAsBlock', false);
+        }
+    };
 
     return [
       {
@@ -611,14 +624,39 @@ const ControlsPanel: React.FC<ControlsPanelProps> = (props) => {
                 </p>
               )}
             </div>
-            <LabelInputContainer label="Use Custom Block Separators (for new uploads)" htmlFor="useCustomBlockSeparator" inline>
-              <input type="checkbox" id="useCustomBlockSeparator" checked={settings.useCustomBlockSeparator} onChange={(e) => onSettingsChange('useCustomBlockSeparator', e.target.checked)} className="h-5 w-5 text-[var(--bv-accent-primary)] border-[var(--bv-input-border)] rounded focus:ring-[var(--bv-input-focus-ring)]" />
-            </LabelInputContainer>
-            {settings.useCustomBlockSeparator && (
-              <LabelInputContainer label="Block Separators (comma-separated)" htmlFor="blockSeparators">
-                <TextInput id="blockSeparators" value={settings.blockSeparators.join(',')} onChange={(e) => handleBlockSeparatorsChange(e.target.value)} placeholder="e.g. <PAGE>,[END]" />
+            
+            <div className="mt-2 space-y-1">
+              <LabelInputContainer label="Treat each line as a block (for new uploads)" htmlFor="treatEachLineAsBlock" inline>
+                  <input 
+                      type="checkbox" 
+                      id="treatEachLineAsBlock" 
+                      checked={settings.treatEachLineAsBlock} 
+                      onChange={(e) => handleToggleTreatEachLineAsBlock(e.target.checked)}
+                      className="h-5 w-5 text-[var(--bv-accent-primary)] border-[var(--bv-input-border)] rounded focus:ring-[var(--bv-input-focus-ring)]"
+                  />
               </LabelInputContainer>
-            )}
+
+              <LabelInputContainer label="Use Custom Block Separators (for new uploads)" htmlFor="useCustomBlockSeparator" inline disabled={settings.treatEachLineAsBlock}>
+                  <input 
+                      type="checkbox" 
+                      id="useCustomBlockSeparator" 
+                      checked={settings.useCustomBlockSeparator} 
+                      onChange={(e) => handleToggleUseCustomBlockSeparator(e.target.checked)}
+                      disabled={settings.treatEachLineAsBlock}
+                      className="h-5 w-5 text-[var(--bv-accent-primary)] border-[var(--bv-input-border)] rounded focus:ring-[var(--bv-input-focus-ring)]" 
+                  />
+              </LabelInputContainer>
+              {settings.useCustomBlockSeparator && !settings.treatEachLineAsBlock && (
+                  <LabelInputContainer label="Block Separators (comma-separated)" htmlFor="blockSeparators">
+                      <TextInput 
+                          id="blockSeparators" 
+                          value={settings.blockSeparators.join(',')} 
+                          onChange={(e) => handleBlockSeparatorsChange(e.target.value)} 
+                          placeholder="e.g. <PAGE>,[END]" 
+                      />
+                  </LabelInputContainer>
+              )}
+            </div>
 
             
             <div className="mt-3 pt-3 border-t border-[var(--bv-border-color-light)]">
