@@ -22,6 +22,7 @@ export interface SystemFontSettings {
   color: string;
   textAlignHorizontal: 'left' | 'center' | 'right';
   textAlignVertical: 'top' | 'middle' | 'bottom';
+  spaceWidthOverride?: number; // New: Custom width for space character, 0 for auto/default
 }
 
 export interface BitmapFontSettings {
@@ -38,7 +39,7 @@ export interface BitmapFontSettings {
   enableColorRemoval: boolean; // Toggle for color removal
   colorRemovalTolerance: number; // Tolerance for color removal (0-255, or a scaled range)
   enablePixelScanning: boolean; // Dynamically adjust character width based on pixels
-  spaceWidthOverride: number; // New: Custom width for space character, 0 for auto
+  spaceWidthOverride: number; // Existing: Custom width for space character, 0 for auto
 }
 
 export interface LineMetricDetail {
@@ -73,11 +74,16 @@ export interface TransformSettings {
   origin: string;
 }
 
+export interface MarginSetting {
+  value: number;
+  breakLine: boolean;
+}
+
 export interface PixelOverflowMargins {
-  top: number;
-  right: number;
-  bottom: number;
-  left: number;
+  top: MarginSetting;
+  right: MarginSetting;
+  bottom: MarginSetting;
+  left: MarginSetting;
   enabled: boolean;
 }
 

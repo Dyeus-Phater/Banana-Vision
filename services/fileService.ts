@@ -1,6 +1,7 @@
 
+
 import { DEFAULT_SETTINGS, DEFAULT_GITHUB_SETTINGS } from '../constants';
-import type { AppSettings, GitHubSettings, ImageTag } from '../types';
+import type { AppSettings, GitHubSettings, ImageTag, PixelOverflowMargins, MarginSetting } from '../types';
 
 export const exportSettingsAsJson = (settings: AppSettings, gitHubSettings: GitHubSettings, fileName: string): void => {
   const exportData = {
@@ -18,6 +19,40 @@ export const exportSettingsAsJson = (settings: AppSettings, gitHubSettings: GitH
   document.body.removeChild(a);
   URL.revokeObjectURL(url);
 };
+
+const upgradePixelMargins = (importedMargins: any): PixelOverflowMargins => {
+  const defaultMargins = DEFAULT_SETTINGS.pixelOverflowMargins;
+  if (typeof importedMargins?.top === 'number') { // Old format
+    return {
+      top: { value: importedMargins.top ?? defaultMargins.top.value, breakLine: false },
+      right: { value: importedMargins.right ?? defaultMargins.right.value, breakLine: false },
+      bottom: { value: importedMargins.bottom ?? defaultMargins.bottom.value, breakLine: false },
+      left: { value: importedMargins.left ?? defaultMargins.left.value, breakLine: false },
+      enabled: typeof importedMargins.enabled === 'boolean' ? importedMargins.enabled : defaultMargins.enabled,
+    };
+  }
+  // New format or potentially invalid, try to merge with defaults
+  return {
+    top: { 
+      value: importedMargins?.top?.value ?? defaultMargins.top.value, 
+      breakLine: typeof importedMargins?.top?.breakLine === 'boolean' ? importedMargins.top.breakLine : defaultMargins.top.breakLine 
+    },
+    right: { 
+      value: importedMargins?.right?.value ?? defaultMargins.right.value, 
+      breakLine: typeof importedMargins?.right?.breakLine === 'boolean' ? importedMargins.right.breakLine : defaultMargins.right.breakLine 
+    },
+    bottom: { 
+      value: importedMargins?.bottom?.value ?? defaultMargins.bottom.value, 
+      breakLine: typeof importedMargins?.bottom?.breakLine === 'boolean' ? importedMargins.bottom.breakLine : defaultMargins.bottom.breakLine 
+    },
+    left: { 
+      value: importedMargins?.left?.value ?? defaultMargins.left.value, 
+      breakLine: typeof importedMargins?.left?.breakLine === 'boolean' ? importedMargins.left.breakLine : defaultMargins.left.breakLine 
+    },
+    enabled: typeof importedMargins?.enabled === 'boolean' ? importedMargins.enabled : defaultMargins.enabled,
+  };
+};
+
 
 export const importSettingsFromJson = (file: File): Promise<{ appSettings: AppSettings; gitHubSettings: GitHubSettings }> => {
   return new Promise((resolve, reject) => {
@@ -48,6 +83,9 @@ export const importSettingsFromJson = (file: File): Promise<{ appSettings: AppSe
           systemFont: { 
             ...DEFAULT_SETTINGS.systemFont,
             ...(importedAppSettings.systemFont || {}),
+            spaceWidthOverride: typeof importedAppSettings.systemFont?.spaceWidthOverride === 'number'
+              ? importedAppSettings.systemFont.spaceWidthOverride
+              : DEFAULT_SETTINGS.systemFont.spaceWidthOverride,
           },
           shadowEffect: {
             ...DEFAULT_SETTINGS.shadowEffect,
@@ -65,10 +103,7 @@ export const importSettingsFromJson = (file: File): Promise<{ appSettings: AppSe
             ...DEFAULT_SETTINGS.transform,
             ...(importedAppSettings.transform || {}),
           },
-          pixelOverflowMargins: {
-            ...DEFAULT_SETTINGS.pixelOverflowMargins,
-            ...(importedAppSettings.pixelOverflowMargins || {}),
-          },
+          pixelOverflowMargins: upgradePixelMargins(importedAppSettings.pixelOverflowMargins),
           customColorTags: Array.isArray(importedAppSettings.customColorTags) 
             ? importedAppSettings.customColorTags 
             : DEFAULT_SETTINGS.customColorTags,

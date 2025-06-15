@@ -21,6 +21,7 @@ export const DEFAULT_SETTINGS: AppSettings = {
     color: '#000000', 
     textAlignHorizontal: 'left',
     textAlignVertical: 'top',
+    spaceWidthOverride: 0, // Default to 0 (auto)
   },
   shadowEffect: {
     offsetX: 2,
@@ -70,10 +71,10 @@ export const DEFAULT_SETTINGS: AppSettings = {
   maxCharacters: 150,
   maxPixelHeight: 200,
   pixelOverflowMargins: {
-    top: 10,
-    right: 10,
-    bottom: 10,
-    left: 10,
+    top: { value: 10, breakLine: false },
+    right: { value: 10, breakLine: false },
+    bottom: { value: 10, breakLine: false },
+    left: { value: 10, breakLine: false },
     enabled: false,
   },
   globalLineHeightFactor: 1.2,

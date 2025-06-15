@@ -1,4 +1,5 @@
 
+
 import React, { CSSProperties, forwardRef, useLayoutEffect, useRef, useEffect, useState } from 'react';
 import { AppSettings, NestedAppSettingsObjectKeys, ThemeKey, CustomColorTag, ImageTag } from '../types';
 
@@ -433,26 +434,46 @@ const PreviewAreaInner = forwardRef<HTMLDivElement, PreviewAreaProps>(({
     if (settings.overflowDetectionMode === 'pixel') {
       if (settings.pixelOverflowMargins.enabled) {
         if (textEl && zoomWrapperEl) {
-          const textRect = textEl.getBoundingClientRect();
+          const { top: pmTop, right: pmRight, bottom: pmBottom, left: pmLeft } = settings.pixelOverflowMargins;
           const previewBoxEl = zoomWrapperEl.querySelector('.preview-box');
           if (previewBoxEl) {
             const previewBoxRect = previewBoxEl.getBoundingClientRect();
+            const textRect = textEl.getBoundingClientRect();
+            
             const logicalTextLeft = (textRect.left - previewBoxRect.left) / currentPreviewZoom;
             const logicalTextRight = (textRect.right - previewBoxRect.left) / currentPreviewZoom;
             const logicalTextTop = (textRect.top - previewBoxRect.top) / currentPreviewZoom;
             const logicalTextBottom = (textRect.bottom - previewBoxRect.top) / currentPreviewZoom;
             
+            // Check non-breakLine margins first
             if (settings.previewWidth > 0) {
-              if (logicalTextLeft < settings.pixelOverflowMargins.left) hasOverflow = true;
-              if (logicalTextRight > settings.previewWidth - settings.pixelOverflowMargins.right) hasOverflow = true;
+              if (!pmLeft.breakLine && logicalTextLeft < pmLeft.value) hasOverflow = true;
+              if (!pmRight.breakLine && logicalTextRight > (settings.previewWidth - pmRight.value)) hasOverflow = true;
             }
             if (settings.previewHeight > 0) {
-              if (logicalTextTop < settings.pixelOverflowMargins.top) hasOverflow = true;
-              if (logicalTextBottom > settings.previewHeight - settings.pixelOverflowMargins.bottom) hasOverflow = true;
+              if (!pmTop.breakLine && logicalTextTop < pmTop.value) hasOverflow = true;
+              if (!pmBottom.breakLine && logicalTextBottom > (settings.previewHeight - pmBottom.value)) hasOverflow = true;
+            }
+             
+            // Check overall dimensions if not already overflowing by non-breakLine margins
+            if (!hasOverflow && textEl) {
+                const effectiveScaleX = simplifiedRender ? 1 : settings.transform.scaleX;
+                const effectiveScaleY = simplifiedRender ? 1 : settings.transform.scaleY;
+                const widthOverflowOverall = settings.previewWidth > 0 && (textEl.scrollWidth * effectiveScaleX) > settings.previewWidth;
+                let heightOverflowOverall = false;
+                const scaledScrollHeightOverall = textEl.scrollHeight * effectiveScaleY;
+
+                if (settings.previewHeight > 0) {
+                    heightOverflowOverall = scaledScrollHeightOverall > settings.previewHeight;
+                }
+                // When pixelOverflowMargins are enabled, maxPixelHeight is ignored for auto height scenarios
+                if (widthOverflowOverall || heightOverflowOverall) {
+                    hasOverflow = true;
+                }
             }
           }
         }
-      } else { 
+      } else { // Margins not enabled, use original logic
         if (textEl) {
           const effectiveScaleX = simplifiedRender ? 1 : settings.transform.scaleX;
           const effectiveScaleY = simplifiedRender ? 1 : settings.transform.scaleY;
@@ -653,17 +674,48 @@ const PreviewAreaInner = forwardRef<HTMLDivElement, PreviewAreaProps>(({
       );
     }
 
+    const { top: pmTop, right: pmRight, bottom: pmBottom, left: pmLeft } = settings.pixelOverflowMargins;
+    const marginsEnabled = settings.pixelOverflowMargins.enabled;
+
+    const useHorizontalBreakLine = marginsEnabled && (pmLeft.breakLine || pmRight.breakLine);
+    const effectiveWhiteSpace = useHorizontalBreakLine ? 'pre-wrap' : 'pre';
+
+    const effectivePaddingTop = marginsEnabled && pmTop.breakLine ? pmTop.value : 0;
+    const effectivePaddingRight = marginsEnabled && pmRight.breakLine ? pmRight.value : 0;
+    const effectivePaddingBottom = marginsEnabled && pmBottom.breakLine ? pmBottom.value : 0;
+    const effectivePaddingLeft = marginsEnabled && pmLeft.breakLine ? pmLeft.value : 0;
+
     const measurableDivStyle: CSSProperties = {
-        ...textTransformStyle, display: 'inline-block', maxWidth: '100%',
+        ...textTransformStyle,
+        display: 'inline-block', // Important for scrollWidth/Height calculation based on content
+        padding: `${effectivePaddingTop}px ${effectivePaddingRight}px ${effectivePaddingBottom}px ${effectivePaddingLeft}px`,
+        boxSizing: 'border-box',
     };
+    
+    // If using pre-wrap due to horizontal breakLine margins, constrain the width of the text container
+    // for wrapping to occur. The container itself takes full preview width, padding makes inner space.
+    if (useHorizontalBreakLine && settings.previewWidth > 0) {
+        measurableDivStyle.width = `${settings.previewWidth}px`; 
+    } else {
+        measurableDivStyle.width = 'auto'; // Let inline-block size it
+    }
+
+
     const baseTextSpanStyle: CSSProperties = {
         fontFamily: settings.systemFont.fontFamily, fontSize: `${settings.systemFont.fontSize}px`,
         fontWeight: settings.systemFont.fontWeight, lineHeight: settings.globalLineHeightFactor, 
         letterSpacing: `${settings.systemFont.letterSpacing}px`, 
-        textAlign: settings.systemFont.textAlignHorizontal, whiteSpace: 'pre-wrap',
-        wordBreak: 'break-word', overflowWrap: 'break-word', display: 'block',
+        textAlign: settings.systemFont.textAlignHorizontal, 
+        whiteSpace: effectiveWhiteSpace, 
+        display: 'block',
         textShadow: textShadowValue !== 'none' ? textShadowValue : undefined,
     };
+
+    if (useHorizontalBreakLine) {
+        baseTextSpanStyle.wordBreak = 'break-word';
+    } else {
+        baseTextSpanStyle.wordBreak = 'normal';
+    }
     
     const linesOfSystemSegments: (FinalTextSegment | FinalImageSegment)[][] = [];
     let currentSystemLine: (FinalTextSegment | FinalImageSegment)[] = [];
@@ -696,14 +748,33 @@ const PreviewAreaInner = forwardRef<HTMLDivElement, PreviewAreaProps>(({
     return (
       <div style={{ width: '100%', height: '100%', display: 'flex', alignItems: alignItems, justifyContent: settings.systemFont.textAlignHorizontal === 'center' ? 'center' : settings.systemFont.textAlignHorizontal === 'right' ? 'flex-end' : 'flex-start', padding: '8px', boxSizing: 'border-box' }} onMouseDown={handleMouseDown} role={(isReadOnlyPreview || simplifiedRender) ? undefined : "application"} aria-roledescription={(isReadOnlyPreview || simplifiedRender) ? undefined : "draggable text area"} >
         <div ref={textContainerRef} style={measurableDivStyle}>
-            <div style={{...baseTextSpanStyle, display: 'block' }}>
+            <div style={{...baseTextSpanStyle, display: 'block' }}> {/* This inner div may not be necessary if measurableDivStyle has display:block */}
             {linesOfSystemSegments.map((lineSegments, lineIdx) => (
               <div key={lineIdx} style={{ minHeight: `${settings.systemFont.fontSize * settings.globalLineHeightFactor}px` }}>
-                {lineSegments.map((segment, segIdx) => (
-                  segment.type === 'image' 
-                  ? <img key={`${lineIdx}-${segIdx}`} src={segment.imageUrl} alt={segment.altText} style={{ width: `${segment.width}px`, height: `${segment.height}px`, display: 'inline-block', verticalAlign: 'middle', margin: '0 1px' }} />
-                  : <span key={`${lineIdx}-${segIdx}`} style={{ color: segment.color || settings.systemFont.color }}>{segment.text === '' && lineSegments.length === 1 ? '\u00A0' : segment.text }</span>
-                ))}
+                {lineSegments.map((segment, segIdx) => {
+                  if (segment.type === 'image') {
+                    return <img key={`${lineIdx}-${segIdx}-img`} src={segment.imageUrl} alt={segment.altText} style={{ width: `${segment.width}px`, height: `${segment.height}px`, display: 'inline-block', verticalAlign: 'middle', margin: '0 1px', imageRendering: 'pixelated' }} />;
+                  }
+                  
+                  // Text segment with potential space override
+                  const { spaceWidthOverride, color: defaultSysFontColor } = settings.systemFont;
+                  const segmentColor = segment.color || defaultSysFontColor;
+
+                  if (spaceWidthOverride && spaceWidthOverride > 0) {
+                      const parts = segment.text.split(' '); // Split by single space
+                      return parts.map((word, wordIdx) => (
+                          <React.Fragment key={`${lineIdx}-${segIdx}-word${wordIdx}`}>
+                              <span style={{ color: segmentColor }}>{word}</span>
+                              {wordIdx < parts.length - 1 && ( // Add a custom space after each word except the last
+                                  <span style={{ display: 'inline-block', width: `${spaceWidthOverride}px`}} aria-hidden="true">{'\u00A0'}</span>
+                              )}
+                          </React.Fragment>
+                      ));
+                  } else {
+                      // Original rendering for system font text segment
+                      return <span key={`${lineIdx}-${segIdx}-text`} style={{ color: segmentColor }}>{segment.text === '' && lineSegments.length === 1 ? '\u00A0' : segment.text }</span>;
+                  }
+                })}
               </div>
             ))}
             </div>
@@ -718,13 +789,14 @@ const PreviewAreaInner = forwardRef<HTMLDivElement, PreviewAreaProps>(({
                                 showPixelMarginGuides && !simplifiedRender; 
 
   if (renderPixelMarginGuides) {
+    const { top, right, bottom, left } = settings.pixelOverflowMargins;
     if (settings.previewWidth > 0) {
-      guideLines.push(<div key="guide-left" className="absolute top-0 bottom-0 border-l-2 border-dashed border-red-500 opacity-75" style={{ left: `${settings.pixelOverflowMargins.left}px`, zIndex: 1 }} aria-hidden="true" />);
-      guideLines.push(<div key="guide-right" className="absolute top-0 bottom-0 border-r-2 border-dashed border-red-500 opacity-75" style={{ right: `${settings.pixelOverflowMargins.right}px`, zIndex: 1 }} aria-hidden="true" />);
+      guideLines.push(<div key="guide-left" className="absolute top-0 bottom-0 border-l-2 border-dashed border-red-500 opacity-75" style={{ left: `${left.value}px`, zIndex: 1 }} aria-hidden="true" />);
+      guideLines.push(<div key="guide-right" className="absolute top-0 bottom-0 border-r-2 border-dashed border-red-500 opacity-75" style={{ right: `${right.value}px`, zIndex: 1 }} aria-hidden="true" />);
     }
     if (settings.previewHeight > 0) {
-      guideLines.push(<div key="guide-top" className="absolute left-0 right-0 border-t-2 border-dashed border-red-500 opacity-75" style={{ top: `${settings.pixelOverflowMargins.top}px`, zIndex: 1 }} aria-hidden="true" />);
-      guideLines.push(<div key="guide-bottom" className="absolute left-0 right-0 border-b-2 border-dashed border-red-500 opacity-75" style={{ bottom: `${settings.pixelOverflowMargins.bottom}px`, zIndex: 1 }} aria-hidden="true" />);
+       guideLines.push(<div key="guide-top" className="absolute left-0 right-0 border-t-2 border-dashed border-red-500 opacity-75" style={{ top: `${top.value}px`, zIndex: 1 }} aria-hidden="true" />);
+       guideLines.push(<div key="guide-bottom" className="absolute left-0 right-0 border-b-2 border-dashed border-red-500 opacity-75" style={{ bottom: `${bottom.value}px`, zIndex: 1 }} aria-hidden="true" />);
     }
   } else if (!isReadOnlyPreview && !simplifiedRender && (settings.overflowDetectionMode === 'pixel' || (settings.overflowDetectionMode === 'character' && settings.previewHeight > 0))) {
     if (settings.overflowDetectionMode === 'pixel' && !settings.pixelOverflowMargins.enabled) {
@@ -772,6 +844,7 @@ const PreviewAreaInner = forwardRef<HTMLDivElement, PreviewAreaProps>(({
           backgroundColor: previewBoxBackgroundColor, 
           backgroundImage: currentBackgroundImage ? `url(${currentBackgroundImage})` : 'none',
           backgroundSize: 'cover', backgroundPosition: 'center', overflow: 'hidden',
+          imageRendering: 'pixelated', // Apply to background images
         }}
       >
         {!isReadOnlyPreview && !simplifiedRender && guideLines}

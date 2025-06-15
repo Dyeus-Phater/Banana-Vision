@@ -1,7 +1,7 @@
 
 
 import React, {useState, useEffect, useCallback, useMemo, useRef} from 'react';
-import { AppSettings, Block, NestedAppSettingsObjectKeys, ScriptFile, GitHubSettings, ThemeKey, CustomColorTag, ImageTag } from '../types';
+import { AppSettings, Block, NestedAppSettingsObjectKeys, ScriptFile, GitHubSettings, ThemeKey, CustomColorTag, ImageTag, MarginSetting } from '../types';
 import { FindScope, FindResultSummaryItem } from '../App';
 import { AVAILABLE_FONTS } 
 from '../constants';
@@ -568,6 +568,17 @@ const ControlsPanel: React.FC<ControlsPanelProps> = (props) => {
     onSettingsChange('customLineBreakTags', value.split('\n').filter(tag => tag.trim() !== ''));
   }, [onSettingsChange]);
 
+  const handlePixelMarginChange = (
+    marginKey: keyof Omit<AppSettings['pixelOverflowMargins'], 'enabled'>,
+    subKey: keyof MarginSetting,
+    value: number | boolean
+  ) => {
+    onNestedSettingsChange('pixelOverflowMargins', marginKey, {
+      ...settings.pixelOverflowMargins[marginKey],
+      [subKey]: value,
+    } as MarginSetting); // Cast because TS might not infer specific subKey type
+  };
+
 
   const getPanelSectionsConfig = useCallback((currentProps: ControlsPanelProps): PanelSectionItem[] => {
     const { settings, onSettingsChange, onNestedSettingsChange, ...restOfProps } = currentProps;
@@ -776,10 +787,47 @@ const ControlsPanel: React.FC<ControlsPanelProps> = (props) => {
                 <InputWithSlider label="Max Content Height (for Auto Preview)" unit="px" id="maxPixelHeight" value={settings.maxPixelHeight} onChange={(val) => onSettingsChange('maxPixelHeight', val)} min={0} max={2048} step={1} subText={settings.pixelOverflowMargins.enabled ? "Disabled when Margin-Based Overflow is active." : "Used if 'Preview Height' is 0 (auto) and Margin-Based is off."} disabled={settings.pixelOverflowMargins.enabled} />
                 {settings.pixelOverflowMargins.enabled && (
                   <div className="mt-2 pt-2 border-t border-[var(--bv-border-color-light)]">
-                    <InputWithSlider label="Top Margin" unit="px" id="pixelMarginTop" value={settings.pixelOverflowMargins.top} onChange={(val) => onNestedSettingsChange('pixelOverflowMargins', 'top', val)} min={0} max={512} step={1} subText={settings.previewHeight === 0 ? "Preview Height is auto, Top Margin ignored." : "From top edge of Preview Area."} disabled={settings.previewHeight === 0} />
-                    <InputWithSlider label="Right Margin" unit="px" id="pixelMarginRight" value={settings.pixelOverflowMargins.right} onChange={(val) => onNestedSettingsChange('pixelOverflowMargins', 'right', val)} min={0} max={512} step={1} subText={settings.previewWidth === 0 ? "Preview Width is auto, Right Margin ignored." : "From right edge of Preview Area."} disabled={settings.previewWidth === 0} />
-                    <InputWithSlider label="Bottom Margin" unit="px" id="pixelMarginBottom" value={settings.pixelOverflowMargins.bottom} onChange={(val) => onNestedSettingsChange('pixelOverflowMargins', 'bottom', val)} min={0} max={512} step={1} subText={settings.previewHeight === 0 ? "Preview Height is auto, Bottom Margin ignored." : "From bottom edge of Preview Area."} disabled={settings.previewHeight === 0} />
-                    <InputWithSlider label="Left Margin" unit="px" id="pixelMarginLeft" value={settings.pixelOverflowMargins.left} onChange={(val) => onNestedSettingsChange('pixelOverflowMargins', 'left', val)} min={0} max={512} step={1} subText={settings.previewWidth === 0 ? "Preview Width is auto, Left Margin ignored." : "From left edge of Preview Area."} disabled={settings.previewWidth === 0} />
+                    {(['top', 'right', 'bottom', 'left'] as const).map(marginKey => {
+                      const currentMargin = settings.pixelOverflowMargins[marginKey];
+                      const isDimensionAuto = (marginKey === 'top' || marginKey === 'bottom') ? settings.previewHeight === 0 : settings.previewWidth === 0;
+                      const subTextBase = isDimensionAuto 
+                        ? `Preview ${marginKey === 'top' || marginKey === 'bottom' ? 'Height' : 'Width'} is auto, ${marginKey.charAt(0).toUpperCase() + marginKey.slice(1)} Margin ignored.`
+                        : `From ${marginKey} edge.`;
+                      const subTextBreakLine = currentMargin.breakLine 
+                        ? "If checked, acts as internal guide, text wraps." 
+                        : "If unchecked, text crossing causes overflow.";
+                      
+                      return (
+                        <React.Fragment key={marginKey}>
+                          <InputWithSlider 
+                            label={`${marginKey.charAt(0).toUpperCase() + marginKey.slice(1)} Margin`} 
+                            unit="px" 
+                            id={`pixelMargin${marginKey.charAt(0).toUpperCase() + marginKey.slice(1)}`} 
+                            value={currentMargin.value} 
+                            onChange={(val) => handlePixelMarginChange(marginKey, 'value', val)} 
+                            min={0} max={512} step={1} 
+                            subText={`${subTextBase} ${!isDimensionAuto ? subTextBreakLine : ''}`}
+                            disabled={isDimensionAuto} 
+                          />
+                          {!isDimensionAuto && (
+                            <LabelInputContainer 
+                              label="Auto Line Break" 
+                              htmlFor={`pixelMargin${marginKey}BreakLine`} 
+                              inline 
+                              subText={currentMargin.breakLine ? "Text wraps at this margin." : "Text overflowing this margin is flagged."}
+                            >
+                              <input 
+                                type="checkbox" 
+                                id={`pixelMargin${marginKey}BreakLine`} 
+                                checked={currentMargin.breakLine} 
+                                onChange={(e) => handlePixelMarginChange(marginKey, 'breakLine', e.target.checked)}
+                                className="h-5 w-5 text-[var(--bv-accent-primary)] border-[var(--bv-input-border)] rounded focus:ring-[var(--bv-input-focus-ring)]" 
+                              />
+                            </LabelInputContainer>
+                          )}
+                        </React.Fragment>
+                      );
+                    })}
                   </div>
                 )}
               </>
@@ -970,6 +1018,7 @@ const ControlsPanel: React.FC<ControlsPanelProps> = (props) => {
                   </div>
                 )}
                 <InputWithSlider label="Font Size" unit="px" id="fontSize" value={settings.systemFont.fontSize} onChange={(val) => onNestedSettingsChange('systemFont', 'fontSize', val)} min={6} max={120} step={1} />
+                <InputWithSlider label="Space Width Override" unit="px" id="systemSpaceWidthOverride" value={settings.systemFont.spaceWidthOverride || 0} onChange={(val) => onNestedSettingsChange('systemFont', 'spaceWidthOverride', val)} min={0} max={Math.max(30, settings.systemFont.fontSize * 1.5)} step={0.5} subText="Custom width for space char. 0 for auto/default." />
                 <LabelInputContainer label="Font Color" htmlFor="fontColor"><TextInput type="color" id="fontColor" value={settings.systemFont.color} onChange={(e) => onNestedSettingsChange('systemFont', 'color', e.target.value)} className="h-10 w-full" /></LabelInputContainer>
                 <InputWithSlider label="Letter Spacing" unit="px" id="letterSpacing" value={settings.systemFont.letterSpacing} onChange={(val) => onNestedSettingsChange('systemFont', 'letterSpacing', val)} min={-10} max={30} step={1} />
                 <LabelInputContainer label="Bold" htmlFor="fontWeight" inline><input type="checkbox" id="fontWeight" checked={settings.systemFont.fontWeight === 'bold'} onChange={(e) => onNestedSettingsChange('systemFont', 'fontWeight', e.target.checked ? 'bold' : 'normal')} className="h-5 w-5 text-[var(--bv-accent-primary)] border-[var(--bv-input-border)] rounded focus:ring-[var(--bv-input-focus-ring)]" /></LabelInputContainer>
@@ -1068,6 +1117,7 @@ const ControlsPanel: React.FC<ControlsPanelProps> = (props) => {
     isEditingImageTag, editingImageTagFields, editingImageTagId, editingImageTagFile, editingImageTagPreviewUrl,
     handlePrimaryBgImageUpload, handleSecondaryBgImageUpload, handleBitmapFontImageUpload,
     handleTagPatternsChange, handleBlockSeparatorsChange, handleCustomLineBreakTagsChange, handleFontFamilyChange,
+    handlePixelMarginChange, // Added for new margin structure
     customFontFilePickerRef // Add ref to dependency array
   ]);
 
