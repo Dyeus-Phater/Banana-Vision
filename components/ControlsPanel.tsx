@@ -225,25 +225,19 @@ const readFileAsDataURL = (file: File): Promise<string> => {
   });
 };
 
+type NavigationTabKey = 'scripts' | 'blocks';
+
 
 const ControlsPanel: React.FC<ControlsPanelProps> = (props) => {
   const {
     settings, onSettingsChange, onNestedSettingsChange,
-    onTextFileUpload,
-    mainScripts, activeMainScriptId, onSetActiveMainScriptId, onClearMainScripts,
-    activeScriptBlocks, currentBlockIndex, onSetCurrentBlockIndex,
-    showOnlyOverflowingBlocks, onShowOnlyOverflowingBlocksChange,
-    displayedBlocksForView,
-    onLoadCustomFont, loadedCustomFontName,
+    // Note: other props are accessed via `props` directly in getPanelSectionsConfig's `content`
+    // to ensure memoization works correctly with the callback.
+    // However, some frequently used outside that callback are destructured here for convenience.
+    mainScripts, activeMainScriptId, 
+    loadedCustomFontName, 
     overflowSettingsPanelOpen, onToggleOverflowSettingsPanel,
-    originalScripts, onOriginalScriptUpload, matchedOriginalScriptName, onClearOriginalScripts,
-    viewMode, onViewModeChange,
-    findText, onFindTextChange, replaceText, onReplaceTextChange,
-    findIsCaseSensitive, onFindIsCaseSensitiveChange, findMatchWholeWord, onFindMatchWholeWordChange,
-    findScope, onFindScopeChange, onFindNext, onReplace, onReplaceAll, findResultsMessage,
-    isFindCurrentBlockDisabled, findResultSummary, onNavigateToFindResult,
-    gitHubSettings, onGitHubSettingsChange, onLoadFileFromGitHub, onSaveFileToGitHub,
-    onLoadAllFromGitHubFolder, onSaveAllToGitHubFolder,
+    gitHubSettings, 
     isGitHubLoading, gitHubStatusMessage,
     activeThemeKey
   } = props;
@@ -260,6 +254,9 @@ const ControlsPanel: React.FC<ControlsPanelProps> = (props) => {
   const [editingImageTagId, setEditingImageTagId] = useState<string | null>(null);
   const [editingImageTagFile, setEditingImageTagFile] = useState<File | null>(null);
   const [editingImageTagPreviewUrl, setEditingImageTagPreviewUrl] = useState<string | null>(null);
+
+  const [activeNavigationTab, setActiveNavigationTab] = useState<NavigationTabKey>('scripts');
+
 
   
   useEffect(() => {
@@ -321,10 +318,10 @@ const ControlsPanel: React.FC<ControlsPanelProps> = (props) => {
     if (files && files.length > 0) {
       const file = files[0];
       let fileNamePart = file.name.split('.').slice(0, -1).join('.');
-      if (!fileNamePart && file.name.startsWith('.')) { // Handle names like ".myfont"
+      if (!fileNamePart && file.name.startsWith('.')) { 
           fileNamePart = file.name.substring(1).split('.').slice(0, -1).join('.');
       }
-      if (!fileNamePart) { // Fallback if still no name part (e.g. filename is just ".ttf")
+      if (!fileNamePart) { 
           fileNamePart = "My Custom Font";
       }
   
@@ -341,16 +338,15 @@ const ControlsPanel: React.FC<ControlsPanelProps> = (props) => {
           cssName = "My-Custom-Font";
       }
       
-      onLoadCustomFont(file, cssName);
+      props.onLoadCustomFont(file, cssName);
     } else {
-      // User cancelled file dialog or no file was selected
-      // Revert font family to previously loaded custom font or a default system font
+      
       if (loadedCustomFontName && settings.systemFont.fontFamily !== loadedCustomFontName) {
         onNestedSettingsChange('systemFont', 'fontFamily', loadedCustomFontName);
       } else if (!loadedCustomFontName) {
         onNestedSettingsChange('systemFont', 'fontFamily', AVAILABLE_FONTS[0]);
       }
-      // If settings.systemFont.fontFamily was already the loadedCustomFontName, no change needed.
+      
     }
   };
 
@@ -359,7 +355,7 @@ const ControlsPanel: React.FC<ControlsPanelProps> = (props) => {
     onNestedSettingsChange('systemFont', 'fontFamily', newFontFamily);
 
     if (newFontFamily === "Custom...") {
-      // Defer clicking the file input until after the state update has rendered the FileInput
+      
       setTimeout(() => {
         customFontFilePickerRef.current?.click();
       }, 0);
@@ -576,7 +572,7 @@ const ControlsPanel: React.FC<ControlsPanelProps> = (props) => {
     onNestedSettingsChange('pixelOverflowMargins', marginKey, {
       ...settings.pixelOverflowMargins[marginKey],
       [subKey]: value,
-    } as MarginSetting); // Cast because TS might not infer specific subKey type
+    } as MarginSetting); 
   };
 
 
@@ -711,47 +707,88 @@ const ControlsPanel: React.FC<ControlsPanelProps> = (props) => {
         )
       },
       {
-        id: 'loaded-main-scripts-section', title: 'Loaded Main Scripts', defaultOpen: true, content: (
+        id: 'script-block-navigation-section', title: 'Script & Block Navigation', defaultOpen: true, content: (
           <>
-            {mainScripts.length === 0 ? <p className="text-xs text-[var(--bv-text-secondary)]">No main scripts loaded.</p> :
-            (<>
-              <p className="text-xs text-[var(--bv-text-secondary)] mb-1">
-                  Active Script: <span className="font-semibold text-[var(--bv-text-primary)]">{activeMainScriptName || "None Selected"}</span>
-              </p>
-              <div className="max-h-48 overflow-y-auto border border-[var(--bv-border-color)] rounded p-1 space-y-1 mt-1">
-                  {mainScripts.map((script) => (
-                      <button key={script.id} onClick={() => onSetActiveMainScriptId(script.id)}
-                          className={`block w-full text-left p-1.5 rounded text-sm transition-colors duration-150 truncate 
-                                     ${activeMainScriptId === script.id 
-                                       ? 'bg-[var(--bv-accent-primary)] text-[var(--bv-accent-primary-content)] font-semibold' 
-                                       : 'bg-transparent text-[var(--bv-text-primary)] hover:bg-[var(--bv-element-background)] hover:text-[var(--bv-text-primary)]'}`}
-                          title={script.name} >
-                          {script.name} ({script.blocks.length} blocks)
-                      </button>
-                  ))}
+            <div className="flex border-b border-[var(--bv-border-color-light)] mb-3">
+              <button
+                onClick={() => setActiveNavigationTab('scripts')}
+                className={`px-4 py-2 -mb-px border-b-2 font-medium text-sm transition-colors
+                            ${activeNavigationTab === 'scripts'
+                              ? 'border-[var(--bv-accent-primary)] text-[var(--bv-accent-primary)]'
+                              : 'border-transparent text-[var(--bv-text-secondary)] hover:text-[var(--bv-text-primary)] hover:border-gray-300'}`}
+                aria-pressed={activeNavigationTab === 'scripts'}
+                role="tab"
+                aria-controls="scripts-tab-panel"
+              >
+                Scripts
+              </button>
+              <button
+                onClick={() => setActiveNavigationTab('blocks')}
+                className={`px-4 py-2 -mb-px border-b-2 font-medium text-sm transition-colors
+                            ${activeNavigationTab === 'blocks'
+                              ? 'border-[var(--bv-accent-primary)] text-[var(--bv-accent-primary)]'
+                              : 'border-transparent text-[var(--bv-text-secondary)] hover:text-[var(--bv-text-primary)] hover:border-gray-300'}`}
+                aria-pressed={activeNavigationTab === 'blocks'}
+                role="tab"
+                aria-controls="blocks-tab-panel"
+                disabled={!(restOfProps.activeMainScriptId && restOfProps.activeScriptBlocks.length > 0)}
+              >
+                Blocks
+              </button>
+            </div>
+
+            {activeNavigationTab === 'scripts' && (
+              <div id="scripts-tab-panel" role="tabpanel" aria-labelledby="script-block-navigation-section">
+                {restOfProps.mainScripts.length === 0 ? <p className="text-xs text-[var(--bv-text-secondary)]">No main scripts loaded.</p> :
+                (<>
+                  <p className="text-xs text-[var(--bv-text-secondary)] mb-1">
+                      Active Script: <span className="font-semibold text-[var(--bv-text-primary)]">{activeMainScriptName || "None Selected"}</span>
+                  </p>
+                  <div className="max-h-48 overflow-y-auto border border-[var(--bv-border-color)] rounded p-1 space-y-1 mt-1">
+                      {restOfProps.mainScripts.map((script) => (
+                          <button key={script.id} onClick={() => restOfProps.onSetActiveMainScriptId(script.id)}
+                              className={`block w-full text-left p-1.5 rounded text-sm transition-colors duration-150 truncate 
+                                         ${restOfProps.activeMainScriptId === script.id 
+                                           ? 'bg-[var(--bv-accent-primary)] text-[var(--bv-accent-primary-content)] font-semibold' 
+                                           : 'bg-transparent text-[var(--bv-text-primary)] hover:bg-[var(--bv-element-background)] hover:text-[var(--bv-text-primary)]'}`}
+                              title={script.name} >
+                              {script.name} ({script.blocks.length} blocks)
+                          </button>
+                      ))}
+                  </div>
+                </>)}
               </div>
-            </>)}
-          </>
-        )
-      },
-      {
-        id: 'block-navigation-section', title: 'Block Navigation (Active Script)', defaultOpen: true, content: (
-          <>
-            {!(activeMainScriptId && activeScriptBlocks.length > 0 && viewMode === 'single') ? <p className="text-xs text-[var(--bv-text-secondary)]">Block navigation is available in "Single Block View" with an active script and blocks.</p> :
-            (<>
-              <div className="flex justify-between items-center mb-2">
-                <span className="text-sm text-[var(--bv-text-primary)]"> Block: {currentBlockIndex !== null ? currentBlockIndex + 1 : '-'} / {activeScriptBlocks.length} {showOnlyOverflowingBlocks && ` (Showing ${displayedBlocksForView.length} overflowing)`}</span>
-                <div className="space-x-1">
-                  <button onClick={() => { if (currentBlockIndex === null) return; const currentDisplayedIdx = displayedBlocksForView.findIndex(b => b.index === currentBlockIndex); if (currentDisplayedIdx > 0) { onSetCurrentBlockIndex(displayedBlocksForView[currentDisplayedIdx - 1].index); } else if (currentDisplayedIdx === -1 && currentBlockIndex > 0) { let prevActualIdx = currentBlockIndex - 1; while(prevActualIdx >= 0 && showOnlyOverflowingBlocks && !activeScriptBlocks[prevActualIdx].isOverflowing) { prevActualIdx--; } if(prevActualIdx >=0) onSetCurrentBlockIndex(prevActualIdx); } }} disabled={currentBlockIndex === null || (showOnlyOverflowingBlocks ? displayedBlocksForView.findIndex(b => b.index === currentBlockIndex) <= 0 : currentBlockIndex <=0)} className="px-2 py-1 text-xs rounded bg-[var(--bv-accent-secondary)] text-[var(--bv-accent-secondary-content)] hover:opacity-80 disabled:opacity-50" >Prev</button>
-                  <button onClick={() => { if (currentBlockIndex === null) return; const currentDisplayedIdx = displayedBlocksForView.findIndex(b => b.index === currentBlockIndex); if (currentDisplayedIdx !== -1 && currentDisplayedIdx < displayedBlocksForView.length - 1) { onSetCurrentBlockIndex(displayedBlocksForView[currentDisplayedIdx + 1].index); } else if (currentDisplayedIdx === -1 && currentBlockIndex < activeScriptBlocks.length -1) { let nextActualIdx = currentBlockIndex + 1; while(nextActualIdx < activeScriptBlocks.length && showOnlyOverflowingBlocks && !activeScriptBlocks[nextActualIdx].isOverflowing) { nextActualIdx++; } if(nextActualIdx < activeScriptBlocks.length) onSetCurrentBlockIndex(nextActualIdx); } }} disabled={currentBlockIndex === null || (showOnlyOverflowingBlocks ? displayedBlocksForView.findIndex(b => b.index === currentBlockIndex) >= displayedBlocksForView.length -1 : currentBlockIndex >= activeScriptBlocks.length -1)} className="px-2 py-1 text-xs rounded bg-[var(--bv-accent-secondary)] text-[var(--bv-accent-secondary-content)] hover:opacity-80 disabled:opacity-50" >Next</button>
-                </div>
+            )}
+
+            {activeNavigationTab === 'blocks' && (
+              <div id="blocks-tab-panel" role="tabpanel" aria-labelledby="script-block-navigation-section">
+                {!(restOfProps.activeMainScriptId && restOfProps.activeScriptBlocks.length > 0) ? (
+                  <p className="text-xs text-[var(--bv-text-secondary)]">
+                    Select an active script with blocks to navigate them.
+                  </p>
+                ) : restOfProps.viewMode !== 'single' ? (
+                  <p className="text-xs text-[var(--bv-text-secondary)]">
+                    Block navigation is available in "Single Block View". <br/>
+                    Change view mode in "Script Management" to see the block list here.
+                  </p>
+                ) : (
+                  <>
+                    <div className="flex justify-between items-center mb-2">
+                      <span className="text-sm text-[var(--bv-text-primary)]"> Block: {restOfProps.currentBlockIndex !== null ? restOfProps.currentBlockIndex + 1 : '-'} / {restOfProps.activeScriptBlocks.length} {restOfProps.showOnlyOverflowingBlocks && ` (Showing ${restOfProps.displayedBlocksForView.length} overflowing)`}</span>
+                      <div className="space-x-1">
+                        <button onClick={() => { if (restOfProps.currentBlockIndex === null) return; const currentDisplayedIdx = restOfProps.displayedBlocksForView.findIndex(b => b.index === restOfProps.currentBlockIndex); if (currentDisplayedIdx > 0) { restOfProps.onSetCurrentBlockIndex(restOfProps.displayedBlocksForView[currentDisplayedIdx - 1].index); } else if (currentDisplayedIdx === -1 && restOfProps.currentBlockIndex > 0) { let prevActualIdx = restOfProps.currentBlockIndex - 1; while(prevActualIdx >= 0 && restOfProps.showOnlyOverflowingBlocks && !restOfProps.activeScriptBlocks[prevActualIdx].isOverflowing) { prevActualIdx--; } if(prevActualIdx >=0) restOfProps.onSetCurrentBlockIndex(prevActualIdx); } }} disabled={restOfProps.currentBlockIndex === null || (restOfProps.showOnlyOverflowingBlocks ? restOfProps.displayedBlocksForView.findIndex(b => b.index === restOfProps.currentBlockIndex) <= 0 : restOfProps.currentBlockIndex <=0)} className="px-2 py-1 text-xs rounded bg-[var(--bv-accent-secondary)] text-[var(--bv-accent-secondary-content)] hover:opacity-80 disabled:opacity-50" >Prev</button>
+                        <button onClick={() => { if (restOfProps.currentBlockIndex === null) return; const currentDisplayedIdx = restOfProps.displayedBlocksForView.findIndex(b => b.index === restOfProps.currentBlockIndex); if (currentDisplayedIdx !== -1 && currentDisplayedIdx < restOfProps.displayedBlocksForView.length - 1) { restOfProps.onSetCurrentBlockIndex(restOfProps.displayedBlocksForView[currentDisplayedIdx + 1].index); } else if (currentDisplayedIdx === -1 && restOfProps.currentBlockIndex < restOfProps.activeScriptBlocks.length -1) { let nextActualIdx = restOfProps.currentBlockIndex + 1; while(nextActualIdx < restOfProps.activeScriptBlocks.length && restOfProps.showOnlyOverflowingBlocks && !restOfProps.activeScriptBlocks[nextActualIdx].isOverflowing) { nextActualIdx++; } if(nextActualIdx < restOfProps.activeScriptBlocks.length) restOfProps.onSetCurrentBlockIndex(nextActualIdx); } }} disabled={restOfProps.currentBlockIndex === null || (restOfProps.showOnlyOverflowingBlocks ? restOfProps.displayedBlocksForView.findIndex(b => b.index === restOfProps.currentBlockIndex) >= restOfProps.displayedBlocksForView.length -1 : restOfProps.currentBlockIndex >= restOfProps.activeScriptBlocks.length -1)} className="px-2 py-1 text-xs rounded bg-[var(--bv-accent-secondary)] text-[var(--bv-accent-secondary-content)] hover:opacity-80 disabled:opacity-50" >Next</button>
+                      </div>
+                    </div>
+                    <LabelInputContainer label="Show Only Overflowing Blocks" htmlFor="showOnlyOverflow" inline><input type="checkbox" id="showOnlyOverflow" checked={restOfProps.showOnlyOverflowingBlocks} onChange={(e) => restOfProps.onShowOnlyOverflowingBlocksChange(e.target.checked)} className="h-5 w-5 text-[var(--bv-accent-primary)] border-[var(--bv-input-border)] rounded focus:ring-[var(--bv-input-focus-ring)]" /></LabelInputContainer>
+                    <div className="max-h-60 overflow-y-auto border border-[var(--bv-border-color)] rounded p-1 space-y-1 mt-2">
+                      {restOfProps.displayedBlocksForView.map((block) => (<button key={block.index} onClick={() => restOfProps.onSetCurrentBlockIndex(block.index)} className={`block w-full text-left p-1.5 rounded text-sm transition-colors duration-150 truncate ${restOfProps.currentBlockIndex === block.index ? 'bg-[var(--bv-accent-primary)] text-[var(--bv-accent-primary-content)] font-semibold' : 'bg-transparent text-[var(--bv-text-primary)] hover:bg-[var(--bv-element-background)]'} ${block.isOverflowing ? 'border-l-4 border-red-500 pl-2' : 'pl-3'}`} title={block.content.substring(0,100) + (block.content.length > 100 ? '...' : '')} > Block {block.index + 1}{block.isOverflowing ? ' (Overflow!)' : ''} </button> ))}
+                      {restOfProps.displayedBlocksForView.length === 0 && restOfProps.activeScriptBlocks.length > 0 && (<p className="text-center text-xs text-[var(--bv-text-secondary)] p-2">No blocks match filter.</p>)}
+                    </div>
+                  </>
+                )}
               </div>
-              <LabelInputContainer label="Show Only Overflowing Blocks" htmlFor="showOnlyOverflow" inline><input type="checkbox" id="showOnlyOverflow" checked={showOnlyOverflowingBlocks} onChange={(e) => onShowOnlyOverflowingBlocksChange(e.target.checked)} className="h-5 w-5 text-[var(--bv-accent-primary)] border-[var(--bv-input-border)] rounded focus:ring-[var(--bv-input-focus-ring)]" /></LabelInputContainer>
-              <div className="max-h-60 overflow-y-auto border border-[var(--bv-border-color)] rounded p-1 space-y-1 mt-2">
-                {displayedBlocksForView.map((block) => (<button key={block.index} onClick={() => onSetCurrentBlockIndex(block.index)} className={`block w-full text-left p-1.5 rounded text-sm transition-colors duration-150 truncate ${currentBlockIndex === block.index ? 'bg-[var(--bv-accent-primary)] text-[var(--bv-accent-primary-content)] font-semibold' : 'bg-transparent text-[var(--bv-text-primary)] hover:bg-[var(--bv-element-background)]'} ${block.isOverflowing ? 'border-l-4 border-red-500 pl-2' : 'pl-3'}`} title={block.content.substring(0,100) + (block.content.length > 100 ? '...' : '')} > Block {block.index + 1}{block.isOverflowing ? ' (Overflow!)' : ''} </button> ))}
-                {displayedBlocksForView.length === 0 && activeScriptBlocks.length > 0 && (<p className="text-center text-xs text-[var(--bv-text-secondary)] p-2">No blocks match filter.</p>)}
-              </div>
-            </>)}
+            )}
           </>
         )
       },
@@ -861,7 +898,7 @@ const ControlsPanel: React.FC<ControlsPanelProps> = (props) => {
         )
       },
       {
-        id: 'font-type-styling-section', title: 'Font Type & Styling', defaultOpen: true, content: (
+        id: 'font-type-styling-section', title: 'Font Type, Styling & Effects', defaultOpen: true, content: (
           <>
             <LabelInputContainer label="Type" htmlFor="fontType">
               <SelectInput id="fontType" value={settings.currentFontType} onChange={(e) => onSettingsChange('currentFontType', e.target.value as 'system' | 'bitmap')}>
@@ -926,16 +963,14 @@ const ControlsPanel: React.FC<ControlsPanelProps> = (props) => {
                 <LabelInputContainer label="Enabled" htmlFor="bitmapEnabled" inline><input type="checkbox" id="bitmapEnabled" checked={settings.bitmapFont.enabled} onChange={(e) => onNestedSettingsChange('bitmapFont', 'enabled', e.target.checked)} className="h-5 w-5 text-[var(--bv-accent-primary)] border-[var(--bv-input-border)] rounded focus:ring-[var(--bv-input-focus-ring)]" /></LabelInputContainer>
               </div>
             )}
-          </>
-        )
-      },
-      {
-        id: 'effects-section', title: 'Effects', defaultOpen: false, content: (
-          <>
-            <LabelInputContainer label="Shadow Enabled" htmlFor="shadowEnabled" inline><input type="checkbox" id="shadowEnabled" checked={settings.shadowEffect.enabled} onChange={(e) => onNestedSettingsChange('shadowEffect', 'enabled', e.target.checked)} className="h-5 w-5 text-[var(--bv-accent-primary)] border-[var(--bv-input-border)] rounded focus:ring-[var(--bv-input-focus-ring)]" /></LabelInputContainer>
-            {settings.shadowEffect.enabled && (<><InputWithSlider label="Shadow Offset X" unit="px" id="shadowOffsetX" value={settings.shadowEffect.offsetX} onChange={(val) => onNestedSettingsChange('shadowEffect', 'offsetX', val)} min={-50} max={50} step={1} /><InputWithSlider label="Shadow Offset Y" unit="px" id="shadowOffsetY" value={settings.shadowEffect.offsetY} onChange={(val) => onNestedSettingsChange('shadowEffect', 'offsetY', val)} min={-50} max={50} step={1} /><InputWithSlider label="Shadow Blur" unit="px" id="shadowBlur" value={settings.shadowEffect.blur} onChange={(val) => onNestedSettingsChange('shadowEffect', 'blur', val)} min={0} max={100} step={1} /><LabelInputContainer label="Shadow Color" htmlFor="shadowColor"><TextInput type="color" id="shadowColor" value={settings.shadowEffect.color} onChange={(e) => onNestedSettingsChange('shadowEffect', 'color', e.target.value)} className="h-10 w-full" /></LabelInputContainer></>)}
-            <LabelInputContainer label="Outline Enabled" htmlFor="outlineEnabled" inline><input type="checkbox" id="outlineEnabled" checked={settings.outlineEffect.enabled} onChange={(e) => onNestedSettingsChange('outlineEffect', 'enabled', e.target.checked)} className="h-5 w-5 text-[var(--bv-accent-primary)] border-[var(--bv-input-border)] rounded focus:ring-[var(--bv-input-focus-ring)]" /></LabelInputContainer>
-            {settings.outlineEffect.enabled && (<><InputWithSlider label="Outline Width" unit="px" id="outlineWidth" value={settings.outlineEffect.width} onChange={(val) => onNestedSettingsChange('outlineEffect', 'width', val)} min={0} max={30} step={1} /><LabelInputContainer label="Outline Color" htmlFor="outlineColor"><TextInput type="color" id="outlineColor" value={settings.outlineEffect.color} onChange={(e) => onNestedSettingsChange('outlineEffect', 'color', e.target.value)} className="h-10 w-full"/></LabelInputContainer></>)}
+            {/* Effects moved here */}
+            <div className="mt-4 pt-4 border-t border-[var(--bv-border-color-light)]">
+              <h4 className="text-md font-semibold mb-1 text-[var(--bv-accent-primary)]">Effects</h4>
+              <LabelInputContainer label="Shadow Enabled" htmlFor="shadowEnabled" inline><input type="checkbox" id="shadowEnabled" checked={settings.shadowEffect.enabled} onChange={(e) => onNestedSettingsChange('shadowEffect', 'enabled', e.target.checked)} className="h-5 w-5 text-[var(--bv-accent-primary)] border-[var(--bv-input-border)] rounded focus:ring-[var(--bv-input-focus-ring)]" /></LabelInputContainer>
+              {settings.shadowEffect.enabled && (<><InputWithSlider label="Shadow Offset X" unit="px" id="shadowOffsetX" value={settings.shadowEffect.offsetX} onChange={(val) => onNestedSettingsChange('shadowEffect', 'offsetX', val)} min={-50} max={50} step={1} /><InputWithSlider label="Shadow Offset Y" unit="px" id="shadowOffsetY" value={settings.shadowEffect.offsetY} onChange={(val) => onNestedSettingsChange('shadowEffect', 'offsetY', val)} min={-50} max={50} step={1} /><InputWithSlider label="Shadow Blur" unit="px" id="shadowBlur" value={settings.shadowEffect.blur} onChange={(val) => onNestedSettingsChange('shadowEffect', 'blur', val)} min={0} max={100} step={1} /><LabelInputContainer label="Shadow Color" htmlFor="shadowColor"><TextInput type="color" id="shadowColor" value={settings.shadowEffect.color} onChange={(e) => onNestedSettingsChange('shadowEffect', 'color', e.target.value)} className="h-10 w-full" /></LabelInputContainer></>)}
+              <LabelInputContainer label="Outline Enabled" htmlFor="outlineEnabled" inline><input type="checkbox" id="outlineEnabled" checked={settings.outlineEffect.enabled} onChange={(e) => onNestedSettingsChange('outlineEffect', 'enabled', e.target.checked)} className="h-5 w-5 text-[var(--bv-accent-primary)] border-[var(--bv-input-border)] rounded focus:ring-[var(--bv-input-focus-ring)]" /></LabelInputContainer>
+              {settings.outlineEffect.enabled && (<><InputWithSlider label="Outline Width" unit="px" id="outlineWidth" value={settings.outlineEffect.width} onChange={(val) => onNestedSettingsChange('outlineEffect', 'width', val)} min={0} max={30} step={1} /><LabelInputContainer label="Outline Color" htmlFor="outlineColor"><TextInput type="color" id="outlineColor" value={settings.outlineEffect.color} onChange={(e) => onNestedSettingsChange('outlineEffect', 'color', e.target.value)} className="h-10 w-full"/></LabelInputContainer></>)}
+            </div>
           </>
         )
       },
@@ -1138,31 +1173,27 @@ const ControlsPanel: React.FC<ControlsPanelProps> = (props) => {
     ];
   }, [
     settings, onSettingsChange, onNestedSettingsChange,
-    onTextFileUpload, mainScripts, activeMainScriptId, onSetActiveMainScriptId, onClearMainScripts,
-    activeScriptBlocks, currentBlockIndex, onSetCurrentBlockIndex,
-    showOnlyOverflowingBlocks, onShowOnlyOverflowingBlocksChange, displayedBlocksForView,
-    onLoadCustomFont, loadedCustomFontName, 
+    activeMainScriptId, mainScripts, 
+    loadedCustomFontName, 
     overflowSettingsPanelOpen,
-    originalScripts, onOriginalScriptUpload, matchedOriginalScriptName, onClearOriginalScripts,
-    viewMode, onViewModeChange,
-    findText, onFindTextChange, replaceText, onReplaceTextChange,
-    findIsCaseSensitive, onFindIsCaseSensitiveChange, findMatchWholeWord, onFindMatchWholeWordChange,
-    findScope, onFindScopeChange, onFindNext, onReplace, onReplaceAll, findResultsMessage,
-    isFindCurrentBlockDisabled, findResultSummary, onNavigateToFindResult,
     activeMainScriptName, isFindReplaceDisabled, showCustomFontLoadUI,
-    gitHubSettings, onGitHubSettingsChange, onLoadFileFromGitHub, onSaveFileToGitHub, onLoadAllFromGitHubFolder, onSaveAllToGitHubFolder,
+    gitHubSettings, 
     isGitHubLoading, gitHubStatusMessage,
     activeThemeKey, 
     isEditingColorTag, editingColorTag, editingColorTagId,
     isEditingImageTag, editingImageTagFields, editingImageTagId, editingImageTagFile, editingImageTagPreviewUrl,
     handlePrimaryBgImageUpload, handleSecondaryBgImageUpload, handleBitmapFontImageUpload,
     handleTagPatternsChange, handleBlockSeparatorsChange, handleCustomLineBreakTagsChange, handleFontFamilyChange,
-    handlePixelMarginChange, // Added for new margin structure
-    customFontFilePickerRef // Add ref to dependency array
+    handlePixelMarginChange, 
+    customFontFilePickerRef,
+    activeNavigationTab, // Added dependency for tab state
+    // Ensure all props accessed in content callbacks are listed or covered by `props` if `getPanelSectionsConfig` is further optimized
+    // For now, this relies on `currentProps` (which is `props`) being passed into `getPanelSectionsConfig`.
+    props 
   ]);
 
 
-  const basePanelSections = useMemo(() => getPanelSectionsConfig(props), [props]);
+  const basePanelSections = useMemo(() => getPanelSectionsConfig(props), [props, activeNavigationTab, activeMainScriptName]); // Added activeNavigationTab to dependencies
   const [sectionOrder, setSectionOrder] = useState<string[]>(() => basePanelSections.map((s: PanelSectionItem) => s.id));
   const [openSections, setOpenSections] = useState<Record<string, boolean>>({});
   const [draggingItemIndex, setDraggingItemIndex] = useState<number | null>(null);

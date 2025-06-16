@@ -1,5 +1,4 @@
 
-
 import React, { useState, useCallback, useRef, useEffect, useLayoutEffect, useMemo } from 'react';
 import JSZip from 'jszip';
 import { Octokit } from '@octokit/rest';
@@ -750,7 +749,10 @@ const App: React.FC = () => {
     let finalParsedWithLine = false;
 
     if (treatLineAsBlock) {
-        parsedBlocksContent = rawText.split('\n').map(line => ({ content: line, originalContent: line }));
+        parsedBlocksContent = rawText.split('\n').map(line => {
+            const cleanLine = line.endsWith('\r') ? line.slice(0, -1) : line;
+            return { content: cleanLine, originalContent: cleanLine };
+        });
         finalParsedWithLine = true;
         finalParsedWithCustom = false; // Mutually exclusive
     } else if (useCustomSep && separators.length > 0 && separators.some(s => s.trim().length > 0)) {
@@ -2189,7 +2191,7 @@ const handleCurrentBlockContentChangeInSingleView = useCallback((newContent: str
       } else {
         setGitHubStatusMessage("Error: The specified path is not a folder or is empty.");
       }
-    } catch (error: any) {
+    } catch (error: any) { 
       console.error("Error loading from GitHub folder:", error);
       setGitHubStatusMessage(`Error: ${error.message || 'Failed to load from GitHub folder.'}`);
     } finally {
@@ -2741,28 +2743,32 @@ const handleSaveAllToGitHubFolder = useCallback(async () => {
                                    focus:ring-[var(--bv-input-focus-ring)] focus:border-[var(--bv-input-focus-ring)] placeholder:text-[var(--bv-text-secondary)]"
                         placeholder={activeScriptBlocks.length > 0 && currentBlockIndex === null ? "Select a block from the navigation to edit." : !activeMainScriptId ? "Load a main script to begin..." : "Type here..."}
                       />
-                      <div className="text-xs text-[var(--bv-text-secondary)] mt-0 mb-1.5 h-auto flex flex-col items-start">
-                        <span>Selected: {selectedTextLengthMain} char(s)</span>
-                        {activeLineIndexMain !== null && lineMetricsForActiveIndexMain ? (
-                            <span>Line {activeLineIndexMain + 1}: {lineMetricsForActiveIndexMain.chars} chars, {lineMetricsForActiveIndexMain.bytes} bytes, {lineMetricsForActiveIndexMain.bytes * 8} bits</span>
-                        ) : mainEditorMetrics ? (
-                            <span>Total: {mainEditorMetrics.totalChars} chars, {mainEditorMetrics.totalBytes} bytes, {mainEditorMetrics.totalBits} bits</span>
-                        ) : (
-                           <span>Total: 0 chars, 0 bytes, 0 bits</span>
+                      <div className="text-xs text-[var(--bv-text-secondary)] mt-0 mb-1.5 h-auto flex flex-row justify-between items-baseline w-full">
+                        <div className="flex flex-col items-start">
+                          <span>Selected: {selectedTextLengthMain} char(s)</span>
+                          <span>
+                            {activeLineIndexMain !== null && lineMetricsForActiveIndexMain ? (
+                                `Line ${activeLineIndexMain + 1}: ${lineMetricsForActiveIndexMain.chars} chars, ${lineMetricsForActiveIndexMain.bytes} bytes, ${lineMetricsForActiveIndexMain.bytes * 8} bits`
+                            ) : mainEditorMetrics ? (
+                                `Total: ${mainEditorMetrics.totalChars} chars, ${mainEditorMetrics.totalBytes} bytes, ${mainEditorMetrics.totalBits} bits`
+                            ) : (
+                               `Total: 0 chars, 0 bytes, 0 bits`
+                            )}
+                          </span>
+                        </div>
+                        {settings.comparisonModeEnabled && settings.enableByteRestrictionInComparisonMode && mainEditorLineMetricDetails.length > 0 && (
+                          <div className="text-right ml-4">
+                            <span className="font-semibold text-[var(--bv-text-primary)]">Line Byte Limits (Current/Original):</span>
+                            {mainEditorLineMetricDetails.map((line, idx) => (
+                                <div key={`byte-limit-line-${idx}`} className={`${line.isOverLimit ? 'text-red-500 font-bold' : 'text-[var(--bv-text-secondary)]'}`}>
+                                    Line {idx + 1}: {line.currentBytes} / {line.originalBytes !== undefined ? line.originalBytes : '-'} bytes
+                                </div>
+                            ))}
+                          </div>
                         )}
                       </div>
                       {byteRestrictionWarning && (
                         <p className="text-xs text-red-500 mb-1">{byteRestrictionWarning}</p>
-                      )}
-                      {settings.comparisonModeEnabled && settings.enableByteRestrictionInComparisonMode && mainEditorLineMetricDetails.length > 0 && (
-                        <div className="mt-1 text-xs text-[var(--bv-text-secondary)] max-h-24 overflow-y-auto border border-[var(--bv-border-color-light)] p-1 rounded">
-                            <p className="font-semibold text-[var(--bv-text-primary)]">Line Byte Limits (Current/Original):</p>
-                            {mainEditorLineMetricDetails.map((line, idx) => (
-                                <div key={idx} className={`${line.isOverLimit ? 'text-red-500 font-bold' : ''}`}>
-                                    Line {idx + 1}: {line.currentBytes} / {line.originalBytes !== undefined ? line.originalBytes : '-'} bytes
-                                </div>
-                            ))}
-                        </div>
                       )}
                     </div>
                   </div>
