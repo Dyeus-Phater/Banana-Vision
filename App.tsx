@@ -8,7 +8,7 @@ import {
   ThemeKey, CustomThemeColors, AppThemeSettings, BlockMetrics, LineMetricDetail, CharacterByteMapEntry, LineMetrics
 } from './types';
 import { DEFAULT_SETTINGS, DEFAULT_GITHUB_SETTINGS, ALL_THEME_DEFINITIONS, DEFAULT_CUSTOM_THEME_TEMPLATE } from './constants';
-import ControlsPanel from './components/ControlsPanel';
+import ControlsPanel, { Button } from './components/ControlsPanel'; // Import Button
 import PreviewArea, { PreviewAreaProps } from './components/PreviewArea';
 import Toolbar from './components/Toolbar';
 import ProfilesGalleryPage from './components/ProfilesGalleryPage';
@@ -2638,9 +2638,6 @@ const handleSaveAllToGitHubFolder = useCallback(async () => {
                     {settings.comparisonModeEnabled && currentEditableBlockForSingleView ? (
                       <div className="flex flex-row w-full gap-4">
                         <div className="w-1/2 flex flex-col items-center justify-center relative">
-                          <h3 className="text-sm font-semibold mb-1 text-[var(--bv-text-secondary)] truncate" title={`Original ${originalSourceInfoForSingleView} (Block ${currentEditableBlockForSingleView.index + 1})`}>
-                            Original {originalSourceInfoForSingleView} (Block {currentEditableBlockForSingleView.index + 1})
-                          </h3>
                           <PreviewArea
                             key={`original-preview-single-${activeMainScriptId}-${currentEditableBlockForSingleView.index}-${globalBitmapCacheId}`}
                             baseSettings={settings}
@@ -2656,9 +2653,6 @@ const handleSaveAllToGitHubFolder = useCallback(async () => {
                           />
                         </div>
                         <div className="w-1/2 flex flex-col items-center justify-center relative">
-                           <h3 className="text-sm font-semibold mb-1 text-[var(--bv-text-secondary)] truncate" title={`Editable (Block ${currentEditableBlockForSingleView.index + 1})`}>
-                            Editable (Block {currentEditableBlockForSingleView.index + 1})
-                          </h3>
                           <PreviewArea
                             ref={previewRef}
                             key={`editable-preview-single-${activeMainScriptId}-${currentEditableBlockForSingleView.index}-${globalBitmapCacheId}`}
@@ -2772,6 +2766,30 @@ const handleSaveAllToGitHubFolder = useCallback(async () => {
                       )}
                     </div>
                   </div>
+                  {/* Block Navigation Controls - MOVED HERE for full width centering */}
+                  {currentMainView === 'editor' && viewMode === 'single' && activeMainScriptId && activeScriptBlocks.length > 0 && (
+                    <div className="w-full flex justify-between items-center mt-3 p-2 border-t border-[var(--bv-border-color-light)]">
+                      <Button
+                        onClick={() => handleSetCurrentBlockIndex(currentBlockIndex !== null ? currentBlockIndex - 1 : 0)}
+                        disabled={!activeMainScriptId || currentBlockIndex === null || currentBlockIndex === 0}
+                        className="!px-3 !py-1.5 text-sm"
+                        aria-label="Previous Block"
+                      >
+                        &larr; Previous
+                      </Button>
+                      <span className="text-sm font-medium text-[var(--bv-text-primary)]" aria-live="polite">
+                        Block {currentBlockIndex !== null ? currentBlockIndex + 1 : '-'} / {activeScriptBlocks.length}
+                      </span>
+                      <Button
+                        onClick={() => handleSetCurrentBlockIndex(currentBlockIndex !== null ? currentBlockIndex + 1 : 0)}
+                        disabled={!activeMainScriptId || currentBlockIndex === null || currentBlockIndex >= activeScriptBlocks.length - 1}
+                        className="!px-3 !py-1.5 text-sm"
+                        aria-label="Next Block"
+                      >
+                        Next &rarr;
+                      </Button>
+                    </div>
+                  )}
                 </>
               ) : ( 
                 <div

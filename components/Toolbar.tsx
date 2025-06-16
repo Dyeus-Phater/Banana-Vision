@@ -86,7 +86,7 @@ const Toolbar: React.FC<ToolbarProps> = ({
   const menuButtonTextClass = `text-[var(--bv-toolbar-text,var(--bv-text-primary))]`;
   const menuDropdownBgClass = `bg-[var(--bv-modal-background,var(--bv-element-background))]`;
   const menuDropdownBorderClass = `border-[var(--bv-border-color)]`;
-  const menuItemHoverBgClass = `hover:bg-[var(--bv-element-background-secondary)]`;
+  const menuItemHoverStyle = `hover:!bg-[var(--bv-accent-primary)] hover:!text-[var(--bv-accent-primary-content)]`;
 
 
   return (
@@ -123,7 +123,7 @@ const Toolbar: React.FC<ToolbarProps> = ({
                 accept=".json"
                 buttonLabel="Import JSON"
                 buttonClassName={`w-full text-left px-4 py-2 text-sm font-medium transition-colors 
-                                ${menuButtonTextClass} ${menuItemHoverBgClass} 
+                                ${menuButtonTextClass} ${menuItemHoverStyle}
                                 block disabled:opacity-50 disabled:cursor-not-allowed`}
                 multiple={false} 
               />
@@ -131,7 +131,7 @@ const Toolbar: React.FC<ToolbarProps> = ({
                 onClick={() => { onExportJson(); setIsJsonMenuOpen(false); }}
                 className={`w-full text-left block !rounded-none
                             !px-4 !py-2 !text-sm !font-medium !transition-colors
-                            !bg-transparent ${menuButtonTextClass} ${menuItemHoverBgClass}`}
+                            !bg-transparent ${menuButtonTextClass} ${menuItemHoverStyle}`}
                 role="menuitem"
               >
                 Export JSON
@@ -164,7 +164,7 @@ const Toolbar: React.FC<ToolbarProps> = ({
                 onClick={() => { onSaveScript(); setIsScriptMenuOpen(false); }}
                 className={`w-full text-left block !rounded-none
                             !px-4 !py-2 !text-sm !font-medium !transition-colors
-                            !bg-transparent ${menuButtonTextClass} ${menuItemHoverBgClass}`}
+                            !bg-transparent ${menuButtonTextClass} ${menuItemHoverStyle}`}
                 role="menuitem"
               >
                 Save Active Script
@@ -173,7 +173,7 @@ const Toolbar: React.FC<ToolbarProps> = ({
                 onClick={() => { onSaveAllChangedScripts(); setIsScriptMenuOpen(false); }}
                 className={`w-full text-left block !rounded-none
                             !px-4 !py-2 !text-sm !font-medium !transition-colors
-                            !bg-transparent ${menuButtonTextClass} ${menuItemHoverBgClass}`}
+                            !bg-transparent ${menuButtonTextClass} ${menuItemHoverStyle}`}
                 role="menuitem"
               >
                 Save All Changed
