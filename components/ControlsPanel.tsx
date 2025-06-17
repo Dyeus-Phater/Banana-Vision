@@ -264,7 +264,7 @@ const ControlsPanel: React.FC<ControlsPanelProps> = (props) => {
     if (blockSeparatorsInputText !== newCanonicalText) {
       setBlockSeparatorsInputText(newCanonicalText);
     }
-  }, [settings.blockSeparators]);
+  }, [settings.blockSeparators, blockSeparatorsInputText]);
 
 
   const handleBlockSeparatorsInputChange = (e: React.ChangeEvent<HTMLInputElement>) => {
@@ -295,7 +295,7 @@ const ControlsPanel: React.FC<ControlsPanelProps> = (props) => {
   }, [isEditingImageTag, editingImageTagPreviewUrl]);
 
 
-  const handlePrimaryBgImageUpload = (files: FileList) => {
+  const handlePrimaryBgImageUpload = useCallback((files: FileList) => {
     if (!files || files.length === 0) return;
     const file = files[0];
     const reader = new FileReader();
@@ -314,23 +314,23 @@ const ControlsPanel: React.FC<ControlsPanelProps> = (props) => {
       img.src = dataUrl;
     };
     reader.readAsDataURL(file);
-  };
+  }, [onSettingsChange]);
 
-  const handleSecondaryBgImageUpload = (files: FileList) => {
+  const handleSecondaryBgImageUpload = useCallback((files: FileList) => {
     if (!files || files.length === 0) return;
     const file = files[0];
     const reader = new FileReader();
     reader.onloadend = () => onSettingsChange('secondaryBackgroundImageUrl', reader.result as string);
     reader.readAsDataURL(file);
-  };
+  }, [onSettingsChange]);
 
-  const handleBitmapFontImageUpload = (files: FileList) => {
+  const handleBitmapFontImageUpload = useCallback((files: FileList) => {
     if (!files || files.length === 0) return;
     const file = files[0];
     const reader = new FileReader();
     reader.onloadend = () => onNestedSettingsChange('bitmapFont', 'imageUrl', reader.result as string);
     reader.readAsDataURL(file);
-  };
+  }, [onNestedSettingsChange]);
 
 
   const handleFontFileSelected = (files: FileList | null) => {
@@ -367,7 +367,7 @@ const ControlsPanel: React.FC<ControlsPanelProps> = (props) => {
     }
   };
 
-  const handleFontFamilyChange = (e: React.ChangeEvent<HTMLSelectElement>) => {
+  const handleFontFamilyChange = useCallback((e: React.ChangeEvent<HTMLSelectElement>) => {
     const newFontFamily = e.target.value;
     onNestedSettingsChange('systemFont', 'fontFamily', newFontFamily);
 
@@ -376,7 +376,7 @@ const ControlsPanel: React.FC<ControlsPanelProps> = (props) => {
         customFontFilePickerRef.current?.click();
       }, 0);
     }
-  };
+  }, [onNestedSettingsChange, customFontFilePickerRef]);
 
   const showCustomFontLoadUI = settings.currentFontType === 'system' &&
                                (settings.systemFont.fontFamily === "Custom..." ||
@@ -385,19 +385,19 @@ const ControlsPanel: React.FC<ControlsPanelProps> = (props) => {
   const activeMainScriptName = mainScripts.find(s => s.id === activeMainScriptId)?.name || null;
   const isFindReplaceDisabled = mainScripts.length === 0;
 
-  const handleStartAddNewColorTag = () => {
+  const handleStartAddNewColorTag = useCallback(() => {
     setEditingColorTag(DEFAULT_CUSTOM_COLOR_TAG);
     setEditingColorTagId(null);
     setIsEditingColorTag(true);
-  };
+  }, []);
 
-  const handleStartEditColorTag = (tag: CustomColorTag) => {
+  const handleStartEditColorTag = useCallback((tag: CustomColorTag) => {
     setEditingColorTag(tag);
     setEditingColorTagId(tag.id);
     setIsEditingColorTag(true);
-  };
+  }, []);
 
-  const handleSaveColorTag = () => {
+  const handleSaveColorTag = useCallback(() => {
     if (!editingColorTag.openingTag.trim() || !editingColorTag.closingTag.trim()) {
       alert("Opening and closing tags cannot be empty.");
       return;
@@ -422,27 +422,27 @@ const ControlsPanel: React.FC<ControlsPanelProps> = (props) => {
     onSettingsChange('customColorTags', updatedTags);
     setIsEditingColorTag(false);
     setEditingColorTagId(null);
-  };
+  }, [editingColorTag, editingColorTagId, settings.customColorTags, onSettingsChange]);
 
-  const handleDeleteColorTag = (tagId: string) => {
+  const handleDeleteColorTag = useCallback((tagId: string) => {
     if (window.confirm("Are you sure you want to delete this color tag?")) {
       const updatedTags = settings.customColorTags.filter(t => t.id !== tagId);
       onSettingsChange('customColorTags', updatedTags);
     }
-  };
+  }, [settings.customColorTags, onSettingsChange]);
 
-  const handleToggleColorTagEnabled = (tagId: string, enabled: boolean) => {
+  const handleToggleColorTagEnabled = useCallback((tagId: string, enabled: boolean) => {
     const updatedTags = settings.customColorTags.map(t =>
       t.id === tagId ? { ...t, enabled } : t
     );
     onSettingsChange('customColorTags', updatedTags);
-  };
+  }, [settings.customColorTags, onSettingsChange]);
 
-  const handleEditingColorTagChange = <K extends keyof (typeof editingColorTag)>(key: K, value: (typeof editingColorTag)[K]) => {
+  const handleEditingColorTagChange = useCallback(<K extends keyof (typeof editingColorTag)>(key: K, value: (typeof editingColorTag)[K]) => {
     setEditingColorTag(prev => ({ ...prev, [key]: value }));
-  };
+  }, []);
 
-  const handleStartAddNewImageTag = () => {
+  const handleStartAddNewImageTag = useCallback(() => {
     setEditingImageTagFields(DEFAULT_IMAGE_TAG);
     setEditingImageTagId(null);
     setEditingImageTagFile(null);
@@ -451,9 +451,9 @@ const ControlsPanel: React.FC<ControlsPanelProps> = (props) => {
     }
     setEditingImageTagPreviewUrl(null);
     setIsEditingImageTag(true);
-  };
+  }, [editingImageTagPreviewUrl]);
 
-  const handleStartEditImageTag = (imageTag: ImageTag) => {
+  const handleStartEditImageTag = useCallback((imageTag: ImageTag) => {
     setEditingImageTagFields({ 
       tag: imageTag.tag, 
       width: imageTag.width, 
@@ -468,9 +468,9 @@ const ControlsPanel: React.FC<ControlsPanelProps> = (props) => {
     }
     setEditingImageTagPreviewUrl(null); 
     setIsEditingImageTag(true);
-  };
+  }, [editingImageTagPreviewUrl]);
 
-  const handleImageTagFileSelected = (files: FileList) => {
+  const handleImageTagFileSelected = useCallback((files: FileList) => {
     if (files && files.length > 0) {
       const file = files[0];
       setEditingImageTagFile(file);
@@ -479,13 +479,13 @@ const ControlsPanel: React.FC<ControlsPanelProps> = (props) => {
       }
       setEditingImageTagPreviewUrl(URL.createObjectURL(file));
     }
-  };
+  }, [editingImageTagPreviewUrl]);
   
-  const handleEditingImageTagFieldChange = <K extends keyof typeof editingImageTagFields>(key: K, value: (typeof editingImageTagFields)[K]) => {
+  const handleEditingImageTagFieldChange = useCallback(<K extends keyof typeof editingImageTagFields>(key: K, value: (typeof editingImageTagFields)[K]) => {
     setEditingImageTagFields(prev => ({ ...prev, [key]: value }));
-  };
+  }, []);
 
-  const handleSaveImageTag = async () => {
+  const handleSaveImageTag = useCallback(async () => {
     if (!editingImageTagFields.tag?.trim()) {
       alert("Image tag string cannot be empty.");
       return;
@@ -548,21 +548,21 @@ const ControlsPanel: React.FC<ControlsPanelProps> = (props) => {
     setIsEditingImageTag(false); 
     setEditingImageTagId(null);
     setEditingImageTagFile(null);
-  };
+  }, [editingImageTagFields, editingImageTagFile, editingImageTagId, settings.imageTags, onSettingsChange, editingImageTagPreviewUrl]);
 
-  const handleDeleteImageTag = (tagId: string) => {
+  const handleDeleteImageTag = useCallback((tagId: string) => {
     if (window.confirm("Are you sure you want to delete this image tag?")) {
       const updatedTags = settings.imageTags.filter(t => t.id !== tagId);
       onSettingsChange('imageTags', updatedTags);
     }
-  };
+  }, [settings.imageTags, onSettingsChange]);
 
-  const handleToggleImageTagEnabled = (tagId: string, enabled: boolean) => {
+  const handleToggleImageTagEnabled = useCallback((tagId: string, enabled: boolean) => {
     const updatedTags = settings.imageTags.map(t =>
       t.id === tagId ? { ...t, enabled } : t
     );
     onSettingsChange('imageTags', updatedTags);
-  };
+  }, [settings.imageTags, onSettingsChange]);
 
 
   const handleTagPatternsChange = useCallback((value: string) => {
@@ -573,7 +573,7 @@ const ControlsPanel: React.FC<ControlsPanelProps> = (props) => {
     onSettingsChange('customLineBreakTags', value.split('\n'));
   }, [onSettingsChange]);
 
-  const handlePixelMarginChange = (
+  const handlePixelMarginChange = useCallback((
     marginKey: keyof Omit<AppSettings['pixelOverflowMargins'], 'enabled'>,
     subKey: keyof MarginSetting,
     value: number | boolean
@@ -582,7 +582,7 @@ const ControlsPanel: React.FC<ControlsPanelProps> = (props) => {
       ...settings.pixelOverflowMargins[marginKey],
       [subKey]: value,
     } as MarginSetting); 
-  };
+  }, [onNestedSettingsChange, settings.pixelOverflowMargins]);
 
 
   const getPanelSectionsConfig = useCallback((currentProps: ControlsPanelProps): PanelSectionItem[] => {
@@ -1205,6 +1205,7 @@ const ControlsPanel: React.FC<ControlsPanelProps> = (props) => {
       }
     ];
   }, [
+    // Props-based dependencies (specific ones are better than whole 'props' object)
     settings, onSettingsChange, onNestedSettingsChange,
     activeMainScriptId, mainScripts, 
     loadedCustomFontName, 
@@ -1213,21 +1214,37 @@ const ControlsPanel: React.FC<ControlsPanelProps> = (props) => {
     gitHubSettings, 
     isGitHubLoading, gitHubStatusMessage,
     activeThemeKey, 
+    
+    // State-based dependencies from ControlsPanel
     isEditingColorTag, editingColorTag, editingColorTagId,
     isEditingImageTag, editingImageTagFields, editingImageTagId, editingImageTagFile, editingImageTagPreviewUrl,
+    activeNavigationTab, 
+    blockSeparatorsInputText, 
+
+    // Handler dependencies from ControlsPanel (those used inside getPanelSectionsConfig's returned JSX)
     handlePrimaryBgImageUpload, handleSecondaryBgImageUpload, handleBitmapFontImageUpload,
     handleTagPatternsChange, handleCustomLineBreakTagsChange, handleFontFamilyChange,
-    handlePixelMarginChange, 
-    customFontFilePickerRef,
-    activeNavigationTab, 
-    blockSeparatorsInputText, // Add new state to dependency list for getPanelSectionsConfig
-    handleBlockSeparatorsInputChange, // Add new handler
-    handleBlockSeparatorsInputBlur,   // Add new handler
+    handlePixelMarginChange,
+    handleBlockSeparatorsInputChange, handleBlockSeparatorsInputBlur,
+    handleStartAddNewColorTag, handleStartEditColorTag, handleSaveColorTag, handleDeleteColorTag, handleToggleColorTagEnabled, handleEditingColorTagChange, setIsEditingColorTag,
+    handleStartAddNewImageTag, handleStartEditImageTag, handleSaveImageTag, handleDeleteImageTag, handleToggleImageTagEnabled, handleEditingImageTagFieldChange, handleImageTagFileSelected, setIsEditingImageTag,
+    
+    // Other props from ControlsPanelProps that are used via restOfProps. Ensure these are stable or listed.
+    // This example explicitly lists most handlers. For brevity, assuming `props` covers the rest for now,
+    // but a full refactor would itemize all used props from `restOfProps`.
     props 
   ]);
 
 
-  const basePanelSections = useMemo(() => getPanelSectionsConfig(props), [props, activeNavigationTab, activeMainScriptName, blockSeparatorsInputText]); // Added blockSeparatorsInputText
+  const basePanelSections = useMemo(() => getPanelSectionsConfig(props), [
+    props, 
+    getPanelSectionsConfig // Add the memoized function itself as a dependency
+    // The previous fix already correctly added isEditingColorTag and isEditingImageTag,
+    // and they are also implicitly covered by `props` or `getPanelSectionsConfig` if it changes due to them.
+    // Explicitly including them here again if `props` was removed/refined might be needed,
+    // but with `getPanelSectionsConfig` as a dep, and it depending on them, this should be fine.
+  ]);
+
   const [sectionOrder, setSectionOrder] = useState<string[]>(() => basePanelSections.map((s: PanelSectionItem) => s.id));
   const [openSections, setOpenSections] = useState<Record<string, boolean>>({});
   const [draggingItemIndex, setDraggingItemIndex] = useState<number | null>(null);

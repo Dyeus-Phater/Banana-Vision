@@ -1,5 +1,4 @@
 
-
 import React, { useState, useCallback, useRef, useEffect, useLayoutEffect, useMemo } from 'react';
 import JSZip from 'jszip';
 import { Octokit } from '@octokit/rest';
@@ -489,8 +488,8 @@ const App: React.FC = () => {
           charWidth, charHeight, charMap,
           colorToRemove, enableColorRemoval, colorRemovalTolerance,
           enablePixelScanning, spaceWidthOverride,
-          enableTintColor, color: globalTintColor,
-          separationX, separationY // New: separations
+          // enableTintColor, color: globalTintColor, // Global tint removed from cache generation
+          separationX, separationY 
         } = settings.bitmapFont;
 
         if (charWidth <= 0 || charHeight <= 0) {
@@ -508,7 +507,7 @@ const App: React.FC = () => {
 
         for (let i = 0; i < charMap.length; i++) {
           const char = charMap[i];
-          let effectiveCharWidthForRender = charWidth; // This is the width of the actual character data to draw
+          let effectiveCharWidthForRender = charWidth; 
           let charSpecificCanvas: HTMLCanvasElement | null = document.createElement('canvas');
 
           if (char === ' ') {
@@ -516,12 +515,12 @@ const App: React.FC = () => {
               effectiveCharWidthForRender = spaceWidthOverride;
             } else {
               effectiveCharWidthForRender = enablePixelScanning
-                ? Math.max(1, Math.floor(charWidth / 4)) // For space, use 1/4 of charWidth if pixel scanning
-                : charWidth; // Default space width is full charWidth
+                ? Math.max(1, Math.floor(charWidth / 4)) 
+                : charWidth; 
             }
             if (charSpecificCanvas) {
               charSpecificCanvas.width = effectiveCharWidthForRender;
-              charSpecificCanvas.height = charHeight; // Space height is still charHeight
+              charSpecificCanvas.height = charHeight; 
             }
             newCache.set(char, { canvas: charSpecificCanvas, dataURL: charSpecificCanvas?.toDataURL() });
             continue;
@@ -532,7 +531,7 @@ const App: React.FC = () => {
             continue;
           }
 
-          charSpecificCanvas.width = charWidth; // Canvas for extraction matches character data size
+          charSpecificCanvas.width = charWidth; 
           charSpecificCanvas.height = charHeight;
           const ctx = charSpecificCanvas.getContext('2d', { willReadFrequently: true });
           if (!ctx) {
@@ -540,11 +539,9 @@ const App: React.FC = () => {
             continue;
           }
 
-          // Calculate source X and Y including separations
           const sx = (i % charsPerRow) * effectiveTileWidth;
           const sy = Math.floor(i / charsPerRow) * effectiveTileHeight;
           
-          // Draw the character tile (charWidth x charHeight) from the source image
           ctx.drawImage(img, sx, sy, charWidth, charHeight, 0, 0, charWidth, charHeight);
 
           if (enableColorRemoval && targetRgb) {
@@ -555,7 +552,7 @@ const App: React.FC = () => {
               if (Math.abs(r - targetRgb.r) <= colorRemovalTolerance &&
                   Math.abs(g - targetRgb.g) <= colorRemovalTolerance &&
                   Math.abs(b - targetRgb.b) <= colorRemovalTolerance) {
-                data[p + 3] = 0; // Make transparent
+                data[p + 3] = 0; 
               }
             }
             ctx.putImageData(imageData, 0, 0);
@@ -568,15 +565,15 @@ const App: React.FC = () => {
             for (let yPx = 0; yPx < charHeight; yPx++) {
               for (let xPx = 0; xPx < charWidth; xPx++) {
                 const alphaIndex = (yPx * charWidth + xPx) * 4 + 3;
-                if (data[alphaIndex] > 10) { // Consider pixel opaque if alpha > 10
+                if (data[alphaIndex] > 10) { 
                   if (xPx > rightmostPixel) rightmostPixel = xPx;
                 }
               }
             }
             effectiveCharWidthForRender = (rightmostPixel === -1) ? 0 : rightmostPixel + 1;
 
-            if (effectiveCharWidthForRender === 0 && char !== ' ') { // If char is not space and scanned width is 0
-              newCache.set(char, { canvas: null }); // Treat as empty/not drawable
+            if (effectiveCharWidthForRender === 0 && char !== ' ') { 
+              newCache.set(char, { canvas: null }); 
               continue;
             } else if (effectiveCharWidthForRender < charWidth) {
               const scannedCanvas = document.createElement('canvas');
@@ -584,20 +581,18 @@ const App: React.FC = () => {
               scannedCanvas.height = charHeight;
               const scannedCtx = scannedCanvas.getContext('2d');
               if (scannedCtx) {
-                // Copy only the scanned portion from the original extracted tile
                 scannedCtx.drawImage(charSpecificCanvas, 0, 0, effectiveCharWidthForRender, charHeight, 0, 0, effectiveCharWidthForRender, charHeight);
-                charSpecificCanvas = scannedCanvas; // Replace with the narrower canvas
+                charSpecificCanvas = scannedCanvas; 
               }
             } else {
-                 effectiveCharWidthForRender = charWidth; // Ensure it does not exceed original if scanning doesn't reduce it
+                 effectiveCharWidthForRender = charWidth; 
             }
           } else {
-             effectiveCharWidthForRender = charWidth; // Not pixel scanning, use original charWidth
+             effectiveCharWidthForRender = charWidth; 
           }
           
-          // Ensure final canvas for cache reflects the true renderable width
           if (charSpecificCanvas && charSpecificCanvas.width !== effectiveCharWidthForRender) {
-              if (effectiveCharWidthForRender === 0 && char !== ' ') { // Safety for completely blank scanned chars
+              if (effectiveCharWidthForRender === 0 && char !== ' ') { 
                   newCache.set(char, { canvas: null });
                   continue;
               }
@@ -610,23 +605,13 @@ const App: React.FC = () => {
                   charSpecificCanvas = finalWidthCanvas;
               }
           }
-
-
-          let finalCanvasForCache = charSpecificCanvas;
-          if (enableTintColor && globalTintColor && finalCanvasForCache) {
-            const tintedVersionCanvas = document.createElement('canvas');
-            tintedVersionCanvas.width = finalCanvasForCache.width;
-            tintedVersionCanvas.height = finalCanvasForCache.height;
-            const tintedCtx = tintedVersionCanvas.getContext('2d');
-            if (tintedCtx) {
-              tintedCtx.drawImage(finalCanvasForCache, 0, 0);
-              tintedCtx.globalCompositeOperation = 'source-in';
-              tintedCtx.fillStyle = globalTintColor;
-              tintedCtx.fillRect(0, 0, tintedVersionCanvas.width, tintedVersionCanvas.height);
-              finalCanvasForCache = tintedVersionCanvas;
-            }
-          }
-          newCache.set(char, { canvas: finalCanvasForCache, dataURL: finalCanvasForCache?.toDataURL() });
+          
+          // Store the canvas (after potential scanning/resizing and color removal)
+          // and its dataURL. Global tint is NOT applied here anymore.
+          newCache.set(char, { 
+            canvas: charSpecificCanvas, 
+            dataURL: charSpecificCanvas?.toDataURL() 
+          });
         }
         setGlobalBitmapCharCache(newCache);
         setGlobalBitmapCacheId(id => id + 1);
@@ -649,8 +634,9 @@ const App: React.FC = () => {
     settings.bitmapFont.imageUrl, settings.bitmapFont.charWidth, settings.bitmapFont.charHeight,
     settings.bitmapFont.charMap, settings.bitmapFont.enableColorRemoval, settings.bitmapFont.colorToRemove,
     settings.bitmapFont.colorRemovalTolerance, settings.bitmapFont.enablePixelScanning,
-    settings.bitmapFont.spaceWidthOverride, settings.bitmapFont.enableTintColor, settings.bitmapFont.color,
-    settings.bitmapFont.separationX, settings.bitmapFont.separationY, // Added dependencies
+    settings.bitmapFont.spaceWidthOverride, 
+    // settings.bitmapFont.enableTintColor, settings.bitmapFont.color, // Removed global tint from deps
+    settings.bitmapFont.separationX, settings.bitmapFont.separationY,
     settings.currentFontType, settings.bitmapFont.enabled
   ]);
 

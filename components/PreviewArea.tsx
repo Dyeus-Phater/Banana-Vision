@@ -1,5 +1,4 @@
 
-
 import React, { CSSProperties, forwardRef, useLayoutEffect, useRef, useEffect, useState } from 'react';
 import { AppSettings, NestedAppSettingsObjectKeys, ThemeKey, CustomColorTag, ImageTag } from '../types';
 
@@ -23,8 +22,8 @@ export interface PreviewAreaProps {
   showPixelMarginGuides: boolean; 
   isReadOnlyPreview?: boolean;
   activeThemeKey: ThemeKey; 
-  bitmapCharCache: BitmapCharCache | null; // Added prop for shared cache
-  bitmapCacheId: number; // Added prop for cache refresh
+  bitmapCharCache: BitmapCharCache | null; 
+  bitmapCacheId: number; 
 }
 
 interface ColorSegment {
@@ -50,7 +49,7 @@ type FinalDisplaySegment = FinalTextSegment | FinalImageSegment;
 
 
 const parseTextWithCustomColorTags = (
-  rawText: string, // This text should ALREADY have general tags hidden if applicable
+  rawText: string, 
   customColorTags: CustomColorTag[],
   defaultColor: string | null = null
 ): ColorSegment[] => {
@@ -63,15 +62,12 @@ const parseTextWithCustomColorTags = (
     return [{ text: rawText, color: defaultColor }];
   }
   
-  // Sort by combined length of opening and closing tags to handle nesting: longer tags first.
-  // This helps prevent a shorter tag from prematurely matching part of a longer tag.
   const sortedTags = [...enabledTags].sort((a,b) => 
     (b.openingTag.length + b.closingTag.length) - (a.openingTag.length + a.closingTag.length)
   );
 
   const tagParts: string[] = [];
   sortedTags.forEach(tag => {
-    // Escape regex special characters in tags
     tagParts.push(tag.openingTag.replace(/[.*+?^${}()|[\]\\]/g, '\\$&'));
     tagParts.push(tag.closingTag.replace(/[.*+?^${}()|[\]\\]/g, '\\$&'));
   });
@@ -86,11 +82,11 @@ const parseTextWithCustomColorTags = (
   let currentTextSegment = "";
 
   for (const part of splitText) {
-    if (!part) continue; // Skip empty strings from split
+    if (!part) continue; 
     let isTag = false;
-    for (const tag of sortedTags) { // Check against sorted tags
+    for (const tag of sortedTags) { 
       if (part === tag.openingTag) {
-        if (currentTextSegment) { // Push preceding text
+        if (currentTextSegment) { 
           segments.push({ text: currentTextSegment, color: colorStack.length > 0 ? colorStack[colorStack.length - 1].color : defaultColor });
           currentTextSegment = "";
         }
@@ -98,19 +94,17 @@ const parseTextWithCustomColorTags = (
         isTag = true;
         break;
       } else if (part === tag.closingTag) {
-        if (currentTextSegment) { // Push preceding text
+        if (currentTextSegment) { 
           segments.push({ text: currentTextSegment, color: colorStack.length > 0 ? colorStack[colorStack.length - 1].color : defaultColor });
           currentTextSegment = "";
         }
-        // Pop only if the closing tag matches the top of the stack
+        // If it's a closing tag that matches the one on top of the stack, pop it.
+        // Otherwise (orphaned or mismatched tag), it's still a tag and not text.
         if (colorStack.length > 0 && colorStack[colorStack.length - 1].closingTag === part) {
           colorStack.pop();
-        } else {
-          // This case means a closing tag was found without a matching opening tag on stack (or wrong order)
-          // Treat it as literal text instead of a valid closing tag for current context
-           currentTextSegment += part;
         }
-        isTag = true;
+        // Mark as a tag so it's not appended to currentTextSegment later.
+        isTag = true; 
         break;
       }
     }
@@ -118,43 +112,52 @@ const parseTextWithCustomColorTags = (
       currentTextSegment += part;
     }
   }
-  if (currentTextSegment) { // Push any remaining text
+  if (currentTextSegment) { 
     segments.push({ text: currentTextSegment, color: colorStack.length > 0 ? colorStack[colorStack.length - 1].color : defaultColor });
   }
-  return segments.filter(s => s.text.length > 0); // Filter out segments that became empty
+  return segments.filter(s => s.text.length > 0); 
 };
 
 const hideGeneralTagsFromText = (
   text: string,
-  hideTags: boolean, // This is settings.hideTagsInPreview
-  tagPatterns: string[], 
+  generalTagPatterns: string[],
   blockSeparatorsToHide: string[],
-  useCustomBlockSeparator: boolean
+  useCustomBlockSeparator: boolean,
+  activeCustomColorTags: CustomColorTag[],
+  activeImageTags: ImageTag[]
 ): string => {
-  if (!hideTags) return text; // Only proceed if hideTagsInPreview is true
-  
   let processedText = text;
+  
+  const customColorTagStrings = activeCustomColorTags.flatMap(t => [t.openingTag, t.closingTag]);
+  const imageTagStrings = activeImageTags.map(t => t.tag);
+  const doNotHideList = [...customColorTagStrings, ...imageTagStrings].filter(Boolean);
 
-  // Hide general tag patterns
-  if (tagPatterns.length > 0) {
-    tagPatterns.forEach(patternStr => {
+  if (generalTagPatterns.length > 0) {
+    generalTagPatterns.forEach(patternStr => {
       const trimmedPattern = patternStr.trim();
       if (trimmedPattern.length === 0) return;
       try {
         const regex = new RegExp(trimmedPattern, 'g');
-        processedText = processedText.replace(regex, '');
+        processedText = processedText.replace(regex, (match) => {
+          if (doNotHideList.includes(match)) {
+            return match; // Don't hide this specific custom/image tag
+          }
+          return ''; // Hide other general tags
+        });
       } catch (error) {
          console.warn(`Invalid RegEx pattern for general tag hiding: ${trimmedPattern}`, error);
       }
     });
   }
 
-  // Hide block separators if custom ones are used and hideTags is on
   if (useCustomBlockSeparator && blockSeparatorsToHide && blockSeparatorsToHide.length > 0) {
     blockSeparatorsToHide.forEach(separator => {
       if (separator.trim().length > 0) {
+        // Only hide block separators if they are not also part of the doNotHideList
+        // (though unlikely, it's a safeguard)
+        if (doNotHideList.includes(separator)) return; 
         try {
-          const escapedSeparator = separator.replace(/[-\/\\^$*+?.()|[\]\\]/g, '\\$&');
+          const escapedSeparator = separator.replace(/[-\/\\^$*+?.()|[\]{}]/g, '\\$&');
           const regex = new RegExp(escapedSeparator, 'g');
           processedText = processedText.replace(regex, '');
         } catch (error) {
@@ -175,11 +178,10 @@ const generateDisplaySegments = (
   
   let currentWorkingText = rawText;
 
-  // 1. Apply Custom Line Breaks
   if (settings.useCustomLineBreakTags && settings.customLineBreakTags.length > 0) {
     settings.customLineBreakTags.forEach(tag => {
-      if (tag.trim()) { // Ensure tag is not just whitespace
-        const escapedTag = tag.replace(/[.*+?^${}()|[\]\\]/g, '\\$&'); // Escape for RegExp
+      if (tag.trim()) { 
+        const escapedTag = tag.replace(/[.*+?^${}()|[\]\\]/g, '\\$&'); 
         try {
             currentWorkingText = currentWorkingText.replace(new RegExp(escapedTag, 'g'), '\n');
         } catch (e) {
@@ -189,41 +191,37 @@ const generateDisplaySegments = (
     });
   }
 
-  // 2. Apply General Tag Hiding (if enabled)
-  // This function internally checks settings.hideTagsInPreview but we pass it for clarity.
-  // It also hides block separators if settings.hideTagsInPreview and settings.useCustomBlockSeparator are true.
   let textAfterGeneralHiding = currentWorkingText;
   if (settings.hideTagsInPreview) {
      textAfterGeneralHiding = hideGeneralTagsFromText(
         currentWorkingText,
-        settings.hideTagsInPreview,
         settings.tagPatternsToHide,
         settings.blockSeparators,
-        settings.useCustomBlockSeparator
+        settings.useCustomBlockSeparator,
+        settings.customColorTags.filter(t => t.enabled), // Pass active custom color tags
+        settings.imageTags.filter(t => t.enabled)        // Pass active image tags
     );
   }
 
 
-  // 3. Image Tag and Color Tag Processing
   const enabledImageTags = settings.imageTags.filter(it => it.enabled && it.tag);
+  const activeCustomColorTags = settings.customColorTags.filter(ct => ct.enabled);
 
   if (simplifiedRender || enabledImageTags.length === 0) {
-    // No image tags, or simplified render: process the whole text for color
     const colorSegments = parseTextWithCustomColorTags(
       textAfterGeneralHiding,
-      settings.customColorTags,
+      activeCustomColorTags,
       settings.currentFontType === 'system' ? settings.systemFont.color : null
     );
     colorSegments.forEach(cs => {
-      if (cs.text) { // Ensure segment text is not empty after all processing
+      if (cs.text) { 
         finalSegments.push({ type: 'text', text: cs.text, color: cs.color });
       }
     });
     return finalSegments;
   }
 
-  // Has image tags, process in parts
-  enabledImageTags.sort((a, b) => b.tag.length - a.tag.length); // Process longer tags first
+  enabledImageTags.sort((a, b) => b.tag.length - a.tag.length); 
   const imageTagPatternParts = enabledImageTags.map(it => it.tag.replace(/[.*+?^${}()|[\]\\]/g, '\\$&'));
   const splitRegex = new RegExp(`(${imageTagPatternParts.join('|')})`);
   
@@ -239,14 +237,14 @@ const generateDisplaySegments = (
         height: matchedImageTag.height,
         altText: matchedImageTag.tag,
       });
-    } else { // It's a text part
+    } else { 
       const colorSegments = parseTextWithCustomColorTags(
         part,
-        settings.customColorTags,
+        activeCustomColorTags,
         settings.currentFontType === 'system' ? settings.systemFont.color : null
       );
       colorSegments.forEach(cs => {
-        if (cs.text) { // Ensure segment text is not empty
+        if (cs.text) { 
           finalSegments.push({ type: 'text', text: cs.text, color: cs.color });
         }
       });
@@ -257,11 +255,10 @@ const generateDisplaySegments = (
 
 const getCleanTextForCounting = (
   rawText: string,
-  settings: AppSettings // Pass full settings object
+  settings: AppSettings 
 ): string => {
   let cleanText = rawText;
 
-  // Remove image tags
   if (settings.imageTags && settings.imageTags.length > 0) {
     settings.imageTags.forEach(imgTag => {
       if (imgTag.enabled && imgTag.tag) {
@@ -273,7 +270,6 @@ const getCleanTextForCounting = (
     });
   }
   
-  // Remove custom color tags
   if (settings.customColorTags && settings.customColorTags.length > 0) {
     settings.customColorTags.forEach(tagDef => {
       if (tagDef.enabled && tagDef.openingTag) {
@@ -291,7 +287,6 @@ const getCleanTextForCounting = (
     });
   }
   
-  // Remove general tag patterns
   if (settings.tagPatternsToHide && settings.tagPatternsToHide.length > 0) {
     settings.tagPatternsToHide.forEach(patternStr => {
       const trimmedPattern = patternStr.trim();
@@ -303,13 +298,12 @@ const getCleanTextForCounting = (
     });
   }
 
-  // Remove block separators
   if (settings.useCustomBlockSeparator && settings.blockSeparators && settings.blockSeparators.length > 0) {
     settings.blockSeparators.forEach(separator => {
       const trimmedSeparator = separator.trim(); 
       if (trimmedSeparator.length > 0) {
         try {
-          const escapedSeparator = trimmedSeparator.replace(/[-\/\\^$*+?.()|[\]\\]/g, '\\$&');
+          const escapedSeparator = trimmedSeparator.replace(/[-\/\\^$*+?.()|[\]{}]/g, '\\$&');
           const regex = new RegExp(escapedSeparator, 'g');
           cleanText = cleanText.replace(regex, '');
         } catch (error) { /* console.warn for regex errors */ }
@@ -317,13 +311,12 @@ const getCleanTextForCounting = (
     });
   }
 
-  // Remove custom line break tags (new)
   if (settings.useCustomLineBreakTags && settings.customLineBreakTags && settings.customLineBreakTags.length > 0) {
     settings.customLineBreakTags.forEach(tag => {
       if (tag.trim()) {
         const escapedTag = tag.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
         try {
-          cleanText = cleanText.replace(new RegExp(escapedTag, 'g'), ''); // Remove, not replace with \n
+          cleanText = cleanText.replace(new RegExp(escapedTag, 'g'), ''); 
         } catch (e) {
           console.warn(`Error removing custom line break tag "${tag}" for counting:`, e);
         }
@@ -332,36 +325,6 @@ const getCleanTextForCounting = (
   }
   return cleanText;
 };
-
-function trimLeadingAndTrailingEmptyLines(text: string): string {
-  if (!text) return ''; 
-  if (!text.trim()) return ''; 
-
-  const lines = text.split('\n');
-  let firstNonEmptyLine = -1;
-  let lastNonEmptyLine = -1;
-
-  for (let i = 0; i < lines.length; i++) {
-    if (lines[i].trim() !== '') {
-      firstNonEmptyLine = i;
-      break;
-    }
-  }
-
-  if (firstNonEmptyLine === -1) {
-    return ''; 
-  }
-
-  for (let i = lines.length - 1; i >= 0; i--) {
-    if (lines[i].trim() !== '') {
-      lastNonEmptyLine = i;
-      break;
-    }
-  }
-  
-  const slicedLines = lines.slice(firstNonEmptyLine, lastNonEmptyLine + 1);
-  return slicedLines.join('\n');
-}
 
 
 const PreviewAreaInner = forwardRef<HTMLDivElement, PreviewAreaProps>(({ 
@@ -373,12 +336,11 @@ const PreviewAreaInner = forwardRef<HTMLDivElement, PreviewAreaProps>(({
   showPixelMarginGuides, 
   isReadOnlyPreview = false,
   activeThemeKey,
-  bitmapCharCache, // Use passed-in cache
-  bitmapCacheId    // Use passed-in cache ID (might be used as part of key for re-renders)
+  bitmapCharCache, 
+  bitmapCacheId    
 }, ref) => {
   const textContainerRef = useRef<HTMLDivElement>(null);
   const contentBoxRef = useRef<HTMLDivElement>(null); 
-  // Removed local bitmapCharCache ref and bitmapCacheId state
 
   const [isDragging, setIsDragging] = useState(false);
   const dragStartCoords = useRef({ x: 0, y: 0 });
@@ -445,7 +407,6 @@ const PreviewAreaInner = forwardRef<HTMLDivElement, PreviewAreaProps>(({
             const logicalTextTop = (textRect.top - previewBoxRect.top) / currentPreviewZoom;
             const logicalTextBottom = (textRect.bottom - previewBoxRect.top) / currentPreviewZoom;
             
-            // Check non-breakLine margins first
             if (settings.previewWidth > 0) {
               if (!pmLeft.breakLine && logicalTextLeft < pmLeft.value) hasOverflow = true;
               if (!pmRight.breakLine && logicalTextRight > (settings.previewWidth - pmRight.value)) hasOverflow = true;
@@ -455,7 +416,6 @@ const PreviewAreaInner = forwardRef<HTMLDivElement, PreviewAreaProps>(({
               if (!pmBottom.breakLine && logicalTextBottom > (settings.previewHeight - pmBottom.value)) hasOverflow = true;
             }
              
-            // Check overall dimensions if not already overflowing by non-breakLine margins
             if (!hasOverflow && textEl) {
                 const effectiveScaleX = simplifiedRender ? 1 : settings.transform.scaleX;
                 const effectiveScaleY = simplifiedRender ? 1 : settings.transform.scaleY;
@@ -466,14 +426,13 @@ const PreviewAreaInner = forwardRef<HTMLDivElement, PreviewAreaProps>(({
                 if (settings.previewHeight > 0) {
                     heightOverflowOverall = scaledScrollHeightOverall > settings.previewHeight;
                 }
-                // When pixelOverflowMargins are enabled, maxPixelHeight is ignored for auto height scenarios
                 if (widthOverflowOverall || heightOverflowOverall) {
                     hasOverflow = true;
                 }
             }
           }
         }
-      } else { // Margins not enabled, use original logic
+      } else { 
         if (textEl) {
           const effectiveScaleX = simplifiedRender ? 1 : settings.transform.scaleX;
           const effectiveScaleY = simplifiedRender ? 1 : settings.transform.scaleY;
@@ -515,10 +474,6 @@ const PreviewAreaInner = forwardRef<HTMLDivElement, PreviewAreaProps>(({
       settings.outlineEffect, settings.globalLineHeightFactor, settings.previewZoom,
       setIsOverflowing, ref, bitmapCacheId, currentPreviewZoom, isReadOnlyPreview, simplifiedRender 
     ]);
-
-
-  // Removed the local useEffect for bitmapCharCache generation.
-  // It's now handled by App.tsx and passed via props.
 
   const handleMouseDown = (event: React.MouseEvent<HTMLDivElement>) => {
     if (isReadOnlyPreview || event.button !== 0 || simplifiedRender) return; 
@@ -567,6 +522,30 @@ const PreviewAreaInner = forwardRef<HTMLDivElement, PreviewAreaProps>(({
 
 
   const renderContent = () => {
+    // Split finalDisplaySegments into lines for rendering
+    const linesOfSegments: FinalDisplaySegment[][] = [];
+    let currentLine: FinalDisplaySegment[] = [];
+    finalDisplaySegments.forEach(segment => {
+      if (segment.type === 'text') {
+        const textLines = segment.text.replace(/\r/g, '').split('\n');
+        textLines.forEach((lineText, index) => {
+          currentLine.push({ ...segment, text: lineText });
+          if (index < textLines.length - 1) {
+            linesOfSegments.push(currentLine);
+            currentLine = [];
+          }
+        });
+      } else {
+        currentLine.push(segment);
+      }
+    });
+    if (currentLine.length > 0 || (finalDisplaySegments.length === 0 && settings.text.trim() === '')) {
+      linesOfSegments.push(currentLine);
+    }
+    if (linesOfSegments.length === 0 && settings.text.trim() === '') {
+       linesOfSegments.push([{type: 'text', text: '', color: settings.currentFontType === 'system' ? settings.systemFont.color : null}]);
+    }
+
     if (simplifiedRender && settings.currentFontType === 'bitmap') {
         const simplifiedBitmapStyle: CSSProperties = {
             ...textTransformStyle, display: 'flex', alignItems: 'center', justifyContent: 'center',
@@ -582,7 +561,7 @@ const PreviewAreaInner = forwardRef<HTMLDivElement, PreviewAreaProps>(({
     }
 
     if (settings.currentFontType === 'bitmap' && settings.bitmapFont.enabled && settings.bitmapFont.imageUrl && !simplifiedRender) {
-      if (!bitmapCharCache) { // Cache might not be ready or failed to load
+      if (!bitmapCharCache) { 
         const placeholderStyle: CSSProperties = {
             ...textTransformStyle, display: 'flex', alignItems: 'center', justifyContent: 'center',
             width: '100%', height: '100%', fontFamily: 'Arial, sans-serif', fontSize: '12px',
@@ -605,33 +584,42 @@ const PreviewAreaInner = forwardRef<HTMLDivElement, PreviewAreaProps>(({
         alignItems: settings.systemFont.textAlignHorizontal === 'center' ? 'center' : settings.systemFont.textAlignHorizontal === 'right' ? 'flex-end' : 'flex-start',
         padding: '2px', boxSizing: 'border-box', imageRendering: 'pixelated',
       };
-
-      const linesOfSegments: FinalDisplaySegment[][] = [];
-      let currentLine: FinalDisplaySegment[] = [];
-      finalDisplaySegments.forEach(segment => {
-        if (segment.type === 'text') {
-          const textLines = trimLeadingAndTrailingEmptyLines(segment.text.replace(/\r/g, '')).split('\n');
-          textLines.forEach((lineText, index) => {
-            if (lineText || textLines.length === 1) { 
-                 currentLine.push({ ...segment, text: lineText });
-            }
-            if (index < textLines.length - 1) {
-              linesOfSegments.push(currentLine);
-              currentLine = [];
-            }
-          });
-        } else { 
-          currentLine.push(segment);
-        }
-      });
-      if (currentLine.length > 0) linesOfSegments.push(currentLine);
       
       return (
         <div style={{ width: '100%', height: '100%', display: 'flex', alignItems: alignItems, justifyContent: settings.systemFont.textAlignHorizontal === 'center' ? 'center' : settings.systemFont.textAlignHorizontal === 'right' ? 'flex-end' : 'flex-start', padding: '8px', boxSizing: 'border-box' }} onMouseDown={handleMouseDown} role={isReadOnlyPreview ? undefined : "application"} aria-roledescription={isReadOnlyPreview ? undefined : "draggable text area"}>
           <div ref={textContainerRef} style={bitmapContainerStyle}>
-            {linesOfSegments.map((lineSegments, lineIndex) => {
+            {linesOfSegments.map((lineContentSegments, lineIndex) => {
+              const isBitmapLineVisuallyEmptyBasedOnText = lineContentSegments.every(seg => 
+                seg.type === 'text' && seg.text.trim() === ''
+              );
+
+              let lineRendersAnyPixel = false;
+              if (!isBitmapLineVisuallyEmptyBasedOnText && bitmapCharCache) {
+                for (const segment of lineContentSegments) {
+                  if (segment.type === 'image') {
+                    lineRendersAnyPixel = true;
+                    break;
+                  }
+                  if (segment.type === 'text') {
+                    for (const char of segment.text) {
+                      const cachedCharEntry = bitmapCharCache.get(char);
+                      if (cachedCharEntry?.canvas && cachedCharEntry.canvas.width > 0 && cachedCharEntry.canvas.height > 0) {
+                        lineRendersAnyPixel = true;
+                        break;
+                      }
+                    }
+                  }
+                  if (lineRendersAnyPixel) break;
+                }
+              }
+              const isEffectivelyEmpty = isBitmapLineVisuallyEmptyBasedOnText || !lineRendersAnyPixel;
+
+              if (isEffectivelyEmpty) {
+                return <div key={lineIndex} style={{ height: '0px', overflow: 'hidden' }} aria-hidden="true" />;
+              }
+              
               let maxElementHeightInLine = baseCharPixelHeight;
-              lineSegments.forEach(seg => {
+              lineContentSegments.forEach(seg => {
                 if (seg.type === 'image') {
                   maxElementHeightInLine = Math.max(maxElementHeightInLine, seg.height * bitmapZoom);
                 }
@@ -640,30 +628,45 @@ const PreviewAreaInner = forwardRef<HTMLDivElement, PreviewAreaProps>(({
 
               return (
                 <div key={lineIndex} style={{ display: 'flex', height: `${actualLineHeightPx}px`, alignItems: 'center' }}>
-                  {lineSegments.map((segment, segIdx) => {
+                  {lineContentSegments.map((segment, segIdx) => {
                     if (segment.type === 'image') {
-                      return <img key={segIdx} src={segment.imageUrl} alt={segment.altText} style={{ width: `${segment.width * bitmapZoom}px`, height: `${segment.height * bitmapZoom}px`, marginRight: `${effectiveSpacing}px`, imageRendering: 'pixelated', verticalAlign: 'middle' }} />;
+                      return <img key={`${lineIndex}-${segIdx}-img`} src={segment.imageUrl} alt={segment.altText} style={{ width: `${segment.width * bitmapZoom}px`, height: `${segment.height * bitmapZoom}px`, marginRight: `${effectiveSpacing}px`, imageRendering: 'pixelated', verticalAlign: 'middle' }} />;
                     }
                     
                     return segment.text.split('').map((char, charIndex) => {
-                      const cachedCharData = bitmapCharCache.get(char); // Use global cache
-                      if (!cachedCharData || !cachedCharData.canvas) { 
-                        const emptyCharWidth = (char === ' ' && cachedCharData && cachedCharData.canvas) ? cachedCharData.canvas.width * bitmapZoom : 0;
-                        return <div key={charIndex} style={{ width: `${emptyCharWidth}px`, height: `${baseCharPixelHeight}px`, marginRight: `${effectiveSpacing}px` }} />;
+                      const cachedCharEntry = bitmapCharCache.get(char); 
+
+                      if (!cachedCharEntry || !cachedCharEntry.canvas) {
+                        const emptyCharWidth = (char === ' ' && cachedCharEntry && cachedCharEntry.canvas) ? cachedCharEntry.canvas.width * bitmapZoom : 0;
+                        return <div key={`${lineIndex}-${segIdx}-char${charIndex}`} style={{ width: `${emptyCharWidth}px`, height: `${baseCharPixelHeight}px`, marginRight: `${effectiveSpacing}px` }} />;
                       }
                       
-                      const finalCachedCanvas = cachedCharData.canvas;
-                      const dataURL = cachedCharData.dataURL;
+                      let canvasToRenderFrom: HTMLCanvasElement = cachedCharEntry.canvas;
+                      let finalDataURL = cachedCharEntry.dataURL; 
 
-                      if (!dataURL) { 
-                          return <span key={charIndex} style={{width: `${settings.bitmapFont.charWidth * bitmapZoom}px`, height: `${baseCharPixelHeight}px`, marginRight: `${effectiveSpacing}px`}}>{char === ' ' ? '\u00A0' : '?'}</span>;
+                      const { enableTintColor, color: globalBitmapTintColor } = settings.bitmapFont;
+                      const tintToApply = segment.color || (enableTintColor ? globalBitmapTintColor : null);
+
+                      if (tintToApply && canvasToRenderFrom.width > 0 && canvasToRenderFrom.height > 0) {
+                        const tempTintCanvas = document.createElement('canvas');
+                        tempTintCanvas.width = canvasToRenderFrom.width;
+                        tempTintCanvas.height = canvasToRenderFrom.height;
+                        const tempCtx = tempTintCanvas.getContext('2d');
+
+                        if (tempCtx) {
+                          tempCtx.drawImage(canvasToRenderFrom, 0, 0); 
+                          tempCtx.globalCompositeOperation = 'source-in';
+                          tempCtx.fillStyle = tintToApply;
+                          tempCtx.fillRect(0, 0, tempTintCanvas.width, tempTintCanvas.height);
+                          finalDataURL = tempTintCanvas.toDataURL(); 
+                        }
                       }
-
-                      const displayWidth = finalCachedCanvas.width * bitmapZoom; 
-                      const displayHeight = finalCachedCanvas.height * bitmapZoom; 
-                      if (displayWidth === 0 && char !== ' ') return <div key={charIndex} style={{ width: 0, height: `${baseCharPixelHeight}px`, marginRight: `${effectiveSpacing}px` }} />;
                       
-                      return <img key={charIndex} src={dataURL} alt={char} style={{ width: `${displayWidth}px`, height: `${displayHeight}px`, marginRight: `${effectiveSpacing}px`, imageRendering: 'pixelated' }} />;
+                      const displayWidth = canvasToRenderFrom.width * bitmapZoom; 
+                      const displayHeight = canvasToRenderFrom.height * bitmapZoom; 
+                      if (displayWidth === 0 && char !== ' ') return <div key={`${lineIndex}-${segIdx}-char${charIndex}`} style={{ width: 0, height: `${baseCharPixelHeight}px`, marginRight: `${effectiveSpacing}px` }} />;
+                      
+                      return <img key={`${lineIndex}-${segIdx}-char${charIndex}`} src={finalDataURL} alt={char} style={{ width: `${displayWidth}px`, height: `${displayHeight}px`, marginRight: `${effectiveSpacing}px`, imageRendering: 'pixelated' }} />;
                     });
                   })}
                 </div>
@@ -687,17 +690,15 @@ const PreviewAreaInner = forwardRef<HTMLDivElement, PreviewAreaProps>(({
 
     const measurableDivStyle: CSSProperties = {
         ...textTransformStyle,
-        display: 'inline-block', // Important for scrollWidth/Height calculation based on content
+        display: 'inline-block', 
         padding: `${effectivePaddingTop}px ${effectivePaddingRight}px ${effectivePaddingBottom}px ${effectivePaddingLeft}px`,
         boxSizing: 'border-box',
     };
     
-    // If using pre-wrap due to horizontal breakLine margins, constrain the width of the text container
-    // for wrapping to occur. The container itself takes full preview width, padding makes inner space.
     if (useHorizontalBreakLine && settings.previewWidth > 0) {
         measurableDivStyle.width = `${settings.previewWidth}px`; 
     } else {
-        measurableDivStyle.width = 'auto'; // Let inline-block size it
+        measurableDivStyle.width = 'auto'; 
     }
 
 
@@ -717,66 +718,44 @@ const PreviewAreaInner = forwardRef<HTMLDivElement, PreviewAreaProps>(({
         baseTextSpanStyle.wordBreak = 'normal';
     }
     
-    const linesOfSystemSegments: (FinalTextSegment | FinalImageSegment)[][] = [];
-    let currentSystemLine: (FinalTextSegment | FinalImageSegment)[] = [];
-
-    finalDisplaySegments.forEach(segment => {
-      if (segment.type === 'text') {
-        const textLines = trimLeadingAndTrailingEmptyLines(segment.text).split('\n');
-        textLines.forEach((lineText, i) => {
-          if (lineText || textLines.length === 1 && currentSystemLine.length === 0 && i === 0 && segment.text.trim() === '') { 
-             currentSystemLine.push({ ...segment, text: lineText });
-          } else if (lineText) {
-             currentSystemLine.push({ ...segment, text: lineText });
-          }
-
-          if (i < textLines.length - 1) {
-            linesOfSystemSegments.push(currentSystemLine);
-            currentSystemLine = [];
-          }
-        });
-      } else { 
-        currentSystemLine.push(segment);
-      }
-    });
-    if (currentSystemLine.length > 0) linesOfSystemSegments.push(currentSystemLine);
-    if (finalDisplaySegments.length === 0 && settings.text.trim() === '') { 
-        linesOfSystemSegments.push([{type: 'text', text: '', color: settings.systemFont.color}]);
-    }
-
-
     return (
       <div style={{ width: '100%', height: '100%', display: 'flex', alignItems: alignItems, justifyContent: settings.systemFont.textAlignHorizontal === 'center' ? 'center' : settings.systemFont.textAlignHorizontal === 'right' ? 'flex-end' : 'flex-start', padding: '8px', boxSizing: 'border-box' }} onMouseDown={handleMouseDown} role={(isReadOnlyPreview || simplifiedRender) ? undefined : "application"} aria-roledescription={(isReadOnlyPreview || simplifiedRender) ? undefined : "draggable text area"} >
         <div ref={textContainerRef} style={measurableDivStyle}>
-            <div style={{...baseTextSpanStyle, display: 'block' }}> {/* This inner div may not be necessary if measurableDivStyle has display:block */}
-            {linesOfSystemSegments.map((lineSegments, lineIdx) => (
-              <div key={lineIdx} style={{ minHeight: `${settings.systemFont.fontSize * settings.globalLineHeightFactor}px` }}>
-                {lineSegments.map((segment, segIdx) => {
+            <div style={{...baseTextSpanStyle, display: 'block' }}>
+            {linesOfSegments.map((lineContentSegments, lineIdx) => {
+              const isLineVisuallyEmpty = lineContentSegments.every(seg => seg.type === 'text' && seg.text.trim() === '');
+              if (isLineVisuallyEmpty) {
+                  return <div key={lineIdx} style={{ height: '0px', overflow: 'hidden' }} aria-hidden="true" />;
+              }
+              
+              return (
+              <div key={lineIdx} style={{ minHeight: `${settings.systemFont.fontSize * settings.globalLineHeightFactor}px`, display: 'flex', flexWrap: 'nowrap', alignItems: 'baseline' }}>
+                {lineContentSegments.map((segment, segIdx) => {
                   if (segment.type === 'image') {
                     return <img key={`${lineIdx}-${segIdx}-img`} src={segment.imageUrl} alt={segment.altText} style={{ width: `${segment.width}px`, height: `${segment.height}px`, display: 'inline-block', verticalAlign: 'middle', margin: '0 1px', imageRendering: 'pixelated' }} />;
                   }
                   
-                  // Text segment with potential space override
                   const { spaceWidthOverride, color: defaultSysFontColor } = settings.systemFont;
                   const segmentColor = segment.color || defaultSysFontColor;
+                  const textToRender = segment.text; 
 
-                  if (spaceWidthOverride && spaceWidthOverride > 0) {
-                      const parts = segment.text.split(' '); // Split by single space
-                      return parts.map((word, wordIdx) => (
-                          <React.Fragment key={`${lineIdx}-${segIdx}-word${wordIdx}`}>
-                              <span style={{ color: segmentColor }}>{word}</span>
-                              {wordIdx < parts.length - 1 && ( // Add a custom space after each word except the last
-                                  <span style={{ display: 'inline-block', width: `${spaceWidthOverride}px`}} aria-hidden="true">{'\u00A0'}</span>
-                              )}
-                          </React.Fragment>
-                      ));
+                  if (spaceWidthOverride && spaceWidthOverride > 0 && textToRender.includes(' ')) {
+                      const parts = textToRender.split(/(\s+)/); 
+                      return parts.map((part, partIdx) => {
+                          if (part.match(/^\s+$/)) { 
+                              return part.split('').map((spaceChar, spaceIdx) => (
+                                   <span key={`${lineIdx}-${segIdx}-part${partIdx}-space${spaceIdx}`} style={{ display: 'inline-block', width: `${spaceWidthOverride}px`}} aria-hidden="true">{'\u00A0'}</span>
+                              ));
+                          }
+                          return <span key={`${lineIdx}-${segIdx}-part${partIdx}-text`} style={{ color: segmentColor }}>{part}</span>;
+                      });
                   } else {
-                      // Original rendering for system font text segment
-                      return <span key={`${lineIdx}-${segIdx}-text`} style={{ color: segmentColor }}>{segment.text === '' && lineSegments.length === 1 ? '\u00A0' : segment.text }</span>;
+                      return <span key={`${lineIdx}-${segIdx}-text`} style={{ color: segmentColor }}>{textToRender}</span>;
                   }
                 })}
               </div>
-            ))}
+            );
+            })}
             </div>
         </div>
       </div>
@@ -844,7 +823,7 @@ const PreviewAreaInner = forwardRef<HTMLDivElement, PreviewAreaProps>(({
           backgroundColor: previewBoxBackgroundColor, 
           backgroundImage: currentBackgroundImage ? `url(${currentBackgroundImage})` : 'none',
           backgroundSize: 'cover', backgroundPosition: 'center', overflow: 'hidden',
-          imageRendering: 'pixelated', // Apply to background images
+          imageRendering: 'pixelated', 
         }}
       >
         {!isReadOnlyPreview && !simplifiedRender && guideLines}
