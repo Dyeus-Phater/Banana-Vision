@@ -231,9 +231,6 @@ type NavigationTabKey = 'scripts' | 'blocks';
 const ControlsPanel: React.FC<ControlsPanelProps> = (props) => {
   const {
     settings, onSettingsChange, onNestedSettingsChange,
-    // Note: other props are accessed via `props` directly in getPanelSectionsConfig's `content`
-    // to ensure memoization works correctly with the callback.
-    // However, some frequently used outside that callback are destructured here for convenience.
     mainScripts, activeMainScriptId, 
     loadedCustomFontName, 
     overflowSettingsPanelOpen, onToggleOverflowSettingsPanel,
@@ -248,7 +245,6 @@ const ControlsPanel: React.FC<ControlsPanelProps> = (props) => {
   const [editingColorTag, setEditingColorTag] = useState<CustomColorTag | Omit<CustomColorTag, 'id'>>(DEFAULT_CUSTOM_COLOR_TAG);
   const [editingColorTagId, setEditingColorTagId] = useState<string | null>(null);
 
-  
   const [isEditingImageTag, setIsEditingImageTag] = useState<boolean>(false);
   const [editingImageTagFields, setEditingImageTagFields] = useState<Omit<ImageTag, 'id' | 'imageUrl'> & { imageUrl?: string }>(DEFAULT_IMAGE_TAG);
   const [editingImageTagId, setEditingImageTagId] = useState<string | null>(null);
@@ -257,20 +253,43 @@ const ControlsPanel: React.FC<ControlsPanelProps> = (props) => {
 
   const [activeNavigationTab, setActiveNavigationTab] = useState<NavigationTabKey>('scripts');
 
+  // State for block separators input
+  const [blockSeparatorsInputText, setBlockSeparatorsInputText] = useState<string>(
+    () => settings.blockSeparators.join(',')
+  );
 
+  // Effect to update local input string when settings.blockSeparators prop changes
+  useEffect(() => {
+    const newCanonicalText = settings.blockSeparators.join(',');
+    if (blockSeparatorsInputText !== newCanonicalText) {
+      setBlockSeparatorsInputText(newCanonicalText);
+    }
+  }, [settings.blockSeparators]);
+
+
+  const handleBlockSeparatorsInputChange = (e: React.ChangeEvent<HTMLInputElement>) => {
+    setBlockSeparatorsInputText(e.target.value);
+  };
+
+  const handleBlockSeparatorsInputBlur = () => {
+    const newSeparators = blockSeparatorsInputText
+      .split(',')
+      .map(s => s.trim())
+      .filter(s => s.length > 0);
+    
+    onSettingsChange('blockSeparators', newSeparators);
+    // Normalize the input field's text after processing
+    setBlockSeparatorsInputText(newSeparators.join(','));
+  };
   
   useEffect(() => {
-    
     if (!isEditingImageTag && editingImageTagPreviewUrl) {
         URL.revokeObjectURL(editingImageTagPreviewUrl);
         setEditingImageTagPreviewUrl(null);
     }
-
-    
     return () => {
         if (editingImageTagPreviewUrl) {
             URL.revokeObjectURL(editingImageTagPreviewUrl);
-            
         }
     };
   }, [isEditingImageTag, editingImageTagPreviewUrl]);
@@ -340,13 +359,11 @@ const ControlsPanel: React.FC<ControlsPanelProps> = (props) => {
       
       props.onLoadCustomFont(file, cssName);
     } else {
-      
       if (loadedCustomFontName && settings.systemFont.fontFamily !== loadedCustomFontName) {
         onNestedSettingsChange('systemFont', 'fontFamily', loadedCustomFontName);
       } else if (!loadedCustomFontName) {
         onNestedSettingsChange('systemFont', 'fontFamily', AVAILABLE_FONTS[0]);
       }
-      
     }
   };
 
@@ -355,7 +372,6 @@ const ControlsPanel: React.FC<ControlsPanelProps> = (props) => {
     onNestedSettingsChange('systemFont', 'fontFamily', newFontFamily);
 
     if (newFontFamily === "Custom...") {
-      
       setTimeout(() => {
         customFontFilePickerRef.current?.click();
       }, 0);
@@ -369,8 +385,6 @@ const ControlsPanel: React.FC<ControlsPanelProps> = (props) => {
   const activeMainScriptName = mainScripts.find(s => s.id === activeMainScriptId)?.name || null;
   const isFindReplaceDisabled = mainScripts.length === 0;
 
-
-  
   const handleStartAddNewColorTag = () => {
     setEditingColorTag(DEFAULT_CUSTOM_COLOR_TAG);
     setEditingColorTagId(null);
@@ -428,7 +442,6 @@ const ControlsPanel: React.FC<ControlsPanelProps> = (props) => {
     setEditingColorTag(prev => ({ ...prev, [key]: value }));
   };
 
-  
   const handleStartAddNewImageTag = () => {
     setEditingImageTagFields(DEFAULT_IMAGE_TAG);
     setEditingImageTagId(null);
@@ -555,10 +568,6 @@ const ControlsPanel: React.FC<ControlsPanelProps> = (props) => {
   const handleTagPatternsChange = useCallback((value: string) => {
     onSettingsChange('tagPatternsToHide', value.split('\n'));
   }, [onSettingsChange]);
-
-  const handleBlockSeparatorsChange = useCallback((value: string) => {
-    onSettingsChange('blockSeparators', value.split(',').map(s => s.trim()).filter(s => s.length > 0));
-  }, [onSettingsChange]);
   
   const handleCustomLineBreakTagsChange = useCallback((value: string) => {
     onSettingsChange('customLineBreakTags', value.split('\n'));
@@ -668,8 +677,9 @@ const ControlsPanel: React.FC<ControlsPanelProps> = (props) => {
                     <LabelInputContainer label="Block Separators (comma-separated)" htmlFor="blockSeparators" disabled={!settings.useCustomBlockSeparator || settings.treatEachLineAsBlock || settings.useEmptyLinesAsSeparator}>
                         <TextInput 
                             id="blockSeparators" 
-                            value={settings.blockSeparators.join(',')} 
-                            onChange={(e) => handleBlockSeparatorsChange(e.target.value)} 
+                            value={blockSeparatorsInputText} 
+                            onChange={handleBlockSeparatorsInputChange}
+                            onBlur={handleBlockSeparatorsInputBlur}
                             placeholder="e.g. <PAGE>,[END]"
                             disabled={!settings.useCustomBlockSeparator || settings.treatEachLineAsBlock || settings.useEmptyLinesAsSeparator}
                         />
@@ -1206,23 +1216,23 @@ const ControlsPanel: React.FC<ControlsPanelProps> = (props) => {
     isEditingColorTag, editingColorTag, editingColorTagId,
     isEditingImageTag, editingImageTagFields, editingImageTagId, editingImageTagFile, editingImageTagPreviewUrl,
     handlePrimaryBgImageUpload, handleSecondaryBgImageUpload, handleBitmapFontImageUpload,
-    handleTagPatternsChange, handleBlockSeparatorsChange, handleCustomLineBreakTagsChange, handleFontFamilyChange,
+    handleTagPatternsChange, handleCustomLineBreakTagsChange, handleFontFamilyChange,
     handlePixelMarginChange, 
     customFontFilePickerRef,
-    activeNavigationTab, // Added dependency for tab state
-    // Ensure all props accessed in content callbacks are listed or covered by `props` if `getPanelSectionsConfig` is further optimized
-    // For now, this relies on `currentProps` (which is `props`) being passed into `getPanelSectionsConfig`.
+    activeNavigationTab, 
+    blockSeparatorsInputText, // Add new state to dependency list for getPanelSectionsConfig
+    handleBlockSeparatorsInputChange, // Add new handler
+    handleBlockSeparatorsInputBlur,   // Add new handler
     props 
   ]);
 
 
-  const basePanelSections = useMemo(() => getPanelSectionsConfig(props), [props, activeNavigationTab, activeMainScriptName]); // Added activeNavigationTab to dependencies
+  const basePanelSections = useMemo(() => getPanelSectionsConfig(props), [props, activeNavigationTab, activeMainScriptName, blockSeparatorsInputText]); // Added blockSeparatorsInputText
   const [sectionOrder, setSectionOrder] = useState<string[]>(() => basePanelSections.map((s: PanelSectionItem) => s.id));
   const [openSections, setOpenSections] = useState<Record<string, boolean>>({});
   const [draggingItemIndex, setDraggingItemIndex] = useState<number | null>(null);
   const [dragOverItemIndex, setDragOverItemIndex] = useState<number | null>(null);
 
-  
   useEffect(() => {
     const newIds = basePanelSections.map((s: PanelSectionItem) => s.id);
     setSectionOrder(prevOrder => {
@@ -1232,7 +1242,6 @@ const ControlsPanel: React.FC<ControlsPanelProps> = (props) => {
     });
   }, [basePanelSections]);
 
-  
   const panelSections = useMemo((): PanelSectionItem[] => {
     return sectionOrder.map((id: string) => basePanelSections.find((s: PanelSectionItem) => s.id === id)).filter(Boolean) as PanelSectionItem[];
   }, [basePanelSections, sectionOrder]);
