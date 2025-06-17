@@ -66,7 +66,8 @@ export interface ScriptFile {
   blocks: Block[];
   rawText: string; 
   parsedWithCustomSeparators: boolean; 
-  parsedWithLineAsBlock: boolean; // New: True if script was parsed with each line as a block
+  parsedWithLineAsBlock: boolean; 
+  parsedWithEmptyLinesSeparator: boolean; // New: True if script was parsed with empty lines as separator
 }
 
 export interface TransformSettings {
@@ -130,7 +131,8 @@ export interface AppSettings {
   currentFontType: 'system' | 'bitmap';
   useCustomBlockSeparator: boolean; 
   blockSeparators: string[]; 
-  treatEachLineAsBlock: boolean; // New: Option to treat each line as a block
+  treatEachLineAsBlock: boolean; 
+  useEmptyLinesAsSeparator: boolean; // New setting
   hideTagsInPreview: boolean;
   tagPatternsToHide: string[];
   customColorTags: CustomColorTag[]; 

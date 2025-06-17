@@ -138,6 +138,9 @@ export const importSettingsFromJson = (file: File): Promise<{ appSettings: AppSe
           treatEachLineAsBlock: typeof importedAppSettings.treatEachLineAsBlock === 'boolean'
               ? importedAppSettings.treatEachLineAsBlock
               : DEFAULT_SETTINGS.treatEachLineAsBlock,
+          useEmptyLinesAsSeparator: typeof importedAppSettings.useEmptyLinesAsSeparator === 'boolean'
+              ? importedAppSettings.useEmptyLinesAsSeparator
+              : DEFAULT_SETTINGS.useEmptyLinesAsSeparator,
         };
 
         const validatedGitHubSettings: GitHubSettings = {

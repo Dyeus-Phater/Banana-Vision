@@ -583,6 +583,7 @@ const ControlsPanel: React.FC<ControlsPanelProps> = (props) => {
         onSettingsChange('treatEachLineAsBlock', checked);
         if (checked) {
             onSettingsChange('useCustomBlockSeparator', false);
+            onSettingsChange('useEmptyLinesAsSeparator', false);
         }
     };
 
@@ -590,6 +591,15 @@ const ControlsPanel: React.FC<ControlsPanelProps> = (props) => {
         onSettingsChange('useCustomBlockSeparator', checked);
         if (checked) {
             onSettingsChange('treatEachLineAsBlock', false);
+            onSettingsChange('useEmptyLinesAsSeparator', false);
+        }
+    };
+    
+    const handleToggleUseEmptyLinesAsSeparator = (checked: boolean) => {
+        onSettingsChange('useEmptyLinesAsSeparator', checked);
+        if (checked) {
+            onSettingsChange('treatEachLineAsBlock', false);
+            onSettingsChange('useCustomBlockSeparator', false);
         }
     };
 
@@ -621,37 +631,50 @@ const ControlsPanel: React.FC<ControlsPanelProps> = (props) => {
               )}
             </div>
             
-            <div className="mt-2 space-y-1">
-              <LabelInputContainer label="Treat each line as a block (for new uploads)" htmlFor="treatEachLineAsBlock" inline>
-                  <input 
-                      type="checkbox" 
-                      id="treatEachLineAsBlock" 
-                      checked={settings.treatEachLineAsBlock} 
-                      onChange={(e) => handleToggleTreatEachLineAsBlock(e.target.checked)}
-                      className="h-5 w-5 text-[var(--bv-accent-primary)] border-[var(--bv-input-border)] rounded focus:ring-[var(--bv-input-focus-ring)]"
-                  />
-              </LabelInputContainer>
+             <div className="mt-2 space-y-1">
+                <LabelInputContainer label="Treat each line as a block" htmlFor="treatEachLineAsBlock" inline disabled={settings.useCustomBlockSeparator || settings.useEmptyLinesAsSeparator}>
+                    <input 
+                        type="checkbox" 
+                        id="treatEachLineAsBlock" 
+                        checked={settings.treatEachLineAsBlock} 
+                        onChange={(e) => handleToggleTreatEachLineAsBlock(e.target.checked)}
+                        disabled={settings.useCustomBlockSeparator || settings.useEmptyLinesAsSeparator}
+                        className="h-5 w-5 text-[var(--bv-accent-primary)] border-[var(--bv-input-border)] rounded focus:ring-[var(--bv-input-focus-ring)]"
+                    />
+                </LabelInputContainer>
+                
+                <LabelInputContainer label="Use Empty Lines as Separators" htmlFor="useEmptyLinesAsSeparator" inline disabled={settings.treatEachLineAsBlock || settings.useCustomBlockSeparator} subText="One or more empty lines separate blocks.">
+                    <input 
+                        type="checkbox" 
+                        id="useEmptyLinesAsSeparator" 
+                        checked={settings.useEmptyLinesAsSeparator} 
+                        onChange={(e) => handleToggleUseEmptyLinesAsSeparator(e.target.checked)}
+                        disabled={settings.treatEachLineAsBlock || settings.useCustomBlockSeparator}
+                        className="h-5 w-5 text-[var(--bv-accent-primary)] border-[var(--bv-input-border)] rounded focus:ring-[var(--bv-input-focus-ring)]"
+                    />
+                </LabelInputContainer>
 
-              <LabelInputContainer label="Use Custom Block Separators (for new uploads)" htmlFor="useCustomBlockSeparator" inline disabled={settings.treatEachLineAsBlock}>
-                  <input 
-                      type="checkbox" 
-                      id="useCustomBlockSeparator" 
-                      checked={settings.useCustomBlockSeparator} 
-                      onChange={(e) => handleToggleUseCustomBlockSeparator(e.target.checked)}
-                      disabled={settings.treatEachLineAsBlock}
-                      className="h-5 w-5 text-[var(--bv-accent-primary)] border-[var(--bv-input-border)] rounded focus:ring-[var(--bv-input-focus-ring)]" 
-                  />
-              </LabelInputContainer>
-              {settings.useCustomBlockSeparator && !settings.treatEachLineAsBlock && (
-                  <LabelInputContainer label="Block Separators (comma-separated)" htmlFor="blockSeparators">
-                      <TextInput 
-                          id="blockSeparators" 
-                          value={settings.blockSeparators.join(',')} 
-                          onChange={(e) => handleBlockSeparatorsChange(e.target.value)} 
-                          placeholder="e.g. <PAGE>,[END]" 
-                      />
-                  </LabelInputContainer>
-              )}
+                <LabelInputContainer label="Use Custom Block Separators" htmlFor="useCustomBlockSeparator" inline disabled={settings.treatEachLineAsBlock || settings.useEmptyLinesAsSeparator}>
+                    <input 
+                        type="checkbox" 
+                        id="useCustomBlockSeparator" 
+                        checked={settings.useCustomBlockSeparator} 
+                        onChange={(e) => handleToggleUseCustomBlockSeparator(e.target.checked)}
+                        disabled={settings.treatEachLineAsBlock || settings.useEmptyLinesAsSeparator}
+                        className="h-5 w-5 text-[var(--bv-accent-primary)] border-[var(--bv-input-border)] rounded focus:ring-[var(--bv-input-focus-ring)]" 
+                    />
+                </LabelInputContainer>
+                {settings.useCustomBlockSeparator && (
+                    <LabelInputContainer label="Block Separators (comma-separated)" htmlFor="blockSeparators" disabled={!settings.useCustomBlockSeparator || settings.treatEachLineAsBlock || settings.useEmptyLinesAsSeparator}>
+                        <TextInput 
+                            id="blockSeparators" 
+                            value={settings.blockSeparators.join(',')} 
+                            onChange={(e) => handleBlockSeparatorsChange(e.target.value)} 
+                            placeholder="e.g. <PAGE>,[END]"
+                            disabled={!settings.useCustomBlockSeparator || settings.treatEachLineAsBlock || settings.useEmptyLinesAsSeparator}
+                        />
+                    </LabelInputContainer>
+                )}
             </div>
 
             
