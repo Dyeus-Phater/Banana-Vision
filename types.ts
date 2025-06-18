@@ -24,6 +24,8 @@ export interface SystemFontSettings {
   textAlignHorizontal: 'left' | 'center' | 'right';
   textAlignVertical: 'top' | 'middle' | 'bottom';
   spaceWidthOverride?: number; // New: Custom width for space character, 0 for auto/default
+  customFontBase64?: string; // New: Base64 encoded custom font data
+  customFontFileName?: string; // New: Original file name of the custom font
 }
 
 export interface BitmapFontSettings {

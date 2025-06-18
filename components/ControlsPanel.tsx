@@ -1,6 +1,4 @@
 
-
-
 import React, {useState, useEffect, useCallback, useMemo, useRef} from 'react';
 import { AppSettings, Block, NestedAppSettingsObjectKeys, ScriptFile, GitHubSettings, ThemeKey, CustomColorTag, ImageTag, MarginSetting } from '../types';
 import { FindScope, FindResultSummaryItem } from '../App';
@@ -36,7 +34,7 @@ interface ControlsPanelProps {
   onShowOnlyOverflowingBlocksChange: (show: boolean) => void;
   displayedBlocksForView: Block[];
   onLoadCustomFont: (file: File, desiredCssName: string) => void;
-  loadedCustomFontName: string | null;
+  loadedCustomFontName: string | null; // This now primarily indicates if a custom font *style* is active
   overflowSettingsPanelOpen: boolean;
   onToggleOverflowSettingsPanel: () => void;
   originalScripts: ScriptFile[];
@@ -256,12 +254,10 @@ const ControlsPanel: React.FC<ControlsPanelProps> = (props) => {
 
   const [activeNavigationTab, setActiveNavigationTab] = useState<NavigationTabKey>('scripts');
 
-  // State for block separators input
   const [blockSeparatorsInputText, setBlockSeparatorsInputText] = useState<string>(
     () => settings.blockSeparators.join(',')
   );
 
-  // Effect to update local input string when settings.blockSeparators prop changes
   useEffect(() => {
     const newCanonicalText = settings.blockSeparators.join(',');
     if (blockSeparatorsInputText !== newCanonicalText) {
@@ -281,7 +277,6 @@ const ControlsPanel: React.FC<ControlsPanelProps> = (props) => {
       .filter(s => s.length > 0);
     
     onSettingsChange('blockSeparators', newSeparators);
-    // Normalize the input field's text after processing
     setBlockSeparatorsInputText(newSeparators.join(','));
   };
   
@@ -361,17 +356,18 @@ const ControlsPanel: React.FC<ControlsPanelProps> = (props) => {
       }
       
       props.onLoadCustomFont(file, cssName);
-    } else {
-      if (loadedCustomFontName && settings.systemFont.fontFamily !== loadedCustomFontName) {
-        onNestedSettingsChange('systemFont', 'fontFamily', loadedCustomFontName);
-      } else if (!loadedCustomFontName) {
-        onNestedSettingsChange('systemFont', 'fontFamily', AVAILABLE_FONTS[0]);
-      }
     }
   };
 
   const handleFontFamilyChange = useCallback((e: React.ChangeEvent<HTMLSelectElement>) => {
     const newFontFamily = e.target.value;
+    
+    if (newFontFamily !== "Custom..." && newFontFamily !== loadedCustomFontName) {
+      if (settings.systemFont.customFontBase64 || settings.systemFont.customFontFileName) {
+        onNestedSettingsChange('systemFont', 'customFontBase64', undefined);
+        onNestedSettingsChange('systemFont', 'customFontFileName', undefined);
+      }
+    }
     onNestedSettingsChange('systemFont', 'fontFamily', newFontFamily);
 
     if (newFontFamily === "Custom...") {
@@ -379,11 +375,16 @@ const ControlsPanel: React.FC<ControlsPanelProps> = (props) => {
         customFontFilePickerRef.current?.click();
       }, 0);
     }
-  }, [onNestedSettingsChange, customFontFilePickerRef]);
+  }, [onNestedSettingsChange, loadedCustomFontName, settings.systemFont.customFontBase64, settings.systemFont.customFontFileName]);
+
+  const displayCustomFontName = settings.systemFont.customFontFileName 
+    ? settings.systemFont.customFontFileName.split('/').pop()?.split('\\').pop()
+    : loadedCustomFontName; 
 
   const showCustomFontLoadUI = settings.currentFontType === 'system' &&
-                               (settings.systemFont.fontFamily === "Custom..." ||
-                               (loadedCustomFontName && settings.systemFont.fontFamily === loadedCustomFontName));
+                               (settings.systemFont.fontFamily === "Custom..." || 
+                                (settings.systemFont.customFontBase64 && settings.systemFont.customFontFileName) || 
+                                (loadedCustomFontName && settings.systemFont.fontFamily === loadedCustomFontName));
 
   const activeMainScriptName = mainScripts.find(s => s.id === activeMainScriptId)?.name || null;
   const isFindReplaceDisabled = mainScripts.length === 0;
@@ -632,7 +633,6 @@ const ControlsPanel: React.FC<ControlsPanelProps> = (props) => {
                 Clear All Main Scripts ({restOfProps.mainScripts.length} loaded)
               </Button>
             )}
-             {/* GitHub load buttons for Main Scripts */}
              <div className="mt-2 grid grid-cols-2 gap-2">
                 <Button 
                     onClick={restOfProps.onLoadFileFromGitHub} 
@@ -666,7 +666,6 @@ const ControlsPanel: React.FC<ControlsPanelProps> = (props) => {
                   Comparing with: <span className="font-semibold">{restOfProps.matchedOriginalScriptName}</span>
                 </p>
               )}
-              {/* GitHub load buttons for Original Scripts */}
               <div className="mt-2 grid grid-cols-2 gap-2">
                 <Button 
                     onClick={restOfProps.onLoadFileFromGitHubForOriginal} 
@@ -991,14 +990,16 @@ const ControlsPanel: React.FC<ControlsPanelProps> = (props) => {
                 <LabelInputContainer label="Font Family" htmlFor="fontFamily">
                   <SelectInput id="fontFamily" value={settings.systemFont.fontFamily} onChange={handleFontFamilyChange}>
                     {AVAILABLE_FONTS.map(font => <option key={font} value={font}>{font.split(',')[0]}</option>)}
-                    {loadedCustomFontName && !AVAILABLE_FONTS.includes(loadedCustomFontName) && loadedCustomFontName !== "Custom..." && (<option value={loadedCustomFontName}>{loadedCustomFontName}</option>)}
+                    {displayCustomFontName && !AVAILABLE_FONTS.includes(displayCustomFontName) && displayCustomFontName !== "Custom..." && (
+                      <option value={displayCustomFontName}>{displayCustomFontName}</option>
+                    )}
                     <option value="Custom...">Custom (Load from file)...</option>
                   </SelectInput>
                 </LabelInputContainer>
                 {showCustomFontLoadUI && (
                   <div className="mt-2 p-2 border border-[var(--bv-border-color)] rounded-md space-y-2">
                      <LabelInputContainer 
-                        label={loadedCustomFontName && settings.systemFont.fontFamily === loadedCustomFontName ? `Loaded: ${loadedCustomFontName}` : "Custom Font"} 
+                        label={displayCustomFontName ? `Loaded: ${displayCustomFontName}` : "Custom Font"} 
                         htmlFor="customFontFileInput"
                     >
                         <FileInput
@@ -1007,8 +1008,8 @@ const ControlsPanel: React.FC<ControlsPanelProps> = (props) => {
                             accept=".ttf,.otf,.woff,.woff2,font/ttf,font/otf,font/woff,font/woff2"
                             onChange={handleFontFileSelected}
                             buttonLabel={
-                                loadedCustomFontName && settings.systemFont.fontFamily === loadedCustomFontName 
-                                ? `Change Font... (${loadedCustomFontName.substring(0,15)}${loadedCustomFontName.length > 15 ? '...' : ''})` 
+                                displayCustomFontName 
+                                ? `Change Font... (${displayCustomFontName.substring(0,15)}${displayCustomFontName.length > 15 ? '...' : ''})` 
                                 : "Choose Font File..."
                             }
                         />
@@ -1043,7 +1044,6 @@ const ControlsPanel: React.FC<ControlsPanelProps> = (props) => {
                 <LabelInputContainer label="Enabled" htmlFor="bitmapEnabled" inline><input type="checkbox" id="bitmapEnabled" checked={settings.bitmapFont.enabled} onChange={(e) => onNestedSettingsChange('bitmapFont', 'enabled', e.target.checked)} className="h-5 w-5 text-[var(--bv-accent-primary)] border-[var(--bv-input-border)] rounded focus:ring-[var(--bv-input-focus-ring)]" /></LabelInputContainer>
               </div>
             )}
-            {/* Effects moved here */}
             <div className="mt-4 pt-4 border-t border-[var(--bv-border-color-light)]">
               <h4 className="text-md font-semibold mb-1 text-[var(--bv-accent-primary)]">Effects</h4>
               <LabelInputContainer label="Shadow Enabled" htmlFor="shadowEnabled" inline><input type="checkbox" id="shadowEnabled" checked={settings.shadowEffect.enabled} onChange={(e) => onNestedSettingsChange('shadowEffect', 'enabled', e.target.checked)} className="h-5 w-5 text-[var(--bv-accent-primary)] border-[var(--bv-input-border)] rounded focus:ring-[var(--bv-input-focus-ring)]" /></LabelInputContainer>
@@ -1139,7 +1139,6 @@ const ControlsPanel: React.FC<ControlsPanelProps> = (props) => {
                     <Button onClick={handleSaveImageTag} className="flex-1">Save Image Tag</Button>
                     <Button onClick={() => {
                         setIsEditingImageTag(false);
-                        
                         setEditingImageTagFile(null); 
                       }} 
                       className="flex-1 !bg-gray-500 hover:!bg-gray-600">Cancel</Button>
@@ -1229,200 +1228,177 @@ const ControlsPanel: React.FC<ControlsPanelProps> = (props) => {
               <TextInput id="github-repo" type="text" value={restOfProps.gitHubSettings.repoFullName} onChange={(e) => restOfProps.onGitHubSettingsChange('repoFullName', e.target.value)} placeholder="e.g., your-username/your-repo" />
             </LabelInputContainer>
             <LabelInputContainer label="Branch" htmlFor="github-branch">
-              <TextInput id="github-branch" type="text" value={restOfProps.gitHubSettings.branch} onChange={(e) => restOfProps.onGitHubSettingsChange('branch', e.target.value)} placeholder="e.g., main (default if empty)" />
+              <TextInput id="github-branch" type="text" value={restOfProps.gitHubSettings.branch} onChange={(e) => restOfProps.onGitHubSettingsChange('branch', e.target.value)} placeholder="e.g., main" />
             </LabelInputContainer>
-            
-            <LabelInputContainer label="Main Script(s) File/Folder Path" htmlFor="github-filepath-main" 
-                subText="Path for loading/saving main scripts (e.g., path/to/file.txt or path/to/folder/).">
-              <TextInput id="github-filepath-main" type="text" value={restOfProps.gitHubSettings.filePath} onChange={(e) => restOfProps.onGitHubSettingsChange('filePath', e.target.value)} placeholder="e.g., main_scripts/dialogue.txt" />
+            <LabelInputContainer label="Main Script Path (file or folder)" htmlFor="github-main-path">
+                <TextInput id="github-main-path" type="text" value={restOfProps.gitHubSettings.filePath} onChange={(e) => restOfProps.onGitHubSettingsChange('filePath', e.target.value)} placeholder="e.g., scripts/main.txt or scripts/main_folder/" />
             </LabelInputContainer>
-            
-            <LabelInputContainer label="Original Script(s) File/Folder Path" htmlFor="github-filepath-original" 
-                subText="Path for loading original/reference scripts (e.g., path/to/original.txt or original_assets/dialogue/).">
-              <TextInput id="github-filepath-original" type="text" value={restOfProps.gitHubSettings.originalFilePath} onChange={(e) => restOfProps.onGitHubSettingsChange('originalFilePath', e.target.value)} placeholder="e.g., original_scripts/reference.txt" />
+            <LabelInputContainer label="Original Script Path (file or folder)" htmlFor="github-original-path">
+                <TextInput id="github-original-path" type="text" value={restOfProps.gitHubSettings.originalFilePath} onChange={(e) => restOfProps.onGitHubSettingsChange('originalFilePath', e.target.value)} placeholder="e.g., scripts/original.txt or scripts/originals_folder/" />
             </LabelInputContainer>
-
-            <div className="mt-3 pt-3 border-t border-[var(--bv-border-color-light)]">
-                <h4 className="text-md font-semibold mb-2 text-[var(--bv-text-primary)]">Main Script Operations</h4>
-                <div className="grid grid-cols-2 gap-2">
-                    <Button onClick={restOfProps.onLoadFileFromGitHub} disabled={githubMainOpsDisabled} className="!bg-green-600 hover:!bg-green-700">Load File (Main)</Button>
-                    <Button onClick={restOfProps.onLoadAllFromGitHubFolder} disabled={githubMainOpsDisabled} className="!bg-green-500 hover:!bg-green-600">Load Folder (Main)</Button>
-                    <Button onClick={restOfProps.onSaveFileToGitHub} disabled={githubMainOpsDisabled || !activeMainScriptId} className="!bg-blue-600 hover:!bg-blue-700">Save Active to Path</Button>
-                    <Button onClick={restOfProps.onSaveAllToGitHubFolder} disabled={githubMainOpsDisabled || mainScripts.length === 0} className="!bg-blue-500 hover:!bg-blue-600">Save All to Folder</Button>
-                </div>
+            <div className="mt-4 grid grid-cols-2 gap-2">
+                 <Button onClick={restOfProps.onSaveFileToGitHub} disabled={githubMainOpsDisabled || restOfProps.mainScripts.length === 0} className="!bg-blue-600 hover:!bg-blue-700">Save Active to Main Path</Button>
+                 <Button onClick={restOfProps.onSaveAllToGitHubFolder} disabled={githubMainOpsDisabled || restOfProps.mainScripts.length === 0} className="!bg-blue-500 hover:!bg-blue-600">Save All Changed to Main Folder</Button>
             </div>
-            
-            <div className="mt-3 pt-3 border-t border-[var(--bv-border-color-light)]">
-                 <h4 className="text-md font-semibold mb-2 text-[var(--bv-text-primary)]">Original Script Operations</h4>
-                <div className="grid grid-cols-2 gap-2">
-                    <Button onClick={restOfProps.onLoadFileFromGitHubForOriginal} disabled={githubOriginalOpsDisabled} className="!bg-purple-600 hover:!bg-purple-700">Load File (Original)</Button>
-                    <Button onClick={restOfProps.onLoadAllFromGitHubFolderForOriginal} disabled={githubOriginalOpsDisabled} className="!bg-purple-500 hover:!bg-purple-600">Load Folder (Original)</Button>
-                </div>
-            </div>
-
-
             {restOfProps.gitHubStatusMessage && (
-              <p className={`mt-2 text-sm ${restOfProps.gitHubStatusMessage.startsWith('Error:') ? 'text-red-600 dark:text-red-400' : 'text-[var(--bv-text-secondary)]'}`} aria-live="polite">
-                {restOfProps.gitHubStatusMessage}
-              </p>
+              <p className={`mt-2 text-xs ${restOfProps.gitHubStatusMessage.startsWith('Error:') ? 'text-red-500' : 'text-[var(--bv-text-secondary)]'}`}>{restOfProps.gitHubStatusMessage}</p>
+            )}
+            {githubBaseDisabled && !restOfProps.isGitHubLoading && (
+                 <p className="mt-2 text-xs text-[var(--bv-text-secondary)]">
+                    Provide PAT and Repository to enable GitHub operations. File/Folder paths enable specific load/save actions.
+                </p>
             )}
           </>
         )
-      }
+      },
     ];
   }, [
-    settings, onSettingsChange, onNestedSettingsChange,
-    activeMainScriptId, mainScripts, 
-    loadedCustomFontName, 
-    overflowSettingsPanelOpen,
-    activeMainScriptName, isFindReplaceDisabled, showCustomFontLoadUI,
-    gitHubSettings, 
-    isGitHubLoading, gitHubStatusMessage,
-    activeThemeKey, 
-    isEditingColorTag, editingColorTag, editingColorTagId,
-    isEditingImageTag, editingImageTagFields, editingImageTagId, editingImageTagFile, editingImageTagPreviewUrl,
-    activeNavigationTab, 
-    blockSeparatorsInputText, 
-    handlePrimaryBgImageUpload, handleSecondaryBgImageUpload, handleBitmapFontImageUpload,
-    handleTagPatternsChange, handleCustomLineBreakTagsChange, handleFontFamilyChange,
-    handlePixelMarginChange,
-    handleBlockSeparatorsInputChange, handleBlockSeparatorsInputBlur,
-    handleStartAddNewColorTag, handleStartEditColorTag, handleSaveColorTag, handleDeleteColorTag, handleToggleColorTagEnabled, handleEditingColorTagChange, setIsEditingColorTag,
-    handleStartAddNewImageTag, handleStartEditImageTag, handleSaveImageTag, handleDeleteImageTag, handleToggleImageTagEnabled, handleEditingImageTagFieldChange, handleImageTagFileSelected, setIsEditingImageTag,
-    props 
+      blockSeparatorsInputText, // For Script Management
+      handleBlockSeparatorsInputChange, handleBlockSeparatorsInputBlur,
+      handlePrimaryBgImageUpload, handleSecondaryBgImageUpload, // For Preview Area
+      activeNavigationTab, setActiveNavigationTab, // For Script & Block Navigation
+      handleFontFamilyChange, displayCustomFontName, showCustomFontLoadUI, handleFontFileSelected, // For Font Styling
+      handleBitmapFontImageUpload,
+      handleTagPatternsChange, handleCustomLineBreakTagsChange, // For Tag Handling
+      isEditingColorTag, editingColorTag, editingColorTagId, // For Custom Color Tags
+      handleStartAddNewColorTag, handleStartEditColorTag, handleSaveColorTag,
+      handleDeleteColorTag, handleToggleColorTagEnabled, handleEditingColorTagChange,
+      isEditingImageTag, editingImageTagFields, editingImageTagId, editingImageTagFile, editingImageTagPreviewUrl, // For Image Tags
+      handleStartAddNewImageTag, handleStartEditImageTag, handleSaveImageTag,
+      handleDeleteImageTag, handleToggleImageTagEnabled, handleEditingImageTagFieldChange,
+      handleImageTagFileSelected,
+      handlePixelMarginChange, // For Overflow Margins
+      props // Include all props to ensure re-creation if any prop changes
   ]);
 
-
-  const basePanelSections = useMemo(() => getPanelSectionsConfig(props), [
-    props, 
-    getPanelSectionsConfig 
-  ]);
-
-  const [sectionOrder, setSectionOrder] = useState<string[]>(() => basePanelSections.map((s: PanelSectionItem) => s.id));
-  const [openSections, setOpenSections] = useState<Record<string, boolean>>({});
-  const [draggingItemIndex, setDraggingItemIndex] = useState<number | null>(null);
-  const [dragOverItemIndex, setDragOverItemIndex] = useState<number | null>(null);
-
-  useEffect(() => {
-    const newIds = basePanelSections.map((s: PanelSectionItem) => s.id);
-    setSectionOrder(prevOrder => {
-      const validIds = prevOrder.filter((id: string) => newIds.includes(id));
-      const missingIds = newIds.filter(id => !validIds.includes(id));
-      return [...validIds, ...missingIds];
+  const [openSections, setOpenSections] = useState<Record<string, boolean>>(() => {
+    const initialConfig = getPanelSectionsConfig(props);
+    const initialOpenState: Record<string, boolean> = {};
+    initialConfig.forEach(section => {
+      initialOpenState[section.id] = section.defaultOpen ?? false;
     });
-  }, [basePanelSections]);
-
-  const panelSections = useMemo((): PanelSectionItem[] => {
-    return sectionOrder.map((id: string) => basePanelSections.find((s: PanelSectionItem) => s.id === id)).filter(Boolean) as PanelSectionItem[];
-  }, [basePanelSections, sectionOrder]);
-
-
-  useEffect(() => {
-    setOpenSections(prevOpenSections => {
-      const newOpenSectionsState = { ...prevOpenSections };
-      let hasChanges = false;
-
-      panelSections.forEach((section: PanelSectionItem) => {
-        if (section.id === 'overflow-settings-section') {
-          if (newOpenSectionsState[section.id] !== overflowSettingsPanelOpen) {
-            newOpenSectionsState[section.id] = overflowSettingsPanelOpen;
-            hasChanges = true;
-          }
-        } else {
-          if (newOpenSectionsState[section.id] === undefined) {
-            newOpenSectionsState[section.id] = section.defaultOpen !== undefined ? section.defaultOpen : true;
-            hasChanges = true;
-          }
-        }
-      });
-
-      const currentSectionIds = new Set(panelSections.map(s => s.id));
-      for (const idInState in newOpenSectionsState) {
-        if (!currentSectionIds.has(idInState)) {
-          delete newOpenSectionsState[idInState];
-          hasChanges = true;
-        }
+    // Load from localStorage
+    try {
+      const storedOpenSections = localStorage.getItem('bv_openSections');
+      if (storedOpenSections) {
+        return { ...initialOpenState, ...JSON.parse(storedOpenSections) };
       }
+    } catch (e) { console.error("Error loading open sections from localStorage", e); }
+    return initialOpenState;
+  });
 
-      return hasChanges ? newOpenSectionsState : prevOpenSections;
-    });
-  }, [panelSections, overflowSettingsPanelOpen]);
+  const [panelSectionsOrder, setPanelSectionsOrder] = useState<string[]>(() => {
+    const initialConfig = getPanelSectionsConfig(props);
+    // Load order from localStorage or default to initial config order
+    try {
+      const storedOrder = localStorage.getItem('bv_panelSectionsOrder');
+      if (storedOrder) {
+        const parsedOrder = JSON.parse(storedOrder) as string[];
+        // Validate against current sections to prevent issues with outdated stored orders
+        const currentSectionIds = new Set(initialConfig.map(s => s.id));
+        const validOrder = parsedOrder.filter(id => currentSectionIds.has(id));
+        // Add any new sections not in the stored order
+        initialConfig.forEach(s => { if (!validOrder.includes(s.id)) validOrder.push(s.id); });
+        return validOrder;
+      }
+    } catch (e) { console.error("Error loading panel sections order from localStorage", e); }
+    return initialConfig.map(s => s.id);
+  });
+
+  useEffect(() => {
+    try {
+      localStorage.setItem('bv_openSections', JSON.stringify(openSections));
+    } catch (e) { console.error("Error saving open sections to localStorage", e); }
+  }, [openSections]);
+
+  useEffect(() => {
+    try {
+      localStorage.setItem('bv_panelSectionsOrder', JSON.stringify(panelSectionsOrder));
+    } catch (e) { console.error("Error saving panel sections order to localStorage", e); }
+  }, [panelSectionsOrder]);
 
   const toggleSectionOpen = (sectionId: string) => {
-    if (sectionId === 'overflow-settings-section') {
-      onToggleOverflowSettingsPanel();
-    } else {
-      setOpenSections(prev => ({ ...prev, [sectionId]: !prev[sectionId] }));
-    }
+    setOpenSections(prev => ({ ...prev, [sectionId]: !prev[sectionId] }));
   };
 
-  const handleDragStart = (e: React.DragEvent<HTMLButtonElement>, index: number) => {
-    e.dataTransfer.effectAllowed = 'move';
-    e.dataTransfer.setData('text/plain', index.toString());
-    setDraggingItemIndex(index);
+  const [draggingItemId, setDraggingItemId] = useState<string | null>(null);
+  const [dragOverItemId, setDragOverItemId] = useState<string | null>(null);
+
+  const handleDragStart = (e: React.DragEvent<HTMLButtonElement>, sectionId: string) => {
+    setDraggingItemId(sectionId);
+    e.dataTransfer.effectAllowed = "move";
+    e.dataTransfer.setData("text/plain", sectionId); 
   };
-
-  const handleDragEnter = (index: number) => {
-    if (draggingItemIndex === null || draggingItemIndex === index) return;
-    setDragOverItemIndex(index);
-  };
-
-  const handleDragOver = (event: React.DragEvent<HTMLDivElement>) => {
-    event.preventDefault();
-  };
-
-  const handleDragLeave = (e: React.DragEvent<HTMLDivElement>) => {
-     if (e.currentTarget.contains(e.relatedTarget as Node)) {
-        return;
-    }
-    setDragOverItemIndex(null);
-  };
-
-  const handleDrop = (targetIndex: number) => {
-    if (draggingItemIndex === null || draggingItemIndex === targetIndex) {
-      setDraggingItemIndex(null);
-      setDragOverItemIndex(null);
-      return;
-    }
-
-    setSectionOrder(prevOrder => {
-      const newOrder = [...prevOrder];
-      const [draggedId] = newOrder.splice(draggingItemIndex, 1);
-      newOrder.splice(targetIndex, 0, draggedId);
-      return newOrder;
-    });
-    setDraggingItemIndex(null);
-    setDragOverItemIndex(null);
-  };
-
+  
   const handleDragEnd = () => {
-    setDraggingItemIndex(null);
-    setDragOverItemIndex(null);
+    setDraggingItemId(null);
+    setDragOverItemId(null);
+  };
+  
+  const handleDragOver = (e: React.DragEvent<HTMLDivElement>, sectionId: string) => {
+    e.preventDefault(); 
+    if (draggingItemId && draggingItemId !== sectionId) {
+      setDragOverItemId(sectionId);
+    }
   };
 
+  const handleDragEnter = (e: React.DragEvent<HTMLDivElement>, sectionId: string) => {
+    e.preventDefault();
+    if (draggingItemId && draggingItemId !== sectionId) {
+      setDragOverItemId(sectionId);
+    }
+  };
+  
+  const handleDragLeave = () => {
+    setDragOverItemId(null);
+  };
+
+  const handleDrop = (e: React.DragEvent<HTMLDivElement>, targetSectionId: string) => {
+    e.preventDefault();
+    const sourceSectionId = draggingItemId;
+    if (sourceSectionId && sourceSectionId !== targetSectionId) {
+      const newOrder = [...panelSectionsOrder];
+      const sourceIndex = newOrder.indexOf(sourceSectionId);
+      const targetIndex = newOrder.indexOf(targetSectionId);
+  
+      if (sourceIndex !== -1 && targetIndex !== -1) {
+        const [movedItem] = newOrder.splice(sourceIndex, 1);
+        newOrder.splice(targetIndex, 0, movedItem);
+        setPanelSectionsOrder(newOrder);
+      }
+    }
+    setDraggingItemId(null);
+    setDragOverItemId(null);
+  };
+
+
+  const panelSections = useMemo(() => {
+    const config = getPanelSectionsConfig(props);
+    return panelSectionsOrder.map(id => config.find(s => s.id === id)).filter(Boolean) as PanelSectionItem[];
+  }, [panelSectionsOrder, props, getPanelSectionsConfig]);
 
   return (
-    <div className="space-y-0">
-      {panelSections.map((section: PanelSectionItem, index: number) => (
+    <div className="w-full h-full overflow-y-auto pr-1 custom-scrollbar" aria-label="Controls Panel">
+      {panelSections.map((section) => (
          <DraggableSectionWrapper
             key={section.id}
-            onDragEnter={() => handleDragEnter(index)}
-            onDragOver={handleDragOver}
+            onDragEnter={(e) => handleDragEnter(e, section.id)}
+            onDragOver={(e) => handleDragOver(e, section.id)}
             onDragLeave={handleDragLeave}
-            onDrop={() => handleDrop(index)}
-            isDragging={draggingItemIndex === index}
-            isDragOver={dragOverItemIndex === index && draggingItemIndex !== null && draggingItemIndex !== index}
-        >
-          <Section
-            title={section.title}
-            isOpen={openSections[section.id] === undefined ? true : openSections[section.id]}
-            onToggle={() => toggleSectionOpen(section.id)}
-            id={section.id}
-            onDragStartButton={(e) => handleDragStart(e, index)}
-            onDragEndButton={handleDragEnd}
+            onDrop={(e) => handleDrop(e, section.id)}
+            isDragging={draggingItemId === section.id}
+            isDragOver={dragOverItemId === section.id}
           >
-            {section.content}
-          </Section>
+            <Section
+                title={section.title}
+                isOpen={openSections[section.id] ?? section.defaultOpen ?? false}
+                onToggle={() => toggleSectionOpen(section.id)}
+                id={section.id}
+                onDragStartButton={(e) => handleDragStart(e, section.id)}
+                onDragEndButton={handleDragEnd}
+            >
+              {section.content}
+            </Section>
         </DraggableSectionWrapper>
       ))}
     </div>

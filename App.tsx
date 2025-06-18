@@ -1,6 +1,8 @@
 
 
 
+
+
 import React, { useState, useCallback, useRef, useEffect, useLayoutEffect, useMemo } from 'react';
 import JSZip from 'jszip';
 import { Octokit } from '@octokit/rest';
@@ -397,6 +399,30 @@ class FileListLike implements FileList {
     };
   }
 }
+
+const getFontFormatAndMime = (fileName: string): { format: string; mime: string } => {
+  const extension = fileName.split('.').pop()?.toLowerCase();
+  switch (extension) {
+    case 'ttf': return { format: 'truetype', mime: 'font/ttf' };
+    case 'otf': return { format: 'opentype', mime: 'font/otf' };
+    case 'woff': return { format: 'woff', mime: 'font/woff' };
+    case 'woff2': return { format: 'woff2', mime: 'font/woff2' };
+    default: return { format: 'truetype', mime: 'application/octet-stream' }; // Fallback
+  }
+};
+
+const deriveCssNameFromFile = (fileName: string | undefined, defaultName: string = "Imported Custom Font"): string => {
+    if (!fileName) return defaultName;
+    let fileNamePart = fileName.split('.').slice(0, -1).join('.');
+    if (!fileNamePart && fileName.startsWith('.')) { 
+        fileNamePart = fileName.substring(1).split('.').slice(0, -1).join('.');
+    }
+    if (!fileNamePart) { fileNamePart = defaultName; }
+    let cssName = fileNamePart.replace(/[^a-zA-Z0-9\s_-]/g, '').trim().replace(/\s+/g, '-').replace(/_+/g, '_');
+    if (!/^[a-zA-Z]/.test(cssName)) { cssName = "Custom-" + cssName; }
+    if (!cssName || cssName === "Custom-") { cssName = `My-${defaultName.replace(/\s+/g, '-')}`; }
+    return cssName;
+};
 
 
 const App: React.FC = () => {
@@ -910,7 +936,7 @@ const App: React.FC = () => {
   }, [loadedCustomFontInfo]);
 
   const handleApplyNewSettings = useCallback((newSettings: AppSettings, scriptNamePrefix: string) => {
-    setSettings(newSettings);
+    setSettings(newSettings); // This will trigger the useEffect for customFontBase64 if present
     resetAppStateForNewSettings();
 
     if (newSettings.text && newSettings.text !== DEFAULT_SETTINGS.text) {
@@ -2405,17 +2431,6 @@ const handleSaveAllToGitHubFolder = useCallback(async () => {
   }, [gitHubSettings, mainScripts]);
 
 
-  const getFontFormatAndMime = (fileName: string): { format: string; mime: string } => {
-    const extension = fileName.split('.').pop()?.toLowerCase();
-    switch (extension) {
-      case 'ttf': return { format: 'truetype', mime: 'font/ttf' };
-      case 'otf': return { format: 'opentype', mime: 'font/otf' };
-      case 'woff': return { format: 'woff', mime: 'font/woff' };
-      case 'woff2': return { format: 'woff2', mime: 'font/woff2' };
-      default: return { format: 'truetype', mime: 'application/octet-stream' };
-    }
-  };
-
   const handleLoadCustomFont = useCallback((file: File, desiredCssName: string) => {
     if (!desiredCssName.trim()) {
       alert("Please provide a CSS name for the font.");
@@ -2424,52 +2439,75 @@ const handleSaveAllToGitHubFolder = useCallback(async () => {
     const reader = new FileReader();
     reader.onload = () => {
       const dataUrl = reader.result as string;
-      const fontInfo = getFontFormatAndMime(file.name);
+      const base64FontData = dataUrl.split(',')[1];
       const safeCssName = desiredCssName.trim();
-
-      if (loadedCustomFontInfo?.styleElement) {
-        document.head.removeChild(loadedCustomFontInfo.styleElement);
-      }
-
-      const styleElement = document.createElement('style');
-      styleElement.textContent = `
-        @font-face {
-          font-family: "${safeCssName}";
-          src: url(${dataUrl}) format('${fontInfo.format}');
-        }
-      `;
-      document.head.appendChild(styleElement);
-
-      setLoadedCustomFontInfo({ name: safeCssName, styleElement });
-      handleNestedSettingsChange('systemFont', 'fontFamily', safeCssName);
+      
+      // Update settings with Base64 data and filename
+      // This will trigger the useEffect to apply the font
+      handleNestedSettingsChange('systemFont', 'customFontBase64', base64FontData);
+      handleNestedSettingsChange('systemFont', 'customFontFileName', file.name);
+      handleNestedSettingsChange('systemFont', 'fontFamily', safeCssName); // Set fontFamily immediately
     };
     reader.onerror = (error) => {
       console.error("Error reading font file:", error);
       alert("Failed to read font file.");
-      reader.onload = null;
-      reader.onerror = null;
     };
-    
-    const originalOnLoad = reader.onload;
-    reader.onload = (event) => {
-      if (originalOnLoad) originalOnLoad.call(reader, event);
-      reader.onload = null;
-      reader.onerror = null;
-    };
-    
     reader.readAsDataURL(file);
-  }, [loadedCustomFontInfo, handleNestedSettingsChange]);
+  }, [handleNestedSettingsChange]);
+
 
   useEffect(() => {
-    if (loadedCustomFontInfo) {
-      if (settings.currentFontType !== 'system' || settings.systemFont.fontFamily !== loadedCustomFontInfo.name) {
-        if (loadedCustomFontInfo.styleElement) {
-            document.head.removeChild(loadedCustomFontInfo.styleElement);
-        }
+    const { customFontBase64, customFontFileName } = settings.systemFont;
+
+    if (settings.currentFontType === 'system' && customFontBase64 && customFontFileName) {
+      const { format, mime } = getFontFormatAndMime(customFontFileName);
+      const cssFontName = deriveCssNameFromFile(customFontFileName);
+      const dataUrl = `data:${mime};base64,${customFontBase64}`;
+
+      if (loadedCustomFontInfo?.styleElement && loadedCustomFontInfo.name !== cssFontName) {
+        document.head.removeChild(loadedCustomFontInfo.styleElement);
         setLoadedCustomFontInfo(null);
       }
+      
+      if (!loadedCustomFontInfo || loadedCustomFontInfo.name !== cssFontName) {
+        const styleElement = document.createElement('style');
+        styleElement.textContent = `
+          @font-face {
+            font-family: "${cssFontName}";
+            src: url(${dataUrl}) format('${format}');
+          }
+        `;
+        document.head.appendChild(styleElement);
+        setLoadedCustomFontInfo({ name: cssFontName, styleElement });
+      }
+      // If fontFamily isn't already set to this CSS name, update it.
+      if (settings.systemFont.fontFamily !== cssFontName) {
+         handleNestedSettingsChange('systemFont', 'fontFamily', cssFontName);
+      }
+    } else {
+      // No custom font Base64 in settings OR not system font type, ensure any loaded custom font style is removed
+      if (loadedCustomFontInfo?.styleElement) {
+        document.head.removeChild(loadedCustomFontInfo.styleElement);
+        setLoadedCustomFontInfo(null);
+        // If the current font family was the one just removed, reset to default.
+        if (settings.systemFont.fontFamily === loadedCustomFontInfo.name) {
+            handleNestedSettingsChange('systemFont', 'fontFamily', DEFAULT_SETTINGS.systemFont.fontFamily);
+        }
+      }
     }
-  }, [settings.currentFontType, settings.systemFont.fontFamily, loadedCustomFontInfo]);
+    // Cleanup function for when the component unmounts or these dependencies change
+    // causing the effect to re-run and potentially remove an old style.
+    return () => {
+        if (loadedCustomFontInfo?.styleElement && 
+            (settings.systemFont.fontFamily !== loadedCustomFontInfo.name || 
+             !settings.systemFont.customFontBase64 ||
+             settings.currentFontType !== 'system')) {
+           // This condition might be too broad; the primary logic for removal is above.
+           // This cleanup is more for component unmount or if the font source truly changes.
+        }
+    };
+  }, [settings.systemFont.customFontBase64, settings.systemFont.customFontFileName, settings.currentFontType, handleNestedSettingsChange]); // Removed loadedCustomFontInfo from deps to avoid loop
+
 
   useLayoutEffect(() => {
     if (currentMainView === 'editor' && viewMode === 'single' && previewRef.current && previewContainerRef.current) {
@@ -2618,7 +2656,7 @@ const handleSaveAllToGitHubFolder = useCallback(async () => {
                 displayedBlocksForView={displayedBlocksForView} 
 
                 onLoadCustomFont={handleLoadCustomFont}
-                loadedCustomFontName={loadedCustomFontInfo?.name || null}
+                loadedCustomFontName={loadedCustomFontInfo?.name || settings.systemFont.customFontFileName || null}
                 overflowSettingsPanelOpen={overflowSettingsPanelOpen}
                 onToggleOverflowSettingsPanel={() => setOverflowSettingsPanelOpen(prev => !prev)}
 

@@ -87,6 +87,12 @@ export const importSettingsFromJson = (file: File): Promise<{ appSettings: AppSe
             spaceWidthOverride: typeof importedAppSettings.systemFont?.spaceWidthOverride === 'number'
               ? importedAppSettings.systemFont.spaceWidthOverride
               : DEFAULT_SETTINGS.systemFont.spaceWidthOverride,
+            customFontBase64: typeof importedAppSettings.systemFont?.customFontBase64 === 'string'
+              ? importedAppSettings.systemFont.customFontBase64
+              : undefined,
+            customFontFileName: typeof importedAppSettings.systemFont?.customFontFileName === 'string'
+              ? importedAppSettings.systemFont.customFontFileName
+              : undefined,
           },
           shadowEffect: {
             ...DEFAULT_SETTINGS.shadowEffect,

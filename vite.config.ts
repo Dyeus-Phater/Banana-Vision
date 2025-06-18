@@ -20,7 +20,7 @@ export default defineConfig(({ mode }) => {
         }
       },
       server: {
-        port: 3173
+        port: 5173
       },
       build: {
         rollupOptions: {

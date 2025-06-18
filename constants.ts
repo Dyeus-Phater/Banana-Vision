@@ -121,6 +121,8 @@ export const DEFAULT_SETTINGS: AppSettings = {
     textAlignHorizontal: 'left',
     textAlignVertical: 'top',
     spaceWidthOverride: 0, // Default to 0 (auto)
+    customFontBase64: undefined,
+    customFontFileName: undefined,
   },
   shadowEffect: {
     offsetX: 2,

@@ -366,10 +366,10 @@ const PreviewAreaInner = forwardRef<HTMLDivElement, PreviewAreaProps>(({
   };
 
   let textShadowValue = 'none';
-  if (settings.shadowEffect.enabled && !simplifiedRender) {
+  if (settings.currentFontType === 'system' && settings.shadowEffect.enabled && !simplifiedRender) {
     textShadowValue = `${settings.shadowEffect.offsetX}px ${settings.shadowEffect.offsetY}px ${settings.shadowEffect.blur}px ${settings.shadowEffect.color}`;
   }
-  if (settings.outlineEffect.enabled && !simplifiedRender) {
+  if (settings.currentFontType === 'system' && settings.outlineEffect.enabled && !simplifiedRender) {
     const { width, color } = settings.outlineEffect;
     const createOutlinePart = (x: number, y: number) => `${x * width}px ${y * width}px 0 ${color}`;
     const outlineShadows = [
@@ -576,7 +576,7 @@ const PreviewAreaInner = forwardRef<HTMLDivElement, PreviewAreaProps>(({
       }
       
       const { charHeight, spacing, zoom: bitmapZoom } = settings.bitmapFont;
-      const baseCharPixelHeight = charHeight * bitmapZoom;
+      const baseCharPixelHeight = charHeight * bitmapZoom; // This is unzoomed char height for logic
       const effectiveSpacing = spacing * bitmapZoom;
       
       const bitmapContainerStyle: CSSProperties = {
@@ -589,86 +589,103 @@ const PreviewAreaInner = forwardRef<HTMLDivElement, PreviewAreaProps>(({
         <div style={{ width: '100%', height: '100%', display: 'flex', alignItems: alignItems, justifyContent: settings.systemFont.textAlignHorizontal === 'center' ? 'center' : settings.systemFont.textAlignHorizontal === 'right' ? 'flex-end' : 'flex-start', padding: '8px', boxSizing: 'border-box' }} onMouseDown={handleMouseDown} role={isReadOnlyPreview ? undefined : "application"} aria-roledescription={isReadOnlyPreview ? undefined : "draggable text area"}>
           <div ref={textContainerRef} style={bitmapContainerStyle}>
             {linesOfSegments.map((lineContentSegments, lineIndex) => {
-              const isBitmapLineVisuallyEmptyBasedOnText = lineContentSegments.every(seg => 
-                seg.type === 'text' && seg.text.trim() === ''
-              );
+              let maxElementHeightInLine = charHeight; // Start with base character height (unzoomed)
 
-              let lineRendersAnyPixel = false;
-              if (!isBitmapLineVisuallyEmptyBasedOnText && bitmapCharCache) {
-                for (const segment of lineContentSegments) {
-                  if (segment.type === 'image') {
-                    lineRendersAnyPixel = true;
-                    break;
+              const renderedLineElements = lineContentSegments.flatMap((segment, segIdx) => {
+                if (segment.type === 'image') {
+                  maxElementHeightInLine = Math.max(maxElementHeightInLine, segment.height);
+                  return [(
+                    <img key={`${lineIndex}-${segIdx}-img`} src={segment.imageUrl} alt={segment.altText} style={{ width: `${segment.width * bitmapZoom}px`, height: `${segment.height * bitmapZoom}px`, marginRight: `${effectiveSpacing}px`, imageRendering: 'pixelated', verticalAlign: 'middle' }} />
+                  )];
+                }
+                
+                return segment.text.split('').map((char, charIndex) => {
+                  const cachedCharEntry = bitmapCharCache.get(char);
+                  if (!cachedCharEntry || !cachedCharEntry.canvas || cachedCharEntry.canvas.width === 0 || cachedCharEntry.canvas.height === 0) {
+                     const emptyCharWidth = (char === ' ' && cachedCharEntry && cachedCharEntry.canvas) ? cachedCharEntry.canvas.width * bitmapZoom : 0;
+                     if (char === ' ' && cachedCharEntry?.canvas) maxElementHeightInLine = Math.max(maxElementHeightInLine, cachedCharEntry.canvas.height);
+                     return <div key={`${lineIndex}-${segIdx}-char${charIndex}`} style={{ width: `${emptyCharWidth}px`, height: `${(cachedCharEntry?.canvas?.height || charHeight) * bitmapZoom}px`, marginRight: `${effectiveSpacing}px` }} />;
                   }
-                  if (segment.type === 'text') {
-                    for (const char of segment.text) {
-                      const cachedCharEntry = bitmapCharCache.get(char);
-                      if (cachedCharEntry?.canvas && cachedCharEntry.canvas.width > 0 && cachedCharEntry.canvas.height > 0) {
-                        lineRendersAnyPixel = true;
-                        break;
-                      }
+
+                  let currentProcessingCanvas: HTMLCanvasElement = cachedCharEntry.canvas;
+
+                  // 1. Apply Tint if needed
+                  const { enableTintColor, color: globalBitmapTintColor } = settings.bitmapFont;
+                  const tintToApply = segment.color || (enableTintColor ? globalBitmapTintColor : null);
+
+                  if (tintToApply) {
+                    const tintedCanvas = document.createElement('canvas');
+                    tintedCanvas.width = currentProcessingCanvas.width;
+                    tintedCanvas.height = currentProcessingCanvas.height;
+                    const tintCtx = tintedCanvas.getContext('2d');
+                    if (tintCtx) {
+                      tintCtx.drawImage(currentProcessingCanvas, 0, 0);
+                      tintCtx.globalCompositeOperation = 'source-in';
+                      tintCtx.fillStyle = tintToApply;
+                      tintCtx.fillRect(0, 0, tintedCanvas.width, tintedCanvas.height);
+                      currentProcessingCanvas = tintedCanvas;
                     }
                   }
-                  if (lineRendersAnyPixel) break;
-                }
-              }
-              const isEffectivelyEmpty = isBitmapLineVisuallyEmptyBasedOnText || !lineRendersAnyPixel;
 
-              if (isEffectivelyEmpty) {
+                  // 2. Apply Shadow if needed
+                  if (settings.shadowEffect.enabled && !simplifiedRender) {
+                    const { offsetX, offsetY, blur, color: shadowEffectColor } = settings.shadowEffect;
+                    // Blur can extend in all directions, so add padding for it.
+                    // A larger padding factor might be needed for very large blurs to prevent clipping.
+                    const paddingForBlur = blur * 1.5; 
+
+                    const outputWidth = currentProcessingCanvas.width + Math.abs(offsetX) + 2 * paddingForBlur;
+                    const outputHeight = currentProcessingCanvas.height + Math.abs(offsetY) + 2 * paddingForBlur;
+
+                    const shadowAndCharCanvas = document.createElement('canvas');
+                    shadowAndCharCanvas.width = outputWidth;
+                    shadowAndCharCanvas.height = outputHeight;
+                    const ctx = shadowAndCharCanvas.getContext('2d');
+
+                    if (ctx) {
+                      // Position to draw the character onto shadowAndCharCanvas
+                      // This ensures space is made for the shadow.
+                      const charActualDrawX = (offsetX > 0 ? 0 : -offsetX) + paddingForBlur;
+                      const charActualDrawY = (offsetY > 0 ? 0 : -offsetY) + paddingForBlur;
+
+                      ctx.shadowColor = shadowEffectColor;
+                      ctx.shadowOffsetX = offsetX; // These are unzoomed shadow settings
+                      ctx.shadowOffsetY = offsetY;
+                      ctx.shadowBlur = blur;
+
+                      // Draw the (potentially tinted) character. The shadow is drawn by this operation.
+                      ctx.drawImage(currentProcessingCanvas, charActualDrawX, charActualDrawY);
+                      
+                      currentProcessingCanvas = shadowAndCharCanvas;
+                    }
+                  }
+                  
+                  maxElementHeightInLine = Math.max(maxElementHeightInLine, currentProcessingCanvas.height);
+                  const displayWidth = currentProcessingCanvas.width * bitmapZoom;
+                  const displayHeight = currentProcessingCanvas.height * bitmapZoom;
+
+                  if (displayWidth === 0 && char !== ' ') return <div key={`${lineIndex}-${segIdx}-char${charIndex}`} style={{ width: 0, height: `${displayHeight}px`, marginRight: `${effectiveSpacing}px` }} />;
+                  
+                  return <img key={`${lineIndex}-${segIdx}-char${charIndex}`} src={currentProcessingCanvas.toDataURL()} alt={char} style={{ width: `${displayWidth}px`, height: `${displayHeight}px`, marginRight: `${effectiveSpacing}px`, imageRendering: 'pixelated' }} />;
+                });
+              });
+              
+              const isLineVisuallyEmpty = renderedLineElements.every(el => {
+                 // Check if it's a div (placeholder for empty char) and has 0 width, or if it's an img with 0 width
+                if (el.type === 'div') return parseFloat(el.props.style?.width || "0") === 0;
+                if (el.type === 'img') return parseFloat(el.props.style?.width || "0") === 0;
+                return true; // Should not happen for valid elements
+              });
+
+              if (isLineVisuallyEmpty && !lineContentSegments.some(s => s.type === 'image')) {
                 return <div key={lineIndex} style={{ height: '0px', overflow: 'hidden' }} aria-hidden="true" />;
               }
               
-              let maxElementHeightInLine = baseCharPixelHeight;
-              lineContentSegments.forEach(seg => {
-                if (seg.type === 'image') {
-                  maxElementHeightInLine = Math.max(maxElementHeightInLine, seg.height * bitmapZoom);
-                }
-              });
-              const actualLineHeightPx = Math.max(maxElementHeightInLine, baseCharPixelHeight * settings.globalLineHeightFactor);
+              const actualLineHeightPx = Math.max(maxElementHeightInLine * bitmapZoom, baseCharPixelHeight * settings.globalLineHeightFactor);
 
               return (
                 <div key={lineIndex} style={{ display: 'flex', height: `${actualLineHeightPx}px`, alignItems: 'center' }}>
-                  {lineContentSegments.map((segment, segIdx) => {
-                    if (segment.type === 'image') {
-                      return <img key={`${lineIndex}-${segIdx}-img`} src={segment.imageUrl} alt={segment.altText} style={{ width: `${segment.width * bitmapZoom}px`, height: `${segment.height * bitmapZoom}px`, marginRight: `${effectiveSpacing}px`, imageRendering: 'pixelated', verticalAlign: 'middle' }} />;
-                    }
-                    
-                    return segment.text.split('').map((char, charIndex) => {
-                      const cachedCharEntry = bitmapCharCache.get(char); 
-
-                      if (!cachedCharEntry || !cachedCharEntry.canvas) {
-                        const emptyCharWidth = (char === ' ' && cachedCharEntry && cachedCharEntry.canvas) ? cachedCharEntry.canvas.width * bitmapZoom : 0;
-                        return <div key={`${lineIndex}-${segIdx}-char${charIndex}`} style={{ width: `${emptyCharWidth}px`, height: `${baseCharPixelHeight}px`, marginRight: `${effectiveSpacing}px` }} />;
-                      }
-                      
-                      let canvasToRenderFrom: HTMLCanvasElement = cachedCharEntry.canvas;
-                      let finalDataURL = cachedCharEntry.dataURL; 
-
-                      const { enableTintColor, color: globalBitmapTintColor } = settings.bitmapFont;
-                      const tintToApply = segment.color || (enableTintColor ? globalBitmapTintColor : null);
-
-                      if (tintToApply && canvasToRenderFrom.width > 0 && canvasToRenderFrom.height > 0) {
-                        const tempTintCanvas = document.createElement('canvas');
-                        tempTintCanvas.width = canvasToRenderFrom.width;
-                        tempTintCanvas.height = canvasToRenderFrom.height;
-                        const tempCtx = tempTintCanvas.getContext('2d');
-
-                        if (tempCtx) {
-                          tempCtx.drawImage(canvasToRenderFrom, 0, 0); 
-                          tempCtx.globalCompositeOperation = 'source-in';
-                          tempCtx.fillStyle = tintToApply;
-                          tempCtx.fillRect(0, 0, tempTintCanvas.width, tempTintCanvas.height);
-                          finalDataURL = tempTintCanvas.toDataURL(); 
-                        }
-                      }
-                      
-                      const displayWidth = canvasToRenderFrom.width * bitmapZoom; 
-                      const displayHeight = canvasToRenderFrom.height * bitmapZoom; 
-                      if (displayWidth === 0 && char !== ' ') return <div key={`${lineIndex}-${segIdx}-char${charIndex}`} style={{ width: 0, height: `${baseCharPixelHeight}px`, marginRight: `${effectiveSpacing}px` }} />;
-                      
-                      return <img key={`${lineIndex}-${segIdx}-char${charIndex}`} src={finalDataURL} alt={char} style={{ width: `${displayWidth}px`, height: `${displayHeight}px`, marginRight: `${effectiveSpacing}px`, imageRendering: 'pixelated' }} />;
-                    });
-                  })}
+                  {renderedLineElements}
                 </div>
               );
             })}
