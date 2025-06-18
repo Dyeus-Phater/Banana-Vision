@@ -1,5 +1,6 @@
 
 
+
 export interface ShadowEffect {
   offsetX: number;
   offsetY: number;
@@ -95,7 +96,8 @@ export interface GitHubSettings {
   pat: string;
   repoFullName: string; 
   branch: string;
-  filePath: string;
+  filePath: string; // Path for main scripts
+  originalFilePath: string; // Path for original/reference scripts
 }
 
 export interface CustomColorTag {

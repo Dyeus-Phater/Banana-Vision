@@ -1,5 +1,6 @@
 
 
+
 import type { AppSettings, GitHubSettings, CustomThemeColors, ResolvedThemeColors, ThemeKey } from './types';
 
 const DEFAULT_SAMPLE_BYTE_MAP_STRING = `A=1
@@ -194,6 +195,7 @@ export const DEFAULT_GITHUB_SETTINGS: GitHubSettings = {
   repoFullName: '',
   branch: 'main',
   filePath: 'script.txt',
+  originalFilePath: 'original_script.txt',
 };
 
 

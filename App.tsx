@@ -1,4 +1,6 @@
 
+
+
 import React, { useState, useCallback, useRef, useEffect, useLayoutEffect, useMemo } from 'react';
 import JSZip from 'jszip';
 import { Octokit } from '@octokit/rest';
@@ -346,6 +348,54 @@ function hexToRgb(hex: string): { r: number; g: number; b: number } | null {
         b: parseInt(result[3], 16),
       }
     : null;
+}
+
+// Helper class to mimic FileList for GitHub file loading
+class FileListLike implements FileList {
+  readonly length: number;
+  private _filesInternal: File[];
+
+  // Index signature for TypeScript to know that numeric keys return File
+  [index: number]: File;
+
+  constructor(filesArray: { name: string, content: string }[]) {
+    this._filesInternal = filesArray.map(f => new File([f.content], f.name, { type: "text/plain" }));
+    this.length = this._filesInternal.length;
+
+    for (let i = 0; i < this._filesInternal.length; i++) {
+      Object.defineProperty(this, i, {
+        value: this._filesInternal[i],
+        writable: false, // Match FileList behavior (readonly items)
+        enumerable: true, // Match FileList behavior (items are enumerable)
+        configurable: false, // Match FileList behavior (items are not configurable)
+      });
+    }
+  }
+
+  item(index: number): File | null {
+    if (index >= 0 && index < this.length) {
+      return this._filesInternal[index];
+    }
+    return null;
+  }
+
+  [Symbol.iterator](): IterableIterator<File> {
+    let iteratorIndex = 0;
+    const filesSnapshot = [...this._filesInternal]; 
+
+    return {
+      next: (): IteratorResult<File, undefined> => {
+        if (iteratorIndex < filesSnapshot.length) {
+          return { value: filesSnapshot[iteratorIndex++], done: false };
+        }
+        return { value: undefined, done: true };
+      },
+      [Symbol.iterator](): IterableIterator<File> {
+        // The iterator itself must be iterable
+        return this;
+      }
+    };
+  }
 }
 
 
@@ -1223,7 +1273,7 @@ const App: React.FC = () => {
   };
 
   const processAndAddFiles = async (
-    files: FileList,
+    files: FileList, // Changed FileList | null to FileList for strictness, ensure calls pass non-null
     isMainScript: boolean,
     sourceNamePrefix: string = ""
   ): Promise<void> => {
@@ -1279,11 +1329,13 @@ const App: React.FC = () => {
   };
 
 
-  const handleTextFileUpload = useCallback(async (files: FileList) => {
+  const handleTextFileUpload = useCallback(async (files: FileList | null) => { // Keep null check here for FileInput component
+    if (!files) return;
     await processAndAddFiles(files, true);
   }, [settings.useCustomBlockSeparator, settings.treatEachLineAsBlock, settings.useEmptyLinesAsSeparator, settings.blockSeparators, activeMainScriptId, parseTextToBlocksInternal]); 
 
-  const handleOriginalScriptUpload = useCallback(async (files: FileList) => {
+  const handleOriginalScriptUpload = useCallback(async (files: FileList | null) => { // Keep null check here
+    if (!files) return;
     await processAndAddFiles(files, false);
   }, [settings.useCustomBlockSeparator, settings.treatEachLineAsBlock, settings.useEmptyLinesAsSeparator, settings.blockSeparators, parseTextToBlocksInternal]);
 
@@ -2031,13 +2083,14 @@ const handleCurrentBlockContentChangeInSingleView = useCallback((newContent: str
     setGitHubStatusMessage("");
   }, []);
 
-  const handleLoadFileFromGitHub = useCallback(async () => {
-    if (!gitHubSettings.pat || !gitHubSettings.repoFullName || !gitHubSettings.filePath) {
-      setGitHubStatusMessage("Error: PAT, Repository, and File Path are required for single file load.");
+  const handleLoadFileFromGitHubInternal = useCallback(async (isForOriginal: boolean) => {
+    const currentPath = isForOriginal ? gitHubSettings.originalFilePath : gitHubSettings.filePath;
+    if (!gitHubSettings.pat || !gitHubSettings.repoFullName || !currentPath) {
+      setGitHubStatusMessage(`Error: PAT, Repository, and File Path are required for ${isForOriginal ? 'original' : 'main'} file load.`);
       return;
     }
     setIsGitHubLoading(true);
-    setGitHubStatusMessage("Loading file from GitHub...");
+    setGitHubStatusMessage(`Loading ${isForOriginal ? 'original' : 'main'} file from GitHub...`);
 
     const [owner, repo] = gitHubSettings.repoFullName.split('/');
     if (!owner || !repo) {
@@ -2051,69 +2104,46 @@ const handleCurrentBlockContentChangeInSingleView = useCallback((newContent: str
       const response = await octokit.repos.getContent({
         owner,
         repo,
-        path: gitHubSettings.filePath,
+        path: currentPath,
         ref: gitHubSettings.branch || undefined,
       });
 
-      
       if (response.data && 'content' in response.data && response.data.encoding === 'base64') {
-        
         const rawText = base64ToUtf8(response.data.content);
-        const { blocks, parsedWithCustom, parsedWithLine, parsedWithEmptyLinesSeparator } = parseTextToBlocksInternal(
-            rawText, 
-            settings.useCustomBlockSeparator, 
-            settings.blockSeparators,
-            settings.treatEachLineAsBlock,
-            settings.useEmptyLinesAsSeparator
+        
+        await processAndAddFiles(
+          new FileListLike([{ name: currentPath.split('/').pop() || currentPath, content: rawText }]),
+          !isForOriginal,
+          `GitHub: (${owner}/${repo}) `
         );
-        const newScript: ScriptFile = {
-          id: `github-${owner}-${repo}-${gitHubSettings.filePath.replace(/[^a-zA-Z0-9]/g, '-')}-${Date.now()}`,
-          name: `GitHub: ${gitHubSettings.filePath.split('/').pop() || gitHubSettings.filePath} (${owner}/${repo})`,
-          blocks,
-          rawText,
-          parsedWithCustomSeparators: parsedWithCustom,
-          parsedWithLineAsBlock: parsedWithLine,
-          parsedWithEmptyLinesSeparator: parsedWithEmptyLinesSeparator,
-        };
-        setMainScripts(prev => [newScript, ...prev.filter(s => s.id !== newScript.id)]);
-        setActiveMainScriptId(newScript.id);
-        setCurrentBlockIndex(newScript.blocks.length > 0 ? 0 : null);
-        setGitHubStatusMessage(`Successfully loaded file: ${newScript.name}.`);
+
+        setGitHubStatusMessage(`Successfully loaded ${isForOriginal ? 'original' : 'main'} file: ${currentPath.split('/').pop()}.`);
       } else {
         setGitHubStatusMessage("Error: Could not decode file content from GitHub or content not found.");
       }
     } catch (error: any) {
-      console.error("Error loading file from GitHub:", error);
-      setGitHubStatusMessage(`Error: ${error.message || 'Failed to load file from GitHub.'}`);
+      console.error(`Error loading ${isForOriginal ? 'original' : 'main'} file from GitHub:`, error);
+      setGitHubStatusMessage(`Error: ${error.message || `Failed to load ${isForOriginal ? 'original' : 'main'} file from GitHub.`}`);
     } finally {
       setIsGitHubLoading(false);
     }
-  }, [gitHubSettings, settings.useCustomBlockSeparator, settings.treatEachLineAsBlock, settings.useEmptyLinesAsSeparator, settings.blockSeparators, parseTextToBlocksInternal, setActiveMainScriptId, setCurrentBlockIndex]);
+  }, [gitHubSettings, processAndAddFiles]);
 
-  const sanitizeFilename = (name: string): string => {
-    let sName = name.replace(/[<>:"/\\|?*]+/g, '_'); 
-    sName = sName.replace(/\s+/g, '_'); 
-    if (sName.startsWith('.')) {
-      sName = '_' + sName.substring(1); 
-    }
-    if (!/\.(txt|scp|text|md|json|xml|yaml|yml|csv|tsv|ini|cfg|log|srt|vtt|html|htm|js|css)$/i.test(sName)) {
-      sName += '.txt';
-    }
-    return sName.substring(0, 250); 
-  };
-  
+  const handleLoadFileFromGitHub = useCallback(() => handleLoadFileFromGitHubInternal(false), [handleLoadFileFromGitHubInternal]);
+  const handleLoadFileFromGitHubForOriginal = useCallback(() => handleLoadFileFromGitHubInternal(true), [handleLoadFileFromGitHubInternal]);
 
-  const handleLoadAllFromGitHubFolder = useCallback(async () => {
-    if (!gitHubSettings.pat || !gitHubSettings.repoFullName || !gitHubSettings.filePath) {
-      setGitHubStatusMessage("Error: PAT, Repository, and Folder Path are required.");
+
+  const handleLoadAllFromGitHubFolderInternal = useCallback(async (isForOriginal: boolean) => {
+    const currentPath = isForOriginal ? gitHubSettings.originalFilePath : gitHubSettings.filePath;
+    if (!gitHubSettings.pat || !gitHubSettings.repoFullName || !currentPath) {
+      setGitHubStatusMessage(`Error: PAT, Repository, and Folder Path are required for ${isForOriginal ? 'original' : 'main'} folder load.`);
       return;
     }
     setIsGitHubLoading(true);
-    setGitHubStatusMessage("Loading scripts from GitHub folder...");
+    setGitHubStatusMessage(`Loading ${isForOriginal ? 'original' : 'main'} scripts from GitHub folder...`);
     let loadedCount = 0;
     let skippedCount = 0;
     let errorCount = 0;
-    const newScripts: ScriptFile[] = [];
     const statusMessages: string[] = [];
 
     const [owner, repo] = gitHubSettings.repoFullName.split('/');
@@ -2123,12 +2153,14 @@ const handleCurrentBlockContentChangeInSingleView = useCallback((newContent: str
       return;
     }
 
+    const filesToProcess: { name: string, content: string }[] = [];
+
     try {
       const octokit = new Octokit({ auth: gitHubSettings.pat });
       const { data: folderContents } = await octokit.repos.getContent({
         owner,
         repo,
-        path: gitHubSettings.filePath.endsWith('/') ? gitHubSettings.filePath.slice(0, -1) : gitHubSettings.filePath,
+        path: currentPath.endsWith('/') ? currentPath.slice(0, -1) : currentPath,
         ref: gitHubSettings.branch || undefined,
       });
 
@@ -2144,10 +2176,8 @@ const handleCurrentBlockContentChangeInSingleView = useCallback((newContent: str
               });
               
               if (fileContentResponse && 'content' in fileContentResponse && fileContentResponse.encoding === 'base64') {
-                
                 let rawText = "";
                 try {
-                  
                   rawText = base64ToUtf8(fileContentResponse.content);
                 } catch (decodeError) {
                   console.warn(`Skipped ${item.name} due to Base64 decoding error:`, decodeError);
@@ -2161,26 +2191,9 @@ const handleCurrentBlockContentChangeInSingleView = useCallback((newContent: str
                     skippedCount++;
                     continue;
                 }
-
-                const { blocks, parsedWithCustom, parsedWithLine, parsedWithEmptyLinesSeparator } = parseTextToBlocksInternal(
-                    rawText, 
-                    settings.useCustomBlockSeparator, 
-                    settings.blockSeparators,
-                    settings.treatEachLineAsBlock,
-                    settings.useEmptyLinesAsSeparator
-                );
-                const newScript: ScriptFile = {
-                  id: `github-${owner}-${repo}-${item.path.replace(/[^a-zA-Z0-9]/g, '-')}-${Date.now()}`,
-                  name: `GitHub: ${item.name} (${owner}/${repo}${gitHubSettings.filePath ? '/' + gitHubSettings.filePath : ''})`,
-                  blocks,
-                  rawText,
-                  parsedWithCustomSeparators: parsedWithCustom,
-                  parsedWithLineAsBlock: parsedWithLine,
-                  parsedWithEmptyLinesSeparator: parsedWithEmptyLinesSeparator,
-                };
-                newScripts.push(newScript);
+                filesToProcess.push({ name: item.name, content: rawText });
                 loadedCount++;
-                statusMessages.push(`Loaded ${item.name}.`);
+                statusMessages.push(`Prepared ${item.name} for processing.`);
               } else {
                 statusMessages.push(`Skipped ${item.name} (not base64 encoded or no content).`);
                 skippedCount++;
@@ -2192,12 +2205,9 @@ const handleCurrentBlockContentChangeInSingleView = useCallback((newContent: str
             }
           }
         }
-        if (newScripts.length > 0) {
-          setMainScripts(prev => [...newScripts, ...prev.filter(s => !newScripts.find(ns => ns.name === s.name))]); 
-          if (!activeMainScriptId && newScripts.length > 0) {
-            setActiveMainScriptId(newScripts[0].id);
-            setCurrentBlockIndex(newScripts[0].blocks.length > 0 ? 0 : null);
-          }
+        
+        if (filesToProcess.length > 0) {
+            await processAndAddFiles(new FileListLike(filesToProcess), !isForOriginal, `GitHub: (${owner}/${repo}${currentPath ? '/' + currentPath : ''}) `);
         }
         setGitHubStatusMessage(`Folder load complete. Loaded: ${loadedCount}, Skipped: ${skippedCount}, Errors: ${errorCount}. Details: ${statusMessages.slice(0,3).join(' ')}${statusMessages.length > 3 ? '...' : ''}`);
 
@@ -2205,17 +2215,32 @@ const handleCurrentBlockContentChangeInSingleView = useCallback((newContent: str
         setGitHubStatusMessage("Error: The specified path is not a folder or is empty.");
       }
     } catch (error: any) { 
-      console.error("Error loading from GitHub folder:", error);
-      setGitHubStatusMessage(`Error: ${error.message || 'Failed to load from GitHub folder.'}`);
+      console.error(`Error loading from GitHub folder (for ${isForOriginal ? 'original' : 'main'}):`, error);
+      setGitHubStatusMessage(`Error: ${error.message || `Failed to load from GitHub folder.`}`);
     } finally {
       setIsGitHubLoading(false);
     }
-  }, [gitHubSettings, settings.useCustomBlockSeparator, settings.treatEachLineAsBlock, settings.useEmptyLinesAsSeparator, settings.blockSeparators, parseTextToBlocksInternal, activeMainScriptId, setActiveMainScriptId, setCurrentBlockIndex]);
+  }, [gitHubSettings, processAndAddFiles]);
+
+  const handleLoadAllFromGitHubFolder = useCallback(() => handleLoadAllFromGitHubFolderInternal(false), [handleLoadAllFromGitHubFolderInternal]);
+  const handleLoadAllFromGitHubFolderForOriginal = useCallback(() => handleLoadAllFromGitHubFolderInternal(true), [handleLoadAllFromGitHubFolderInternal]);
 
 
+  const sanitizeFilename = (name: string): string => {
+    let sName = name.replace(/[<>:"/\\|?*]+/g, '_'); 
+    sName = sName.replace(/\s+/g, '_'); 
+    if (sName.startsWith('.')) {
+      sName = '_' + sName.substring(1); 
+    }
+    if (!/\.(txt|scp|text|md|json|xml|yaml|yml|csv|tsv|ini|cfg|log|srt|vtt|html|htm|js|css)$/i.test(sName)) {
+      sName += '.txt';
+    }
+    return sName.substring(0, 250); 
+  };
+  
   const handleSaveFileToGitHub = useCallback(async () => {
     if (!gitHubSettings.pat || !gitHubSettings.repoFullName || !gitHubSettings.filePath) {
-      setGitHubStatusMessage("Error: PAT, Repository, and File Path are required for single file save.");
+      setGitHubStatusMessage("Error: PAT, Repository, and Main Script File Path are required for single file save.");
       return;
     }
     if (!activeMainScript) {
@@ -2252,7 +2277,7 @@ const handleCurrentBlockContentChangeInSingleView = useCallback((newContent: str
         const { data: fileDataResponse } = await octokit.repos.getContent({
           owner,
           repo,
-          path: gitHubSettings.filePath,
+          path: gitHubSettings.filePath, // Use main script path
           ref: gitHubSettings.branch || undefined,
         });
         if (fileDataResponse && 'sha' in fileDataResponse) {
@@ -2266,7 +2291,7 @@ const handleCurrentBlockContentChangeInSingleView = useCallback((newContent: str
       await octokit.repos.createOrUpdateFileContents({
         owner,
         repo,
-        path: gitHubSettings.filePath,
+        path: gitHubSettings.filePath, // Use main script path
         message: `Update ${gitHubSettings.filePath} via Banana Vision`,
         content: utf8ToBase64(scriptContent), 
         sha: existingSha,
@@ -2285,7 +2310,7 @@ const handleCurrentBlockContentChangeInSingleView = useCallback((newContent: str
 
 const handleSaveAllToGitHubFolder = useCallback(async () => {
     if (!gitHubSettings.pat || !gitHubSettings.repoFullName || !gitHubSettings.filePath) {
-      setGitHubStatusMessage("Error: PAT, Repository, and Folder Path are required.");
+      setGitHubStatusMessage("Error: PAT, Repository, and Main Script Folder Path are required.");
       return;
     }
     if (mainScripts.length === 0) {
@@ -2294,7 +2319,7 @@ const handleSaveAllToGitHubFolder = useCallback(async () => {
     }
 
     setIsGitHubLoading(true);
-    setGitHubStatusMessage("Saving all modified scripts to GitHub folder...");
+    setGitHubStatusMessage("Saving all modified main scripts to GitHub folder...");
     let savedCount = 0;
     let unchangedCount = 0;
     let errorCount = 0;
@@ -2306,7 +2331,7 @@ const handleSaveAllToGitHubFolder = useCallback(async () => {
       setIsGitHubLoading(false);
       return;
     }
-    const targetFolder = gitHubSettings.filePath.endsWith('/') ? gitHubSettings.filePath : `${gitHubSettings.filePath}/`;
+    const targetFolder = gitHubSettings.filePath.endsWith('/') ? gitHubSettings.filePath : `${gitHubSettings.filePath}/`; // Use main script path
 
     try {
       const octokit = new Octokit({ auth: gitHubSettings.pat });
@@ -2629,6 +2654,8 @@ const handleSaveAllToGitHubFolder = useCallback(async () => {
                 onSaveFileToGitHub={handleSaveFileToGitHub}
                 onLoadAllFromGitHubFolder={handleLoadAllFromGitHubFolder}
                 onSaveAllToGitHubFolder={handleSaveAllToGitHubFolder}
+                onLoadFileFromGitHubForOriginal={handleLoadFileFromGitHubForOriginal}
+                onLoadAllFromGitHubFolderForOriginal={handleLoadAllFromGitHubFolderForOriginal}
                 isGitHubLoading={isGitHubLoading}
                 gitHubStatusMessage={gitHubStatusMessage}
                 activeThemeKey={appThemeSettings.activeThemeKey}

@@ -1,5 +1,6 @@
 
 
+
 import { DEFAULT_SETTINGS, DEFAULT_GITHUB_SETTINGS } from '../constants';
 import type { AppSettings, GitHubSettings, ImageTag, PixelOverflowMargins, MarginSetting } from '../types';
 
@@ -146,6 +147,10 @@ export const importSettingsFromJson = (file: File): Promise<{ appSettings: AppSe
         const validatedGitHubSettings: GitHubSettings = {
           ...DEFAULT_GITHUB_SETTINGS,
           ...importedGitHubSettings,
+          // Ensure originalFilePath is present, defaulting if necessary
+          originalFilePath: typeof importedGitHubSettings.originalFilePath === 'string'
+            ? importedGitHubSettings.originalFilePath
+            : DEFAULT_GITHUB_SETTINGS.originalFilePath,
         };
             
         resolve({ appSettings: validatedAppSettings, gitHubSettings: validatedGitHubSettings });

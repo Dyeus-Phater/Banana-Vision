@@ -1,5 +1,6 @@
 
 
+
 import React, {useState, useEffect, useCallback, useMemo, useRef} from 'react';
 import { AppSettings, Block, NestedAppSettingsObjectKeys, ScriptFile, GitHubSettings, ThemeKey, CustomColorTag, ImageTag, MarginSetting } from '../types';
 import { FindScope, FindResultSummaryItem } from '../App';
@@ -67,6 +68,8 @@ interface ControlsPanelProps {
   onSaveFileToGitHub: () => void;
   onLoadAllFromGitHubFolder: () => void;
   onSaveAllToGitHubFolder: () => void;
+  onLoadFileFromGitHubForOriginal: () => void; 
+  onLoadAllFromGitHubFolderForOriginal: () => void; 
   isGitHubLoading: boolean;
   gitHubStatusMessage: string;
   activeThemeKey: ThemeKey;
@@ -611,24 +614,49 @@ const ControlsPanel: React.FC<ControlsPanelProps> = (props) => {
             onSettingsChange('useCustomBlockSeparator', false);
         }
     };
+    
+    const githubBaseDisabled = restOfProps.isGitHubLoading || !restOfProps.gitHubSettings.pat || !restOfProps.gitHubSettings.repoFullName;
+    const githubMainOpsDisabled = githubBaseDisabled || !restOfProps.gitHubSettings.filePath;
+    const githubOriginalOpsDisabled = githubBaseDisabled || !restOfProps.gitHubSettings.originalFilePath;
+
 
     return [
       {
         id: 'script-management-section', title: 'Script Management', defaultOpen: true, content: (
           <>
             <LabelInputContainer label="Upload Main Script(s) (.txt, .scp, etc.)">
-              <FileInput accept=".txt,.scp,.text,text/plain" onChange={restOfProps.onTextFileUpload} buttonLabel="Load Main Script(s)" multiple />
+              <FileInput accept=".txt,.scp,.text,text/plain" onChange={restOfProps.onTextFileUpload} buttonLabel="Load Main Script(s) from Device" multiple />
             </LabelInputContainer>
             {restOfProps.mainScripts.length > 0 && (
               <Button onClick={restOfProps.onClearMainScripts} className="text-xs mt-1 !py-1 !px-2 !bg-red-500 hover:!bg-red-600 w-full">
                 Clear All Main Scripts ({restOfProps.mainScripts.length} loaded)
               </Button>
             )}
+             {/* GitHub load buttons for Main Scripts */}
+             <div className="mt-2 grid grid-cols-2 gap-2">
+                <Button 
+                    onClick={restOfProps.onLoadFileFromGitHub} 
+                    disabled={githubMainOpsDisabled} 
+                    className="!bg-green-600 hover:!bg-green-700 text-xs !py-1"
+                    title="Load single file from Main Script GitHub path"
+                >
+                    Load File from Path (Main)
+                </Button>
+                <Button 
+                    onClick={restOfProps.onLoadAllFromGitHubFolder} 
+                    disabled={githubMainOpsDisabled} 
+                    className="!bg-green-500 hover:!bg-green-600 text-xs !py-1"
+                    title="Load all text files from Main Script GitHub folder path"
+                >
+                    Load All from Folder (Main)
+                </Button>
+            </div>
+
             <div className="mt-3 pt-3 border-t border-[var(--bv-border-color-light)]">
               <LabelInputContainer label="Upload Original Script(s) (for Comparison)">
-                <FileInput accept=".txt,.scp,.text,text/plain" onChange={restOfProps.onOriginalScriptUpload} buttonLabel="Load Original Script(s)" multiple />
+                <FileInput accept=".txt,.scp,.text,text/plain" onChange={restOfProps.onOriginalScriptUpload} buttonLabel="Load Original Script(s) from Device" multiple />
               </LabelInputContainer>
-              {restOfProps.originalScripts.length > 0 && (
+               {restOfProps.originalScripts.length > 0 && (
                 <Button onClick={restOfProps.onClearOriginalScripts} className="text-xs mt-1 !py-1 !px-2 !bg-red-500 hover:!bg-red-600 w-full">
                   Clear All Original Scripts ({restOfProps.originalScripts.length} loaded)
                 </Button>
@@ -638,6 +666,25 @@ const ControlsPanel: React.FC<ControlsPanelProps> = (props) => {
                   Comparing with: <span className="font-semibold">{restOfProps.matchedOriginalScriptName}</span>
                 </p>
               )}
+              {/* GitHub load buttons for Original Scripts */}
+              <div className="mt-2 grid grid-cols-2 gap-2">
+                <Button 
+                    onClick={restOfProps.onLoadFileFromGitHubForOriginal} 
+                    disabled={githubOriginalOpsDisabled} 
+                    className="!bg-purple-600 hover:!bg-purple-700 text-xs !py-1"
+                    title="Load single file from Original Script GitHub path"
+                >
+                    Load File from Path (Original)
+                </Button>
+                <Button 
+                    onClick={restOfProps.onLoadAllFromGitHubFolderForOriginal} 
+                    disabled={githubOriginalOpsDisabled} 
+                    className="!bg-purple-500 hover:!bg-purple-600 text-xs !py-1"
+                    title="Load all text files from Original Script GitHub folder path"
+                >
+                    Load All from Folder (Original)
+                </Button>
+              </div>
             </div>
             
              <div className="mt-2 space-y-1">
@@ -1184,16 +1231,35 @@ const ControlsPanel: React.FC<ControlsPanelProps> = (props) => {
             <LabelInputContainer label="Branch" htmlFor="github-branch">
               <TextInput id="github-branch" type="text" value={restOfProps.gitHubSettings.branch} onChange={(e) => restOfProps.onGitHubSettingsChange('branch', e.target.value)} placeholder="e.g., main (default if empty)" />
             </LabelInputContainer>
-            <LabelInputContainer label="File/Folder Path in Repository" htmlFor="github-filepath" subText="For single file ops, use full path. For folder ops, use folder path (e.g., scripts/ or assets/dialogue/).">
-              <TextInput id="github-filepath" type="text" value={restOfProps.gitHubSettings.filePath} onChange={(e) => restOfProps.onGitHubSettingsChange('filePath', e.target.value)} placeholder="e.g., path/to/file.txt or path/to/folder/" />
+            
+            <LabelInputContainer label="Main Script(s) File/Folder Path" htmlFor="github-filepath-main" 
+                subText="Path for loading/saving main scripts (e.g., path/to/file.txt or path/to/folder/).">
+              <TextInput id="github-filepath-main" type="text" value={restOfProps.gitHubSettings.filePath} onChange={(e) => restOfProps.onGitHubSettingsChange('filePath', e.target.value)} placeholder="e.g., main_scripts/dialogue.txt" />
             </LabelInputContainer>
             
-            <div className="grid grid-cols-2 gap-2 mt-3">
-              <Button onClick={restOfProps.onLoadFileFromGitHub} disabled={restOfProps.isGitHubLoading || !restOfProps.gitHubSettings.pat || !restOfProps.gitHubSettings.repoFullName || !restOfProps.gitHubSettings.filePath} className="!bg-green-600 hover:!bg-green-700">Load File from Path</Button>
-              <Button onClick={restOfProps.onLoadAllFromGitHubFolder} disabled={restOfProps.isGitHubLoading || !restOfProps.gitHubSettings.pat || !restOfProps.gitHubSettings.repoFullName || !restOfProps.gitHubSettings.filePath} className="!bg-green-500 hover:!bg-green-600">Load All from Folder</Button>
-              <Button onClick={restOfProps.onSaveFileToGitHub} disabled={restOfProps.isGitHubLoading || !restOfProps.gitHubSettings.pat || !restOfProps.gitHubSettings.repoFullName || !restOfProps.gitHubSettings.filePath || !activeMainScriptId} className="!bg-blue-600 hover:!bg-blue-700">Save Active to Path</Button>
-              <Button onClick={restOfProps.onSaveAllToGitHubFolder} disabled={restOfProps.isGitHubLoading || !restOfProps.gitHubSettings.pat || !restOfProps.gitHubSettings.repoFullName || !restOfProps.gitHubSettings.filePath || mainScripts.length === 0} className="!bg-blue-500 hover:!bg-blue-600">Save All to Folder</Button>
+            <LabelInputContainer label="Original Script(s) File/Folder Path" htmlFor="github-filepath-original" 
+                subText="Path for loading original/reference scripts (e.g., path/to/original.txt or original_assets/dialogue/).">
+              <TextInput id="github-filepath-original" type="text" value={restOfProps.gitHubSettings.originalFilePath} onChange={(e) => restOfProps.onGitHubSettingsChange('originalFilePath', e.target.value)} placeholder="e.g., original_scripts/reference.txt" />
+            </LabelInputContainer>
+
+            <div className="mt-3 pt-3 border-t border-[var(--bv-border-color-light)]">
+                <h4 className="text-md font-semibold mb-2 text-[var(--bv-text-primary)]">Main Script Operations</h4>
+                <div className="grid grid-cols-2 gap-2">
+                    <Button onClick={restOfProps.onLoadFileFromGitHub} disabled={githubMainOpsDisabled} className="!bg-green-600 hover:!bg-green-700">Load File (Main)</Button>
+                    <Button onClick={restOfProps.onLoadAllFromGitHubFolder} disabled={githubMainOpsDisabled} className="!bg-green-500 hover:!bg-green-600">Load Folder (Main)</Button>
+                    <Button onClick={restOfProps.onSaveFileToGitHub} disabled={githubMainOpsDisabled || !activeMainScriptId} className="!bg-blue-600 hover:!bg-blue-700">Save Active to Path</Button>
+                    <Button onClick={restOfProps.onSaveAllToGitHubFolder} disabled={githubMainOpsDisabled || mainScripts.length === 0} className="!bg-blue-500 hover:!bg-blue-600">Save All to Folder</Button>
+                </div>
             </div>
+            
+            <div className="mt-3 pt-3 border-t border-[var(--bv-border-color-light)]">
+                 <h4 className="text-md font-semibold mb-2 text-[var(--bv-text-primary)]">Original Script Operations</h4>
+                <div className="grid grid-cols-2 gap-2">
+                    <Button onClick={restOfProps.onLoadFileFromGitHubForOriginal} disabled={githubOriginalOpsDisabled} className="!bg-purple-600 hover:!bg-purple-700">Load File (Original)</Button>
+                    <Button onClick={restOfProps.onLoadAllFromGitHubFolderForOriginal} disabled={githubOriginalOpsDisabled} className="!bg-purple-500 hover:!bg-purple-600">Load Folder (Original)</Button>
+                </div>
+            </div>
+
 
             {restOfProps.gitHubStatusMessage && (
               <p className={`mt-2 text-sm ${restOfProps.gitHubStatusMessage.startsWith('Error:') ? 'text-red-600 dark:text-red-400' : 'text-[var(--bv-text-secondary)]'}`} aria-live="polite">
@@ -1205,7 +1271,6 @@ const ControlsPanel: React.FC<ControlsPanelProps> = (props) => {
       }
     ];
   }, [
-    // Props-based dependencies (specific ones are better than whole 'props' object)
     settings, onSettingsChange, onNestedSettingsChange,
     activeMainScriptId, mainScripts, 
     loadedCustomFontName, 
@@ -1214,35 +1279,23 @@ const ControlsPanel: React.FC<ControlsPanelProps> = (props) => {
     gitHubSettings, 
     isGitHubLoading, gitHubStatusMessage,
     activeThemeKey, 
-    
-    // State-based dependencies from ControlsPanel
     isEditingColorTag, editingColorTag, editingColorTagId,
     isEditingImageTag, editingImageTagFields, editingImageTagId, editingImageTagFile, editingImageTagPreviewUrl,
     activeNavigationTab, 
     blockSeparatorsInputText, 
-
-    // Handler dependencies from ControlsPanel (those used inside getPanelSectionsConfig's returned JSX)
     handlePrimaryBgImageUpload, handleSecondaryBgImageUpload, handleBitmapFontImageUpload,
     handleTagPatternsChange, handleCustomLineBreakTagsChange, handleFontFamilyChange,
     handlePixelMarginChange,
     handleBlockSeparatorsInputChange, handleBlockSeparatorsInputBlur,
     handleStartAddNewColorTag, handleStartEditColorTag, handleSaveColorTag, handleDeleteColorTag, handleToggleColorTagEnabled, handleEditingColorTagChange, setIsEditingColorTag,
     handleStartAddNewImageTag, handleStartEditImageTag, handleSaveImageTag, handleDeleteImageTag, handleToggleImageTagEnabled, handleEditingImageTagFieldChange, handleImageTagFileSelected, setIsEditingImageTag,
-    
-    // Other props from ControlsPanelProps that are used via restOfProps. Ensure these are stable or listed.
-    // This example explicitly lists most handlers. For brevity, assuming `props` covers the rest for now,
-    // but a full refactor would itemize all used props from `restOfProps`.
     props 
   ]);
 
 
   const basePanelSections = useMemo(() => getPanelSectionsConfig(props), [
     props, 
-    getPanelSectionsConfig // Add the memoized function itself as a dependency
-    // The previous fix already correctly added isEditingColorTag and isEditingImageTag,
-    // and they are also implicitly covered by `props` or `getPanelSectionsConfig` if it changes due to them.
-    // Explicitly including them here again if `props` was removed/refined might be needed,
-    // but with `getPanelSectionsConfig` as a dep, and it depending on them, this should be fine.
+    getPanelSectionsConfig 
   ]);
 
   const [sectionOrder, setSectionOrder] = useState<string[]>(() => basePanelSections.map((s: PanelSectionItem) => s.id));
