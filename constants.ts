@@ -1,7 +1,7 @@
 
 
 
-import type { AppSettings, GitHubSettings, CustomThemeColors, ResolvedThemeColors, ThemeKey } from './types';
+import type { AppSettings, GitHubSettings, CustomThemeColors, ResolvedThemeColors, ThemeKey, GlossaryTerm } from './types';
 
 const DEFAULT_SAMPLE_BYTE_MAP_STRING = `A=1
 B=1
@@ -199,6 +199,8 @@ export const DEFAULT_GITHUB_SETTINGS: GitHubSettings = {
   filePath: 'script.txt',
   originalFilePath: 'original_script.txt',
 };
+
+export const DEFAULT_GLOSSARY_TERMS: GlossaryTerm[] = [];
 
 
 export const AVAILABLE_FONTS: string[] = [

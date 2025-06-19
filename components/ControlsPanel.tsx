@@ -1,6 +1,7 @@
 
+
 import React, {useState, useEffect, useCallback, useMemo, useRef} from 'react';
-import { AppSettings, Block, NestedAppSettingsObjectKeys, ScriptFile, GitHubSettings, ThemeKey, CustomColorTag, ImageTag, MarginSetting } from '../types';
+import { AppSettings, Block, NestedAppSettingsObjectKeys, ScriptFile, GitHubSettings, ThemeKey, CustomColorTag, ImageTag, MarginSetting, GlossaryTerm, GlossaryCategory } from '../types';
 import { FindScope, FindResultSummaryItem } from '../App';
 import { AVAILABLE_FONTS } 
 from '../constants';
@@ -71,6 +72,11 @@ interface ControlsPanelProps {
   isGitHubLoading: boolean;
   gitHubStatusMessage: string;
   activeThemeKey: ThemeKey;
+  // Glossary Props
+  glossaryTerms: GlossaryTerm[];
+  onAddGlossaryTerm: (term: string, translation: string, category: GlossaryCategory) => void;
+  onUpdateGlossaryTerm: (id: string, term: string, translation: string, category: GlossaryCategory) => void;
+  onDeleteGlossaryTerm: (id: string) => void;
 }
 
 interface SectionProps {
@@ -217,6 +223,8 @@ const DEFAULT_IMAGE_TAG: Omit<ImageTag, 'id' | 'imageUrl'> = {
   enabled: true,
 };
 
+const DEFAULT_GLOSSARY_ITEM_INPUTS = { term: '', translation: '' };
+
 const readFileAsDataURL = (file: File): Promise<string> => {
   return new Promise((resolve, reject) => {
     const reader = new FileReader();
@@ -229,18 +237,19 @@ const readFileAsDataURL = (file: File): Promise<string> => {
 type NavigationTabKey = 'scripts' | 'blocks';
 
 
-const ControlsPanel: React.FC<ControlsPanelProps> = (props) => {
+export const ControlsPanel: React.FC<ControlsPanelProps> = (props) => {
   const {
     settings, onSettingsChange, onNestedSettingsChange,
     mainScripts, activeMainScriptId, 
     loadedCustomFontName, 
-    overflowSettingsPanelOpen, onToggleOverflowSettingsPanel,
-    gitHubSettings, 
-    isGitHubLoading, gitHubStatusMessage,
-    activeThemeKey
+    // overflowSettingsPanelOpen, // Not directly used for section open state here
+    onToggleOverflowSettingsPanel,
+    glossaryTerms, onAddGlossaryTerm, onUpdateGlossaryTerm, onDeleteGlossaryTerm,
   } = props;
 
   const customFontFilePickerRef = useRef<HTMLInputElement>(null);
+  const controlsPanelRef = useRef<HTMLDivElement>(null);
+
 
   const [isEditingColorTag, setIsEditingColorTag] = useState<boolean>(false);
   const [editingColorTag, setEditingColorTag] = useState<CustomColorTag | Omit<CustomColorTag, 'id'>>(DEFAULT_CUSTOM_COLOR_TAG);
@@ -258,6 +267,14 @@ const ControlsPanel: React.FC<ControlsPanelProps> = (props) => {
     () => settings.blockSeparators.join(',')
   );
 
+  // Glossary State
+  const [glossaryTermInput, setGlossaryTermInput] = useState<string>(DEFAULT_GLOSSARY_ITEM_INPUTS.term);
+  const [glossaryTranslationInput, setGlossaryTranslationInput] = useState<string>(DEFAULT_GLOSSARY_ITEM_INPUTS.translation);
+  const [editingGlossaryItemId, setEditingGlossaryItemId] = useState<string | null>(null);
+  const [editingGlossaryItemCategory, setEditingGlossaryItemCategory] = useState<GlossaryCategory | null>(null);
+  const [showGlossaryFormFor, setShowGlossaryFormFor] = useState<GlossaryCategory | null>(null);
+
+
   useEffect(() => {
     const newCanonicalText = settings.blockSeparators.join(',');
     if (blockSeparatorsInputText !== newCanonicalText) {
@@ -266,11 +283,11 @@ const ControlsPanel: React.FC<ControlsPanelProps> = (props) => {
   }, [settings.blockSeparators, blockSeparatorsInputText]);
 
 
-  const handleBlockSeparatorsInputChange = (e: React.ChangeEvent<HTMLInputElement>) => {
+  const handleBlockSeparatorsInputChange = useCallback((e: React.ChangeEvent<HTMLInputElement>) => {
     setBlockSeparatorsInputText(e.target.value);
-  };
+  },[]);
 
-  const handleBlockSeparatorsInputBlur = () => {
+  const handleBlockSeparatorsInputBlur = useCallback(() => {
     const newSeparators = blockSeparatorsInputText
       .split(',')
       .map(s => s.trim())
@@ -278,7 +295,7 @@ const ControlsPanel: React.FC<ControlsPanelProps> = (props) => {
     
     onSettingsChange('blockSeparators', newSeparators);
     setBlockSeparatorsInputText(newSeparators.join(','));
-  };
+  }, [blockSeparatorsInputText, onSettingsChange]);
   
   useEffect(() => {
     if (!isEditingImageTag && editingImageTagPreviewUrl) {
@@ -331,7 +348,7 @@ const ControlsPanel: React.FC<ControlsPanelProps> = (props) => {
   }, [onNestedSettingsChange]);
 
 
-  const handleFontFileSelected = (files: FileList | null) => {
+  const handleFontFileSelected = useCallback((files: FileList | null) => {
     if (files && files.length > 0) {
       const file = files[0];
       let fileNamePart = file.name.split('.').slice(0, -1).join('.');
@@ -357,7 +374,7 @@ const ControlsPanel: React.FC<ControlsPanelProps> = (props) => {
       
       props.onLoadCustomFont(file, cssName);
     }
-  };
+  }, [props.onLoadCustomFont]);
 
   const handleFontFamilyChange = useCallback((e: React.ChangeEvent<HTMLSelectElement>) => {
     const newFontFamily = e.target.value;
@@ -377,17 +394,6 @@ const ControlsPanel: React.FC<ControlsPanelProps> = (props) => {
     }
   }, [onNestedSettingsChange, loadedCustomFontName, settings.systemFont.customFontBase64, settings.systemFont.customFontFileName]);
 
-  const displayCustomFontName = settings.systemFont.customFontFileName 
-    ? settings.systemFont.customFontFileName.split('/').pop()?.split('\\').pop()
-    : loadedCustomFontName; 
-
-  const showCustomFontLoadUI = settings.currentFontType === 'system' &&
-                               (settings.systemFont.fontFamily === "Custom..." || 
-                                (settings.systemFont.customFontBase64 && settings.systemFont.customFontFileName) || 
-                                (loadedCustomFontName && settings.systemFont.fontFamily === loadedCustomFontName));
-
-  const activeMainScriptName = mainScripts.find(s => s.id === activeMainScriptId)?.name || null;
-  const isFindReplaceDisabled = mainScripts.length === 0;
 
   const handleStartAddNewColorTag = useCallback(() => {
     setEditingColorTag(DEFAULT_CUSTOM_COLOR_TAG);
@@ -588,6 +594,56 @@ const ControlsPanel: React.FC<ControlsPanelProps> = (props) => {
     } as MarginSetting); 
   }, [onNestedSettingsChange, settings.pixelOverflowMargins]);
 
+  // Glossary Handlers
+  const handleShowAddGlossaryItemForm = useCallback((category: GlossaryCategory) => {
+    setGlossaryTermInput(DEFAULT_GLOSSARY_ITEM_INPUTS.term);
+    setGlossaryTranslationInput(DEFAULT_GLOSSARY_ITEM_INPUTS.translation);
+    setEditingGlossaryItemId(null);
+    setEditingGlossaryItemCategory(null);
+    setShowGlossaryFormFor(category);
+  }, []);
+  
+  const handleSaveGlossaryItem = useCallback(() => {
+    if (!glossaryTermInput.trim()) {
+      alert("Term cannot be empty.");
+      return;
+    }
+
+    const categoryForSave = editingGlossaryItemId ? editingGlossaryItemCategory : showGlossaryFormFor;
+    if (!categoryForSave) {
+        alert("Category not set for glossary item. This shouldn't happen.");
+        return;
+    }
+
+    if (editingGlossaryItemId) {
+      onUpdateGlossaryTerm(editingGlossaryItemId, glossaryTermInput, glossaryTranslationInput, categoryForSave);
+    } else {
+      onAddGlossaryTerm(glossaryTermInput, glossaryTranslationInput, categoryForSave);
+    }
+    
+    setGlossaryTermInput(DEFAULT_GLOSSARY_ITEM_INPUTS.term);
+    setGlossaryTranslationInput(DEFAULT_GLOSSARY_ITEM_INPUTS.translation);
+    setEditingGlossaryItemId(null);
+    setEditingGlossaryItemCategory(null);
+    setShowGlossaryFormFor(null);
+  }, [glossaryTermInput, glossaryTranslationInput, editingGlossaryItemId, editingGlossaryItemCategory, showGlossaryFormFor, onAddGlossaryTerm, onUpdateGlossaryTerm]);
+
+  const handleStartEditGlossaryItem = useCallback((item: GlossaryTerm) => {
+    setGlossaryTermInput(item.term);
+    setGlossaryTranslationInput(item.translation);
+    setEditingGlossaryItemId(item.id);
+    setEditingGlossaryItemCategory(item.category);
+    setShowGlossaryFormFor(item.category);
+  }, []);
+
+  const handleCancelEditOrAddGlossaryItem = useCallback(() => {
+    setGlossaryTermInput(DEFAULT_GLOSSARY_ITEM_INPUTS.term);
+    setGlossaryTranslationInput(DEFAULT_GLOSSARY_ITEM_INPUTS.translation);
+    setEditingGlossaryItemId(null);
+    setEditingGlossaryItemCategory(null);
+    setShowGlossaryFormFor(null);
+  }, []);
+
 
   const getPanelSectionsConfig = useCallback((currentProps: ControlsPanelProps): PanelSectionItem[] => {
     const { settings, onSettingsChange, onNestedSettingsChange, ...restOfProps } = currentProps;
@@ -619,6 +675,21 @@ const ControlsPanel: React.FC<ControlsPanelProps> = (props) => {
     const githubBaseDisabled = restOfProps.isGitHubLoading || !restOfProps.gitHubSettings.pat || !restOfProps.gitHubSettings.repoFullName;
     const githubMainOpsDisabled = githubBaseDisabled || !restOfProps.gitHubSettings.filePath;
     const githubOriginalOpsDisabled = githubBaseDisabled || !restOfProps.gitHubSettings.originalFilePath;
+
+    const namesGlossaryItems = restOfProps.glossaryTerms.filter(gt => gt.category === 'name');
+    const termsGlossaryItems = restOfProps.glossaryTerms.filter(gt => gt.category === 'term');
+
+    const displayCustomFontNameInConfig = settings.systemFont.customFontFileName 
+        ? settings.systemFont.customFontFileName.split('/').pop()?.split('\\').pop()
+        : loadedCustomFontName; 
+
+    const showCustomFontLoadUIInConfig = settings.currentFontType === 'system' &&
+                               (settings.systemFont.fontFamily === "Custom..." || 
+                                (settings.systemFont.customFontBase64 && settings.systemFont.customFontFileName) || 
+                                (loadedCustomFontName && settings.systemFont.fontFamily === loadedCustomFontName));
+
+    const activeMainScriptNameInConfig = mainScripts.find(s => s.id === activeMainScriptId)?.name || null;
+    const isFindReplaceDisabledInConfig = mainScripts.length === 0;
 
 
     return [
@@ -821,7 +892,7 @@ const ControlsPanel: React.FC<ControlsPanelProps> = (props) => {
                 {restOfProps.mainScripts.length === 0 ? <p className="text-xs text-[var(--bv-text-secondary)]">No main scripts loaded.</p> :
                 (<>
                   <p className="text-xs text-[var(--bv-text-secondary)] mb-1">
-                      Active Script: <span className="font-semibold text-[var(--bv-text-primary)]">{activeMainScriptName || "None Selected"}</span>
+                      Active Script: <span className="font-semibold text-[var(--bv-text-primary)]">{activeMainScriptNameInConfig || "None Selected"}</span>
                   </p>
                   <div className="max-h-48 overflow-y-auto border border-[var(--bv-border-color)] rounded p-1 space-y-1 mt-1">
                       {restOfProps.mainScripts.map((script) => (
@@ -882,7 +953,7 @@ const ControlsPanel: React.FC<ControlsPanelProps> = (props) => {
             onFindNext={restOfProps.onFindNext} onReplace={restOfProps.onReplace} onReplaceAll={restOfProps.onReplaceAll}
             resultsMessage={restOfProps.findResultsMessage}
             isCurrentBlockScopeDisabled={restOfProps.isFindCurrentBlockDisabled}
-            isFindReplaceDisabled={isFindReplaceDisabled} 
+            isFindReplaceDisabled={isFindReplaceDisabledInConfig} 
             findResultSummary={restOfProps.findResultSummary}
             onNavigateToFindResult={restOfProps.onNavigateToFindResult}
             activeThemeKey={restOfProps.activeThemeKey}
@@ -990,16 +1061,16 @@ const ControlsPanel: React.FC<ControlsPanelProps> = (props) => {
                 <LabelInputContainer label="Font Family" htmlFor="fontFamily">
                   <SelectInput id="fontFamily" value={settings.systemFont.fontFamily} onChange={handleFontFamilyChange}>
                     {AVAILABLE_FONTS.map(font => <option key={font} value={font}>{font.split(',')[0]}</option>)}
-                    {displayCustomFontName && !AVAILABLE_FONTS.includes(displayCustomFontName) && displayCustomFontName !== "Custom..." && (
-                      <option value={displayCustomFontName}>{displayCustomFontName}</option>
+                    {displayCustomFontNameInConfig && !AVAILABLE_FONTS.includes(displayCustomFontNameInConfig) && displayCustomFontNameInConfig !== "Custom..." && (
+                      <option value={displayCustomFontNameInConfig}>{displayCustomFontNameInConfig}</option>
                     )}
                     <option value="Custom...">Custom (Load from file)...</option>
                   </SelectInput>
                 </LabelInputContainer>
-                {showCustomFontLoadUI && (
+                {showCustomFontLoadUIInConfig && (
                   <div className="mt-2 p-2 border border-[var(--bv-border-color)] rounded-md space-y-2">
                      <LabelInputContainer 
-                        label={displayCustomFontName ? `Loaded: ${displayCustomFontName}` : "Custom Font"} 
+                        label={displayCustomFontNameInConfig ? `Loaded: ${displayCustomFontNameInConfig}` : "Custom Font"} 
                         htmlFor="customFontFileInput"
                     >
                         <FileInput
@@ -1008,8 +1079,8 @@ const ControlsPanel: React.FC<ControlsPanelProps> = (props) => {
                             accept=".ttf,.otf,.woff,.woff2,font/ttf,font/otf,font/woff,font/woff2"
                             onChange={handleFontFileSelected}
                             buttonLabel={
-                                displayCustomFontName 
-                                ? `Change Font... (${displayCustomFontName.substring(0,15)}${displayCustomFontName.length > 15 ? '...' : ''})` 
+                                displayCustomFontNameInConfig 
+                                ? `Change Font... (${displayCustomFontNameInConfig.substring(0,15)}${displayCustomFontNameInConfig.length > 15 ? '...' : ''})` 
                                 : "Choose Font File..."
                             }
                         />
@@ -1174,37 +1245,144 @@ const ControlsPanel: React.FC<ControlsPanelProps> = (props) => {
         )
       },
       {
+        id: 'glossary-management-section', title: 'Glossary Management', defaultOpen: false, content: (
+          <>
+            {showGlossaryFormFor && (
+              <div className="p-3 border border-[var(--bv-border-color)] rounded-md space-y-2 bg-[var(--bv-element-background)] mb-3">
+                <h5 className="text-sm font-medium">
+                  {editingGlossaryItemId ? `Edit ${editingGlossaryItemCategory === 'name' ? 'Name' : 'Term'}` : `Add New ${showGlossaryFormFor === 'name' ? 'Name' : 'Term'}`}
+                </h5>
+                <LabelInputContainer label="Term" htmlFor="glossaryTermInput">
+                  <TextInput 
+                    id="glossaryTermInput" 
+                    value={glossaryTermInput} 
+                    onChange={e => setGlossaryTermInput(e.target.value)} 
+                    placeholder="Enter term" 
+                  />
+                </LabelInputContainer>
+                <LabelInputContainer label="Translation" htmlFor="glossaryTranslationInput">
+                  <TextAreaInput 
+                    id="glossaryTranslationInput" 
+                    value={glossaryTranslationInput} 
+                    onChange={e => setGlossaryTranslationInput(e.target.value)} 
+                    placeholder="Enter translation" 
+                    rows={3}
+                  />
+                </LabelInputContainer>
+                <div className="flex gap-2 mt-2">
+                  <Button onClick={handleSaveGlossaryItem} className="flex-1">
+                    {editingGlossaryItemId ? `Update ${editingGlossaryItemCategory === 'name' ? 'Name' : 'Term'}` : `Add ${showGlossaryFormFor === 'name' ? 'Name' : 'Term'}`}
+                  </Button>
+                  <Button onClick={handleCancelEditOrAddGlossaryItem} className="flex-1 !bg-gray-500 hover:!bg-gray-600">
+                    Cancel
+                  </Button>
+                </div>
+              </div>
+            )}
+
+            {/* Names Section */}
+            <div className="mb-4">
+              <div className="flex justify-between items-center mb-2">
+                <h4 className="text-md font-semibold text-[var(--bv-accent-primary)]">Names</h4>
+                {!showGlossaryFormFor && (
+                  <Button onClick={() => handleShowAddGlossaryItemForm('name')} className="text-xs !py-1 !px-2">
+                    Add New Name
+                  </Button>
+                )}
+              </div>
+              {namesGlossaryItems.length === 0 && !showGlossaryFormFor && (
+                <p className="text-xs text-[var(--bv-text-secondary)]">No names defined.</p>
+              )}
+              {namesGlossaryItems.length > 0 && (
+                <div className="space-y-2 max-h-48 overflow-y-auto pr-1 border border-[var(--bv-border-color-light)] rounded-md p-2">
+                  {namesGlossaryItems.map(gItem => (
+                    <div key={gItem.id} className="p-2 border border-[var(--bv-border-color)] rounded-md bg-[var(--bv-element-background)]">
+                      <div className="flex justify-between items-start gap-2">
+                        <div>
+                          <strong className="text-sm text-[var(--bv-text-primary)] block break-all">{gItem.term}</strong>
+                          <p className="text-xs text-[var(--bv-text-secondary)] mt-0.5 break-words whitespace-pre-wrap">{gItem.translation}</p>
+                        </div>
+                        <div className="flex-shrink-0 space-x-1 mt-0.5">
+                          <Button onClick={() => handleStartEditGlossaryItem(gItem)} className="!p-1 text-xs !bg-blue-500 hover:!bg-blue-600" title="Edit Item">✏️</Button>
+                          <Button onClick={() => onDeleteGlossaryTerm(gItem.id)} className="!p-1 text-xs !bg-red-500 hover:!bg-red-600" title="Delete Item">🗑️</Button>
+                        </div>
+                      </div>
+                    </div>
+                  ))}
+                </div>
+              )}
+            </div>
+
+            {/* Terms Section */}
+            <div className="mb-4">
+              <div className="flex justify-between items-center mb-2">
+                <h4 className="text-md font-semibold text-[var(--bv-accent-primary)]">Terms</h4>
+                 {!showGlossaryFormFor && (
+                    <Button onClick={() => handleShowAddGlossaryItemForm('term')} className="text-xs !py-1 !px-2">
+                      Add New Term
+                    </Button>
+                  )}
+              </div>
+              {termsGlossaryItems.length === 0 && !showGlossaryFormFor && (
+                <p className="text-xs text-[var(--bv-text-secondary)]">No terms defined.</p>
+              )}
+              {termsGlossaryItems.length > 0 && (
+                 <div className="space-y-2 max-h-48 overflow-y-auto pr-1 border border-[var(--bv-border-color-light)] rounded-md p-2">
+                  {termsGlossaryItems.map(gItem => (
+                    <div key={gItem.id} className="p-2 border border-[var(--bv-border-color)] rounded-md bg-[var(--bv-element-background)]">
+                      <div className="flex justify-between items-start gap-2">
+                        <div>
+                          <strong className="text-sm text-[var(--bv-text-primary)] block break-all">{gItem.term}</strong>
+                          <p className="text-xs text-[var(--bv-text-secondary)] mt-0.5 break-words whitespace-pre-wrap">{gItem.translation}</p>
+                        </div>
+                        <div className="flex-shrink-0 space-x-1 mt-0.5">
+                          <Button onClick={() => handleStartEditGlossaryItem(gItem)} className="!p-1 text-xs !bg-blue-500 hover:!bg-blue-600" title="Edit Item">✏️</Button>
+                          <Button onClick={() => onDeleteGlossaryTerm(gItem.id)} className="!p-1 text-xs !bg-red-500 hover:!bg-red-600" title="Delete Item">🗑️</Button>
+                        </div>
+                      </div>
+                    </div>
+                  ))}
+                </div>
+              )}
+            </div>
+          </>
+        )
+      },
+       {
         id: 'byte-bit-counting-section', title: 'Byte/Bit Counting & Restrictions', defaultOpen: false, content: (
           <>
-            <LabelInputContainer label="Custom Character Byte Values (one per line)" htmlFor="customByteMapString"
-              subText="Format: char=value (e.g., A=1, €=3, [ICON]=2). Lines starting with # are comments.">
+            <LabelInputContainer label="Custom Character Byte Map" htmlFor="customByteMapString" subText="One char/tag per line, e.g., A=1 or [ICON]=2. '#' starts a comment.">
               <TextAreaInput
                 id="customByteMapString"
                 value={settings.customByteMapString}
                 onChange={(e) => onSettingsChange('customByteMapString', e.target.value)}
                 rows={6}
-                placeholder="e.g., A=1\n€=3\n[SMILE_ICON]=2"
+                placeholder={"A=1\nB=1\n€=3\n[SMILEY_ICON]=2\n# This is a comment"}
               />
             </LabelInputContainer>
-            <LabelInputContainer label="Default Byte Value for Unlisted Characters" htmlFor="defaultCharacterByteValue">
-              <TextInput
-                id="defaultCharacterByteValue"
-                type="number"
-                min="0"
-                step="1"
-                value={settings.defaultCharacterByteValue}
-                onChange={(e) => onSettingsChange('defaultCharacterByteValue', parseInt(e.target.value, 10) || 0)}
-                className="w-24"
-              />
-            </LabelInputContainer>
-            <LabelInputContainer label="Enable Byte Restriction in Comparison Mode" htmlFor="enableByteRestrictionInComparisonMode" inline
-              subText="Prevents lines in the current block from exceeding the byte count of corresponding original lines.">
-              <input
-                type="checkbox"
-                id="enableByteRestrictionInComparisonMode"
-                checked={settings.enableByteRestrictionInComparisonMode}
+            <InputWithSlider 
+              label="Default Byte Value for Unmapped Chars" 
+              unit="bytes" 
+              id="defaultCharacterByteValue" 
+              value={settings.defaultCharacterByteValue} 
+              onChange={(val) => onSettingsChange('defaultCharacterByteValue', Math.max(0, val))} 
+              min={0} max={8} step={1} 
+              subText="Bytes for chars not in the map."
+            />
+            <LabelInputContainer 
+              label="Enable Byte Restriction in Comparison Mode" 
+              htmlFor="enableByteRestriction" 
+              inline
+              disabled={!settings.comparisonModeEnabled}
+              subText={!settings.comparisonModeEnabled ? "Enable Comparison Mode first." : "Prevent lines in edited script from exceeding original's byte count."}
+            >
+              <input 
+                type="checkbox" 
+                id="enableByteRestriction" 
+                checked={settings.enableByteRestrictionInComparisonMode} 
                 onChange={(e) => onSettingsChange('enableByteRestrictionInComparisonMode', e.target.checked)}
                 className="h-5 w-5 text-[var(--bv-accent-primary)] border-[var(--bv-input-border)] rounded focus:ring-[var(--bv-input-focus-ring)]"
+                disabled={!settings.comparisonModeEnabled}
               />
             </LabelInputContainer>
           </>
@@ -1212,197 +1390,212 @@ const ControlsPanel: React.FC<ControlsPanelProps> = (props) => {
       },
       {
         id: 'github-sync-section', title: 'GitHub Folder Sync', defaultOpen: false, content: (
-          <>
-            <div className="p-2 mb-2 border border-red-400 bg-red-50 dark:border-red-600 dark:bg-red-900/30 rounded-md">
-              <p className="text-xs text-red-700 dark:text-red-300 font-semibold">Security Warning:</p>
-              <ul className="list-disc list-inside text-xs text-red-600 dark:text-red-400">
-                <li>Personal Access Tokens (PATs) are sensitive. Use tokens with the minimum necessary scopes (e.g., `repo` or `public_repo`).</li>
-                <li>Prefer PATs with an expiration date.</li>
-                <li>The PAT is stored in memory for the current session only and is not saved with profiles or JSON exports.</li>
-              </ul>
+           <>
+            <LabelInputContainer label="Personal Access Token (PAT)" htmlFor="githubPat" subText="Requires 'repo' scope. Store securely.">
+                <TextInput type="password" id="githubPat" value={restOfProps.gitHubSettings.pat} onChange={(e) => restOfProps.onGitHubSettingsChange('pat', e.target.value)} placeholder="ghp_YourTokenHere" />
+            </LabelInputContainer>
+            <LabelInputContainer label="Repository (owner/repo)" htmlFor="githubRepo" subText="e.g., username/my-project">
+                <TextInput id="githubRepo" value={restOfProps.gitHubSettings.repoFullName} onChange={(e) => restOfProps.onGitHubSettingsChange('repoFullName', e.target.value)} placeholder="owner/repo-name" />
+            </LabelInputContainer>
+             <LabelInputContainer label="Branch" htmlFor="githubBranch" subText="Default: 'main'">
+                <TextInput id="githubBranch" value={restOfProps.gitHubSettings.branch} onChange={(e) => restOfProps.onGitHubSettingsChange('branch', e.target.value)} placeholder="main" />
+            </LabelInputContainer>
+
+            <div className="mt-3 pt-3 border-t border-[var(--bv-border-color-light)]">
+                <h4 className="text-md font-semibold text-[var(--bv-text-primary)] mb-1">Main Script Paths</h4>
+                <LabelInputContainer label="File Path (for single file ops)" htmlFor="githubFilePathMain" subText="e.g., scripts/chapter1.txt">
+                    <TextInput id="githubFilePathMain" value={restOfProps.gitHubSettings.filePath} onChange={(e) => restOfProps.onGitHubSettingsChange('filePath', e.target.value)} placeholder="path/to/your/main_script.txt" />
+                </LabelInputContainer>
+                <div className="grid grid-cols-2 gap-2 mt-1">
+                    <Button onClick={restOfProps.onSaveFileToGitHub} disabled={githubMainOpsDisabled} className="!bg-blue-600 hover:!bg-blue-700 text-xs !py-1" title="Save active script to its GitHub path">Save Active to Path</Button>
+                    <Button onClick={restOfProps.onSaveAllToGitHubFolder} disabled={githubMainOpsDisabled} className="!bg-blue-500 hover:!bg-blue-600 text-xs !py-1" title="Save all changed main scripts to their respective paths in the folder">Save All to Folder</Button>
+                </div>
             </div>
-            <LabelInputContainer label="Personal Access Token (PAT)" htmlFor="github-pat">
-              <TextInput id="github-pat" type="password" value={restOfProps.gitHubSettings.pat} onChange={(e) => restOfProps.onGitHubSettingsChange('pat', e.target.value)} placeholder="Enter your GitHub PAT" />
-            </LabelInputContainer>
-            <LabelInputContainer label="Repository (owner/repo-name)" htmlFor="github-repo">
-              <TextInput id="github-repo" type="text" value={restOfProps.gitHubSettings.repoFullName} onChange={(e) => restOfProps.onGitHubSettingsChange('repoFullName', e.target.value)} placeholder="e.g., your-username/your-repo" />
-            </LabelInputContainer>
-            <LabelInputContainer label="Branch" htmlFor="github-branch">
-              <TextInput id="github-branch" type="text" value={restOfProps.gitHubSettings.branch} onChange={(e) => restOfProps.onGitHubSettingsChange('branch', e.target.value)} placeholder="e.g., main" />
-            </LabelInputContainer>
-            <LabelInputContainer label="Main Script Path (file or folder)" htmlFor="github-main-path">
-                <TextInput id="github-main-path" type="text" value={restOfProps.gitHubSettings.filePath} onChange={(e) => restOfProps.onGitHubSettingsChange('filePath', e.target.value)} placeholder="e.g., scripts/main.txt or scripts/main_folder/" />
-            </LabelInputContainer>
-            <LabelInputContainer label="Original Script Path (file or folder)" htmlFor="github-original-path">
-                <TextInput id="github-original-path" type="text" value={restOfProps.gitHubSettings.originalFilePath} onChange={(e) => restOfProps.onGitHubSettingsChange('originalFilePath', e.target.value)} placeholder="e.g., scripts/original.txt or scripts/originals_folder/" />
-            </LabelInputContainer>
-            <div className="mt-4 grid grid-cols-2 gap-2">
-                 <Button onClick={restOfProps.onSaveFileToGitHub} disabled={githubMainOpsDisabled || restOfProps.mainScripts.length === 0} className="!bg-blue-600 hover:!bg-blue-700">Save Active to Main Path</Button>
-                 <Button onClick={restOfProps.onSaveAllToGitHubFolder} disabled={githubMainOpsDisabled || restOfProps.mainScripts.length === 0} className="!bg-blue-500 hover:!bg-blue-600">Save All Changed to Main Folder</Button>
+
+            <div className="mt-3 pt-3 border-t border-[var(--bv-border-color-light)]">
+                <h4 className="text-md font-semibold text-[var(--bv-text-primary)] mb-1">Original Script Paths (for Comparison)</h4>
+                <LabelInputContainer label="File Path (for single file ops)" htmlFor="githubFilePathOriginal" subText="e.g., original_scripts/chapter1.txt">
+                    <TextInput id="githubFilePathOriginal" value={restOfProps.gitHubSettings.originalFilePath} onChange={(e) => restOfProps.onGitHubSettingsChange('originalFilePath', e.target.value)} placeholder="path/to/your/original_script.txt" />
+                </LabelInputContainer>
             </div>
-            {restOfProps.gitHubStatusMessage && (
-              <p className={`mt-2 text-xs ${restOfProps.gitHubStatusMessage.startsWith('Error:') ? 'text-red-500' : 'text-[var(--bv-text-secondary)]'}`}>{restOfProps.gitHubStatusMessage}</p>
-            )}
-            {githubBaseDisabled && !restOfProps.isGitHubLoading && (
-                 <p className="mt-2 text-xs text-[var(--bv-text-secondary)]">
-                    Provide PAT and Repository to enable GitHub operations. File/Folder paths enable specific load/save actions.
-                </p>
-            )}
-          </>
+            {restOfProps.isGitHubLoading && <p className="text-sm text-yellow-500 mt-2 animate-pulse">{restOfProps.gitHubStatusMessage || "Loading from GitHub..."}</p>}
+            {!restOfProps.isGitHubLoading && restOfProps.gitHubStatusMessage && <p className={`text-sm mt-2 ${restOfProps.gitHubStatusMessage.startsWith("Error:") ? 'text-red-500' : 'text-green-500'}`}>{restOfProps.gitHubStatusMessage}</p>}
+           </>
         )
-      },
+      }
     ];
   }, [
-      blockSeparatorsInputText, // For Script Management
-      handleBlockSeparatorsInputChange, handleBlockSeparatorsInputBlur,
-      handlePrimaryBgImageUpload, handleSecondaryBgImageUpload, // For Preview Area
-      activeNavigationTab, setActiveNavigationTab, // For Script & Block Navigation
-      handleFontFamilyChange, displayCustomFontName, showCustomFontLoadUI, handleFontFileSelected, // For Font Styling
-      handleBitmapFontImageUpload,
-      handleTagPatternsChange, handleCustomLineBreakTagsChange, // For Tag Handling
-      isEditingColorTag, editingColorTag, editingColorTagId, // For Custom Color Tags
-      handleStartAddNewColorTag, handleStartEditColorTag, handleSaveColorTag,
-      handleDeleteColorTag, handleToggleColorTagEnabled, handleEditingColorTagChange,
-      isEditingImageTag, editingImageTagFields, editingImageTagId, editingImageTagFile, editingImageTagPreviewUrl, // For Image Tags
-      handleStartAddNewImageTag, handleStartEditImageTag, handleSaveImageTag,
-      handleDeleteImageTag, handleToggleImageTagEnabled, handleEditingImageTagFieldChange,
-      handleImageTagFileSelected,
-      handlePixelMarginChange, // For Overflow Margins
-      props // Include all props to ensure re-creation if any prop changes
+    props, // Main prop object
+    settings, onSettingsChange, onNestedSettingsChange, // Destructured from props, but props covers them
+    mainScripts, activeMainScriptId, loadedCustomFontName, glossaryTerms, // Other props items
+    blockSeparatorsInputText, activeNavigationTab,
+    isEditingColorTag, editingColorTag, editingColorTagId,
+    isEditingImageTag, editingImageTagFields, editingImageTagId, editingImageTagFile, editingImageTagPreviewUrl,
+    glossaryTermInput, glossaryTranslationInput, editingGlossaryItemId, editingGlossaryItemCategory, showGlossaryFormFor,
+    // Callbacks from ControlsPanel scope (ensure they are memoized themselves)
+    handleBlockSeparatorsInputChange, handleBlockSeparatorsInputBlur,
+    handlePrimaryBgImageUpload, handleSecondaryBgImageUpload, handleBitmapFontImageUpload,
+    handleFontFileSelected, handleFontFamilyChange,
+    handleStartAddNewColorTag, handleStartEditColorTag, handleSaveColorTag, handleDeleteColorTag, handleToggleColorTagEnabled, handleEditingColorTagChange,
+    handleStartAddNewImageTag, handleStartEditImageTag, handleImageTagFileSelected, handleEditingImageTagFieldChange, handleSaveImageTag, handleDeleteImageTag, handleToggleImageTagEnabled,
+    handleTagPatternsChange, handleCustomLineBreakTagsChange, handlePixelMarginChange,
+    handleShowAddGlossaryItemForm, handleSaveGlossaryItem, handleStartEditGlossaryItem, handleCancelEditOrAddGlossaryItem,
+    setActiveNavigationTab, setGlossaryTermInput, setGlossaryTranslationInput, // State setters
   ]);
 
-  const [openSections, setOpenSections] = useState<Record<string, boolean>>(() => {
-    const initialConfig = getPanelSectionsConfig(props);
-    const initialOpenState: Record<string, boolean> = {};
-    initialConfig.forEach(section => {
-      initialOpenState[section.id] = section.defaultOpen ?? false;
+  const panelItems = useMemo(() => getPanelSectionsConfig(props), [getPanelSectionsConfig, props]);
+
+  const [panelSectionsOrder, setPanelSectionsOrder] = useState<string[]>(() => panelItems.map(s => s.id));
+  const [openSections, setOpenSections] = useState<Record<string, boolean>>(() =>
+    panelItems.reduce((acc, section) => {
+      acc[section.id] = section.defaultOpen ?? false;
+      return acc;
+    }, {} as Record<string, boolean>)
+  );
+  
+  const [draggedSectionId, setDraggedSectionId] = useState<string | null>(null);
+  const [dragOverSectionId, setDragOverSectionId] = useState<string | null>(null);
+
+  useEffect(() => {
+    const newOrderFromItems = panelItems.map(s => s.id);
+    setPanelSectionsOrder(currentOrder => {
+      const currentOrderSet = new Set(currentOrder);
+      const newOrderSet = new Set(newOrderFromItems);
+      const maintainedOrder = currentOrder.filter(id => newOrderSet.has(id));
+      const addedIds = newOrderFromItems.filter(id => !currentOrderSet.has(id));
+      return [...maintainedOrder, ...addedIds];
     });
-    // Load from localStorage
-    try {
-      const storedOpenSections = localStorage.getItem('bv_openSections');
-      if (storedOpenSections) {
-        return { ...initialOpenState, ...JSON.parse(storedOpenSections) };
+
+    setOpenSections(currentOpenSections => {
+      const nextOpenSections = { ...currentOpenSections };
+      const itemIds = new Set(panelItems.map(s => s.id));
+      panelItems.forEach(item => {
+        if (nextOpenSections[item.id] === undefined) {
+          // Initialize open state based on defaultOpen from panelItems,
+          // which itself is derived from props.overflowSettingsPanelOpen for the specific section.
+          nextOpenSections[item.id] = item.defaultOpen ?? false;
+        }
+      });
+      Object.keys(nextOpenSections).forEach(id => {
+        if (!itemIds.has(id)) {
+          delete nextOpenSections[id];
+        }
+      });
+      return nextOpenSections;
+    });
+  }, [panelItems]);
+
+
+  const handleToggleSection = useCallback((sectionId: string) => {
+    setOpenSections(prevOpenSections => {
+      const newOpenState = !prevOpenSections[sectionId];
+      if (sectionId === 'overflow-settings-section') {
+        // This call updates App.tsx's overflowSettingsPanelOpen state,
+        // which then flows down to PreviewArea's showPixelMarginGuides prop.
+        onToggleOverflowSettingsPanel();
       }
-    } catch (e) { console.error("Error loading open sections from localStorage", e); }
-    return initialOpenState;
-  });
+      return { ...prevOpenSections, [sectionId]: newOpenState };
+    });
+  }, [onToggleOverflowSettingsPanel]);
 
-  const [panelSectionsOrder, setPanelSectionsOrder] = useState<string[]>(() => {
-    const initialConfig = getPanelSectionsConfig(props);
-    // Load order from localStorage or default to initial config order
-    try {
-      const storedOrder = localStorage.getItem('bv_panelSectionsOrder');
-      if (storedOrder) {
-        const parsedOrder = JSON.parse(storedOrder) as string[];
-        // Validate against current sections to prevent issues with outdated stored orders
-        const currentSectionIds = new Set(initialConfig.map(s => s.id));
-        const validOrder = parsedOrder.filter(id => currentSectionIds.has(id));
-        // Add any new sections not in the stored order
-        initialConfig.forEach(s => { if (!validOrder.includes(s.id)) validOrder.push(s.id); });
-        return validOrder;
-      }
-    } catch (e) { console.error("Error loading panel sections order from localStorage", e); }
-    return initialConfig.map(s => s.id);
-  });
 
-  useEffect(() => {
-    try {
-      localStorage.setItem('bv_openSections', JSON.stringify(openSections));
-    } catch (e) { console.error("Error saving open sections to localStorage", e); }
-  }, [openSections]);
+  const handleDragStart = useCallback((e: React.DragEvent<HTMLButtonElement>, sectionId: string) => {
+    setDraggedSectionId(sectionId);
+    if (e.dataTransfer) {
+      e.dataTransfer.effectAllowed = 'move';
+      e.dataTransfer.setData('text/plain', sectionId);
+    }
+  }, []);
 
-  useEffect(() => {
-    try {
-      localStorage.setItem('bv_panelSectionsOrder', JSON.stringify(panelSectionsOrder));
-    } catch (e) { console.error("Error saving panel sections order to localStorage", e); }
-  }, [panelSectionsOrder]);
+  const handleDragEnd = useCallback(() => {
+    setDraggedSectionId(null);
+    setDragOverSectionId(null);
+  }, []);
 
-  const toggleSectionOpen = (sectionId: string) => {
-    setOpenSections(prev => ({ ...prev, [sectionId]: !prev[sectionId] }));
-  };
-
-  const [draggingItemId, setDraggingItemId] = useState<string | null>(null);
-  const [dragOverItemId, setDragOverItemId] = useState<string | null>(null);
-
-  const handleDragStart = (e: React.DragEvent<HTMLButtonElement>, sectionId: string) => {
-    setDraggingItemId(sectionId);
-    e.dataTransfer.effectAllowed = "move";
-    e.dataTransfer.setData("text/plain", sectionId); 
-  };
-  
-  const handleDragEnd = () => {
-    setDraggingItemId(null);
-    setDragOverItemId(null);
-  };
-  
-  const handleDragOver = (e: React.DragEvent<HTMLDivElement>, sectionId: string) => {
+  const handleDragOver = useCallback((e: React.DragEvent<HTMLDivElement>) => {
     e.preventDefault(); 
-    if (draggingItemId && draggingItemId !== sectionId) {
-      setDragOverItemId(sectionId);
+    if (draggedSectionId && e.dataTransfer) {
+      e.dataTransfer.dropEffect = 'move';
     }
-  };
+  }, [draggedSectionId]);
 
-  const handleDragEnter = (e: React.DragEvent<HTMLDivElement>, sectionId: string) => {
+  const handleDragEnter = useCallback((e: React.DragEvent<HTMLDivElement>, targetSectionId: string) => {
     e.preventDefault();
-    if (draggingItemId && draggingItemId !== sectionId) {
-      setDragOverItemId(sectionId);
+    if (draggedSectionId && draggedSectionId !== targetSectionId) {
+      setDragOverSectionId(targetSectionId);
     }
-  };
-  
-  const handleDragLeave = () => {
-    setDragOverItemId(null);
-  };
+  }, [draggedSectionId]);
 
-  const handleDrop = (e: React.DragEvent<HTMLDivElement>, targetSectionId: string) => {
-    e.preventDefault();
-    const sourceSectionId = draggingItemId;
-    if (sourceSectionId && sourceSectionId !== targetSectionId) {
-      const newOrder = [...panelSectionsOrder];
-      const sourceIndex = newOrder.indexOf(sourceSectionId);
-      const targetIndex = newOrder.indexOf(targetSectionId);
-  
-      if (sourceIndex !== -1 && targetIndex !== -1) {
-        const [movedItem] = newOrder.splice(sourceIndex, 1);
-        newOrder.splice(targetIndex, 0, movedItem);
-        setPanelSectionsOrder(newOrder);
+  const handleDragLeave = useCallback((e: React.DragEvent<HTMLDivElement>, targetSectionId: string) => {
+      if (!e.currentTarget.contains(e.relatedTarget as Node)) {
+          if (dragOverSectionId === targetSectionId) {
+            setDragOverSectionId(null);
+          }
       }
+  }, [dragOverSectionId]);
+
+  const handleDrop = useCallback((e: React.DragEvent<HTMLDivElement>, targetSectionId: string) => {
+    e.preventDefault();
+    if (!draggedSectionId || draggedSectionId === targetSectionId) {
+      setDragOverSectionId(null);
+      setDraggedSectionId(null);
+      return;
     }
-    setDraggingItemId(null);
-    setDragOverItemId(null);
-  };
 
+    setPanelSectionsOrder(prevOrder => {
+      const newOrder = [...prevOrder];
+      const draggedIndex = newOrder.indexOf(draggedSectionId);
+      const targetIndex = newOrder.indexOf(targetSectionId);
 
-  const panelSections = useMemo(() => {
-    const config = getPanelSectionsConfig(props);
-    return panelSectionsOrder.map(id => config.find(s => s.id === id)).filter(Boolean) as PanelSectionItem[];
-  }, [panelSectionsOrder, props, getPanelSectionsConfig]);
+      if (draggedIndex === -1 || targetIndex === -1) return prevOrder;
+
+      const [draggedItem] = newOrder.splice(draggedIndex, 1);
+      newOrder.splice(targetIndex, 0, draggedItem);
+      return newOrder;
+    });
+    setDragOverSectionId(null);
+    setDraggedSectionId(null);
+  }, [draggedSectionId]);
+
+  const sectionsById = useMemo(() => 
+    panelItems.reduce((acc, section) => {
+      acc[section.id] = section;
+      return acc;
+    }, {} as Record<string, PanelSectionItem>), 
+    [panelItems]
+  );
+  
+  const sortedPanelSections = useMemo(() => 
+    panelSectionsOrder
+      .map(id => sectionsById[id])
+      .filter(Boolean),
+    [panelSectionsOrder, sectionsById]
+  );
 
   return (
-    <div className="w-full h-full overflow-y-auto pr-1 custom-scrollbar" aria-label="Controls Panel">
-      {panelSections.map((section) => (
-         <DraggableSectionWrapper
-            key={section.id}
-            onDragEnter={(e) => handleDragEnter(e, section.id)}
-            onDragOver={(e) => handleDragOver(e, section.id)}
-            onDragLeave={handleDragLeave}
-            onDrop={(e) => handleDrop(e, section.id)}
-            isDragging={draggingItemId === section.id}
-            isDragOver={dragOverItemId === section.id}
+    <div ref={controlsPanelRef} className="h-full overflow-y-auto p-1 space-y-0.5 controls-panel-scroll-container" role="form" aria-label="Controls Panel">
+      {sortedPanelSections.map((section) => (
+        <DraggableSectionWrapper
+          key={section.id}
+          onDragEnter={(e) => handleDragEnter(e, section.id)}
+          onDragOver={handleDragOver}
+          onDragLeave={(e) => handleDragLeave(e, section.id)}
+          onDrop={(e) => handleDrop(e, section.id)}
+          isDragging={draggedSectionId === section.id}
+          isDragOver={dragOverSectionId === section.id && draggedSectionId !== section.id}
+        >
+          <Section
+            id={section.id}
+            title={section.title}
+            isOpen={openSections[section.id] ?? section.defaultOpen ?? false}
+            onToggle={() => handleToggleSection(section.id)}
+            onDragStartButton={(e) => handleDragStart(e, section.id)}
+            onDragEndButton={handleDragEnd}
           >
-            <Section
-                title={section.title}
-                isOpen={openSections[section.id] ?? section.defaultOpen ?? false}
-                onToggle={() => toggleSectionOpen(section.id)}
-                id={section.id}
-                onDragStartButton={(e) => handleDragStart(e, section.id)}
-                onDragEndButton={handleDragEnd}
-            >
-              {section.content}
-            </Section>
+            {section.content}
+          </Section>
         </DraggableSectionWrapper>
       ))}
     </div>
   );
 };
-
-export default ControlsPanel;

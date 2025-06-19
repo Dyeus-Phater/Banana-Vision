@@ -119,6 +119,15 @@ export interface ImageTag {
   enabled: boolean;
 }
 
+export type GlossaryCategory = 'name' | 'term';
+
+export interface GlossaryTerm {
+  id: string;
+  term: string;
+  translation: string;
+  category: GlossaryCategory;
+}
+
 export interface AppSettings {
   text: string; 
   previewWidth: number;

@@ -3,15 +3,23 @@
 
 
 
+
+
+
+
+
+
+
 import React, { useState, useCallback, useRef, useEffect, useLayoutEffect, useMemo } from 'react';
 import JSZip from 'jszip';
 import { Octokit } from '@octokit/rest';
 import { 
   AppSettings, Block, NestedAppSettingsObjectKeys, ScriptFile, GitHubSettings, Profile, MainViewMode,
-  ThemeKey, CustomThemeColors, AppThemeSettings, BlockMetrics, LineMetricDetail, CharacterByteMapEntry, LineMetrics
+  ThemeKey, CustomThemeColors, AppThemeSettings, BlockMetrics, LineMetricDetail, CharacterByteMapEntry, LineMetrics,
+  GlossaryTerm, GlossaryCategory
 } from './types';
-import { DEFAULT_SETTINGS, DEFAULT_GITHUB_SETTINGS, ALL_THEME_DEFINITIONS, DEFAULT_CUSTOM_THEME_TEMPLATE } from './constants';
-import ControlsPanel, { Button } from './components/ControlsPanel'; // Import Button
+import { DEFAULT_SETTINGS, DEFAULT_GITHUB_SETTINGS, ALL_THEME_DEFINITIONS, DEFAULT_CUSTOM_THEME_TEMPLATE, DEFAULT_GLOSSARY_TERMS } from './constants';
+import { ControlsPanel, Button } from './components/ControlsPanel'; // Import Button
 import PreviewArea, { PreviewAreaProps } from './components/PreviewArea';
 import Toolbar from './components/Toolbar';
 import ProfilesGalleryPage from './components/ProfilesGalleryPage';
@@ -488,6 +496,8 @@ const App: React.FC = () => {
   const [byteRestrictionWarning, setByteRestrictionWarning] = useState<string | null>(null);
   const [activeLineIndexMain, setActiveLineIndexMain] = useState<number | null>(null);
 
+  const [glossaryTerms, setGlossaryTerms] = useState<GlossaryTerm[]>(DEFAULT_GLOSSARY_TERMS);
+
   const headerRef = useRef<HTMLElement>(null);
   const [headerHeight, setHeaderHeight] = useState(0);
 
@@ -928,6 +938,7 @@ const App: React.FC = () => {
     setCurrentFindMatch(null);
     setLastSearchIterationDetails(null);
     setFindResultSummary([]);
+    // Glossary terms are preserved across settings loads unless explicitly cleared or imported over
 
     if (loadedCustomFontInfo?.styleElement) {
       document.head.removeChild(loadedCustomFontInfo.styleElement);
@@ -935,23 +946,30 @@ const App: React.FC = () => {
     }
   }, [loadedCustomFontInfo]);
 
-  const handleApplyNewSettings = useCallback((newSettings: AppSettings, scriptNamePrefix: string) => {
-    setSettings(newSettings); // This will trigger the useEffect for customFontBase64 if present
+  const handleApplyNewSettings = useCallback((
+    newAppSettings: AppSettings, 
+    newGitHubSettings: GitHubSettings,
+    newGlossaryTerms: GlossaryTerm[],
+    scriptNamePrefix: string
+  ) => {
+    setSettings(newAppSettings); // This will trigger the useEffect for customFontBase64 if present
+    setGitHubSettings(newGitHubSettings);
+    setGlossaryTerms(newGlossaryTerms);
     resetAppStateForNewSettings();
 
-    if (newSettings.text && newSettings.text !== DEFAULT_SETTINGS.text) {
+    if (newAppSettings.text && newAppSettings.text !== DEFAULT_SETTINGS.text) {
       const { blocks, parsedWithCustom, parsedWithLine, parsedWithEmptyLinesSeparator } = parseTextToBlocksInternal(
-        newSettings.text, 
-        newSettings.useCustomBlockSeparator, 
-        newSettings.blockSeparators,
-        newSettings.treatEachLineAsBlock,
-        newSettings.useEmptyLinesAsSeparator
+        newAppSettings.text, 
+        newAppSettings.useCustomBlockSeparator, 
+        newAppSettings.blockSeparators,
+        newAppSettings.treatEachLineAsBlock,
+        newAppSettings.useEmptyLinesAsSeparator
       );
       const defaultScript: ScriptFile = {
         id: `${scriptNamePrefix}-${Date.now()}`,
         name: `${scriptNamePrefix} Script`,
         blocks,
-        rawText: newSettings.text,
+        rawText: newAppSettings.text,
         parsedWithCustomSeparators: parsedWithCustom,
         parsedWithLineAsBlock: parsedWithLine,
         parsedWithEmptyLinesSeparator: parsedWithEmptyLinesSeparator,
@@ -967,36 +985,34 @@ const App: React.FC = () => {
     }
   }, [resetAppStateForNewSettings, parseTextToBlocksInternal, viewMode, handleSettingsChange]);
 
-  const handleSaveProfile = useCallback((profileName: string, settingsToSave: AppSettings) => {
+  const handleSaveProfile = useCallback((profileName: string, _settingsToSaveIgnored: AppSettings) => {
     if (!profileName.trim()) {
       alert("Please enter a name for the profile.");
       return;
     }
     try {
-      const updatedProfiles = profileService.saveProfile(profileName, settingsToSave, gitHubSettings);
+      // Always use the App's current 'settings' state to ensure latest data,
+      // especially for complex nested objects like custom font data.
+      const updatedProfiles = profileService.saveProfile(profileName, settings, gitHubSettings);
       setProfiles(updatedProfiles);
       alert(`Profile "${profileName}" saved successfully!`);
     } catch (error) {
       console.error("Error saving profile:", error);
       alert(`Failed to save profile: ${error instanceof Error ? error.message : String(error)}`);
     }
-  }, [gitHubSettings]);
+  }, [settings, gitHubSettings]); // Depend on 'settings' to use the latest state.
 
   const handleLoadProfile = useCallback((profileId: string) => {
     const profileToLoad = profileService.getProfileById(profileId);
     if (profileToLoad) {
-      handleApplyNewSettings(profileToLoad.settings, `Profile-${profileToLoad.name}`);
-      if (profileToLoad.gitHubSettings) {
-        setGitHubSettings(profileToLoad.gitHubSettings);
-      } else {
-        setGitHubSettings(DEFAULT_GITHUB_SETTINGS); 
-      }
+      // Profiles don't store glossary. Glossary is global or part of main JSON.
+      handleApplyNewSettings(profileToLoad.settings, profileToLoad.gitHubSettings, glossaryTerms, `Profile-${profileToLoad.name}`);
       setCurrentMainView('editor'); 
       alert(`Profile "${profileToLoad.name}" loaded successfully!`);
     } else {
       alert("Profile not found.");
     }
-  }, [handleApplyNewSettings]);
+  }, [handleApplyNewSettings, glossaryTerms]);
 
   const handleDeleteProfile = useCallback((profileId: string) => {
     if (window.confirm("Are you sure you want to delete this profile? This action cannot be undone.")) {
@@ -1142,16 +1158,19 @@ const App: React.FC = () => {
   }, []);
 
   const handleExportJson = useCallback(() => {
-    exportSettingsAsJson(settings, gitHubSettings, 'banana-vision-settings.json');
-  }, [settings, gitHubSettings]);
+    exportSettingsAsJson(settings, gitHubSettings, glossaryTerms, 'banana-vision-settings.json');
+  }, [settings, gitHubSettings, glossaryTerms]);
 
   const handleImportJson = useCallback(async (files: FileList) => { 
     if (!files || files.length === 0) return;
     const file = files[0]; 
     try {
-      const { appSettings: newAppSettings, gitHubSettings: newGitHubSettings } = await importSettingsFromJson(file);
-      handleApplyNewSettings(newAppSettings, "Imported-JSON");
-      setGitHubSettings(newGitHubSettings);
+      const { 
+        appSettings: newAppSettings, 
+        gitHubSettings: newGitHubSettings,
+        glossaryTerms: newGlossaryTerms 
+      } = await importSettingsFromJson(file);
+      handleApplyNewSettings(newAppSettings, newGitHubSettings, newGlossaryTerms, "Imported-JSON");
     } catch (error) {
       console.error("Failed to import JSON:", error);
       alert("Error importing settings. Make sure it's a valid JSON file.");
@@ -2461,10 +2480,10 @@ const handleSaveAllToGitHubFolder = useCallback(async () => {
 
     if (settings.currentFontType === 'system' && customFontBase64 && customFontFileName) {
       const { format, mime } = getFontFormatAndMime(customFontFileName);
-      const cssFontName = deriveCssNameFromFile(customFontFileName);
+      const cssFontName = deriveCssNameFromFile(customFontFileName); 
       const dataUrl = `data:${mime};base64,${customFontBase64}`;
 
-      if (loadedCustomFontInfo?.styleElement && loadedCustomFontInfo.name !== cssFontName) {
+      if (loadedCustomFontInfo && loadedCustomFontInfo.name !== cssFontName && loadedCustomFontInfo.styleElement) {
         document.head.removeChild(loadedCustomFontInfo.styleElement);
         setLoadedCustomFontInfo(null);
       }
@@ -2480,33 +2499,31 @@ const handleSaveAllToGitHubFolder = useCallback(async () => {
         document.head.appendChild(styleElement);
         setLoadedCustomFontInfo({ name: cssFontName, styleElement });
       }
-      // If fontFamily isn't already set to this CSS name, update it.
+
       if (settings.systemFont.fontFamily !== cssFontName) {
          handleNestedSettingsChange('systemFont', 'fontFamily', cssFontName);
       }
     } else {
-      // No custom font Base64 in settings OR not system font type, ensure any loaded custom font style is removed
       if (loadedCustomFontInfo?.styleElement) {
         document.head.removeChild(loadedCustomFontInfo.styleElement);
         setLoadedCustomFontInfo(null);
-        // If the current font family was the one just removed, reset to default.
         if (settings.systemFont.fontFamily === loadedCustomFontInfo.name) {
             handleNestedSettingsChange('systemFont', 'fontFamily', DEFAULT_SETTINGS.systemFont.fontFamily);
         }
       }
     }
-    // Cleanup function for when the component unmounts or these dependencies change
-    // causing the effect to re-run and potentially remove an old style.
     return () => {
-        if (loadedCustomFontInfo?.styleElement && 
-            (settings.systemFont.fontFamily !== loadedCustomFontInfo.name || 
-             !settings.systemFont.customFontBase64 ||
-             settings.currentFontType !== 'system')) {
-           // This condition might be too broad; the primary logic for removal is above.
-           // This cleanup is more for component unmount or if the font source truly changes.
-        }
+      // Intentionally left blank for this version of the effect based on previous thoughts,
+      // removal is handled by the main logic. If issues persist, re-evaluate cleanup.
     };
-  }, [settings.systemFont.customFontBase64, settings.systemFont.customFontFileName, settings.currentFontType, handleNestedSettingsChange]); // Removed loadedCustomFontInfo from deps to avoid loop
+  }, [
+    settings.systemFont.customFontBase64, 
+    settings.systemFont.customFontFileName, 
+    settings.currentFontType, 
+    settings.systemFont.fontFamily, // Added to ensure effect re-evaluates if fontFamily changes
+    handleNestedSettingsChange, 
+    loadedCustomFontInfo // State used for managing the style tag itself
+  ]);
 
 
   useLayoutEffect(() => {
@@ -2566,6 +2583,37 @@ const handleSaveAllToGitHubFolder = useCallback(async () => {
       asideStyle.maxHeight = 'calc(100vh - 150px)'; 
     }
   }
+
+  // Glossary Handlers
+  const handleAddGlossaryTerm = useCallback((term: string, translation: string, category: GlossaryCategory) => {
+    if (!term.trim()) {
+      alert("Term cannot be empty.");
+      return;
+    }
+    const newTerm: GlossaryTerm = {
+      id: `glossary-${Date.now()}-${Math.random().toString(36).substring(2, 7)}`,
+      term: term.trim(),
+      translation: translation.trim(),
+      category,
+    };
+    setGlossaryTerms(prev => [...prev, newTerm]);
+  }, []);
+
+  const handleUpdateGlossaryTerm = useCallback((id: string, term: string, translation: string, category: GlossaryCategory) => {
+    if (!term.trim()) {
+      alert("Term cannot be empty.");
+      return;
+    }
+    setGlossaryTerms(prev => prev.map(gt => 
+      gt.id === id ? { ...gt, term: term.trim(), translation: translation.trim(), category } : gt
+    ));
+  }, []);
+
+  const handleDeleteGlossaryTerm = useCallback((id: string) => {
+    if (window.confirm("Are you sure you want to delete this glossary item?")) {
+      setGlossaryTerms(prev => prev.filter(gt => gt.id !== id));
+    }
+  }, []);
 
 
   return (
@@ -2697,6 +2745,11 @@ const handleSaveAllToGitHubFolder = useCallback(async () => {
                 isGitHubLoading={isGitHubLoading}
                 gitHubStatusMessage={gitHubStatusMessage}
                 activeThemeKey={appThemeSettings.activeThemeKey}
+                // Glossary Props
+                glossaryTerms={glossaryTerms}
+                onAddGlossaryTerm={handleAddGlossaryTerm}
+                onUpdateGlossaryTerm={handleUpdateGlossaryTerm}
+                onDeleteGlossaryTerm={handleDeleteGlossaryTerm}
               />
             )}
           </aside>

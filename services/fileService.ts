@@ -1,13 +1,19 @@
 
 
 
-import { DEFAULT_SETTINGS, DEFAULT_GITHUB_SETTINGS } from '../constants';
-import type { AppSettings, GitHubSettings, ImageTag, PixelOverflowMargins, MarginSetting } from '../types';
+import { DEFAULT_SETTINGS, DEFAULT_GITHUB_SETTINGS, DEFAULT_GLOSSARY_TERMS } from '../constants';
+import type { AppSettings, GitHubSettings, ImageTag, PixelOverflowMargins, MarginSetting, GlossaryTerm } from '../types';
 
-export const exportSettingsAsJson = (settings: AppSettings, gitHubSettings: GitHubSettings, fileName: string): void => {
+export const exportSettingsAsJson = (
+  settings: AppSettings, 
+  gitHubSettings: GitHubSettings, 
+  glossaryTerms: GlossaryTerm[],
+  fileName: string
+): void => {
   const exportData = {
     appSettings: settings,
     gitHubSettings: gitHubSettings,
+    glossaryTerms: glossaryTerms,
   };
   const jsonString = JSON.stringify(exportData, null, 2);
   const blob = new Blob([jsonString], { type: 'application/json' });
@@ -55,7 +61,11 @@ const upgradePixelMargins = (importedMargins: any): PixelOverflowMargins => {
 };
 
 
-export const importSettingsFromJson = (file: File): Promise<{ appSettings: AppSettings; gitHubSettings: GitHubSettings }> => {
+export const importSettingsFromJson = (file: File): Promise<{ 
+  appSettings: AppSettings; 
+  gitHubSettings: GitHubSettings;
+  glossaryTerms: GlossaryTerm[];
+}> => {
   return new Promise((resolve, reject) => {
     const reader = new FileReader();
     reader.onload = (event) => {
@@ -65,17 +75,19 @@ export const importSettingsFromJson = (file: File): Promise<{ appSettings: AppSe
 
         let importedAppSettings: Partial<AppSettings>;
         let importedGitHubSettings: Partial<GitHubSettings>;
+        let importedGlossaryTerms: any[]; // Use any[] initially for migration
 
         // Check if the parsed JSON has the new structure or is an old AppSettings object
-        if (parsedJson.appSettings !== undefined || parsedJson.gitHubSettings !== undefined) {
-          // New structure: { appSettings: {}, gitHubSettings: {} }
+        if (parsedJson.appSettings !== undefined || parsedJson.gitHubSettings !== undefined || parsedJson.glossaryTerms !== undefined) {
+          // New structure: { appSettings: {}, gitHubSettings: {}, glossaryTerms: [] }
           importedAppSettings = parsedJson.appSettings || {};
           importedGitHubSettings = parsedJson.gitHubSettings || {};
+          importedGlossaryTerms = Array.isArray(parsedJson.glossaryTerms) ? parsedJson.glossaryTerms : DEFAULT_GLOSSARY_TERMS;
         } else {
           // Old structure: The root object is AppSettings itself
-          // And no gitHubSettings were exported with it.
           importedAppSettings = parsedJson;
-          importedGitHubSettings = {}; // Default to empty if old format
+          importedGitHubSettings = {}; 
+          importedGlossaryTerms = DEFAULT_GLOSSARY_TERMS; // Old format didn't have glossary
         }
         
         const validatedAppSettings: AppSettings = {
@@ -153,13 +165,23 @@ export const importSettingsFromJson = (file: File): Promise<{ appSettings: AppSe
         const validatedGitHubSettings: GitHubSettings = {
           ...DEFAULT_GITHUB_SETTINGS,
           ...importedGitHubSettings,
-          // Ensure originalFilePath is present, defaulting if necessary
           originalFilePath: typeof importedGitHubSettings.originalFilePath === 'string'
             ? importedGitHubSettings.originalFilePath
             : DEFAULT_GITHUB_SETTINGS.originalFilePath,
         };
+
+        const validatedGlossaryTerms: GlossaryTerm[] = importedGlossaryTerms.map((term: any) => ({
+          id: typeof term.id === 'string' ? term.id : `glossary-${Date.now()}-${Math.random().toString(36).substring(2,7)}`,
+          term: typeof term.term === 'string' ? term.term : '',
+          translation: typeof term.translation === 'string' ? term.translation : (typeof term.definition === 'string' ? term.definition : ''), // Migration from 'definition'
+          category: (term.category === 'name' || term.category === 'term') ? term.category : 'term', // Default to 'term' if missing/invalid
+        }));
             
-        resolve({ appSettings: validatedAppSettings, gitHubSettings: validatedGitHubSettings });
+        resolve({ 
+          appSettings: validatedAppSettings, 
+          gitHubSettings: validatedGitHubSettings,
+          glossaryTerms: validatedGlossaryTerms,
+        });
       } catch (error) {
         console.error("Error parsing JSON settings:", error);
         reject(new Error('Invalid JSON file or format.'));
