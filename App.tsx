@@ -1,30 +1,21 @@
 
-
-
-
-
-
-
-
-
-
-
-
 import React, { useState, useCallback, useRef, useEffect, useLayoutEffect, useMemo } from 'react';
 import JSZip from 'jszip';
 import { Octokit } from '@octokit/rest';
+import { GoogleGenAI, GenerateContentResponse } from "@google/genai";
 import { 
   AppSettings, Block, NestedAppSettingsObjectKeys, ScriptFile, GitHubSettings, Profile, MainViewMode,
   ThemeKey, CustomThemeColors, AppThemeSettings, BlockMetrics, LineMetricDetail, CharacterByteMapEntry, LineMetrics,
   GlossaryTerm, GlossaryCategory
 } from './types';
 import { DEFAULT_SETTINGS, DEFAULT_GITHUB_SETTINGS, ALL_THEME_DEFINITIONS, DEFAULT_CUSTOM_THEME_TEMPLATE, DEFAULT_GLOSSARY_TERMS } from './constants';
-import { ControlsPanel, Button } from './components/ControlsPanel'; // Import Button
+import { ControlsPanel, Button, LabelInputContainer, TextAreaInput } from './components/ControlsPanel'; // Import Button, LabelInputContainer, TextAreaInput
 import PreviewArea, { PreviewAreaProps } from './components/PreviewArea';
 import Toolbar from './components/Toolbar';
 import ProfilesGalleryPage from './components/ProfilesGalleryPage';
 import SpecialSettingsMenu from './components/SpecialSettingsMenu';
 import TutorialModal from './components/TutorialModal';
+import AiSuggestionsPopup from './components/AiSuggestionsPopup'; // Import AI Popup
 import { exportSettingsAsJson, importSettingsFromJson } from './services/fileService';
 import { exportToPng } from './services/exportService';
 import * as profileService from './services/profileService';
@@ -88,6 +79,7 @@ interface BlockCellProps {
   defaultCharacterByteValue: number;
   enableByteRestrictionInComparisonMode: boolean;
   activeComparisonMode: boolean; // To know if comparison mode is globally active
+  onOpenAiSuggestions: (text: string, onApply: (suggestion: string) => void) => void; // AI Suggestion
 }
 
 const BlockCell: React.FC<BlockCellProps> = ({
@@ -113,6 +105,7 @@ const BlockCell: React.FC<BlockCellProps> = ({
   defaultCharacterByteValue,
   enableByteRestrictionInComparisonMode,
   activeComparisonMode,
+  onOpenAiSuggestions, // AI Suggestion
 }) => {
   const cellRef = useRef<HTMLDivElement>(null);
   const blockOriginalIndex = block.index;
@@ -220,6 +213,10 @@ const BlockCell: React.FC<BlockCellProps> = ({
     return null;
   }, [activeLineIndexCell, blockCellMetrics]);
 
+  const handleApplyAiSuggestion = useCallback((suggestion: string) => {
+    onBlockContentChange(blockOriginalIndex, suggestion);
+  }, [onBlockContentChange, blockOriginalIndex]);
+
 
   return (
     <div
@@ -268,19 +265,29 @@ const BlockCell: React.FC<BlockCellProps> = ({
           </div>
         )}
       </div>
-      <textarea
-        aria-label={`Content for block ${block.index + 1}`}
-        value={block.content}
-        onChange={(e) => onBlockContentChange(blockOriginalIndex, e.target.value)}
-        onSelect={handleCellTextAreaActivity}
-        onFocus={handleCellTextAreaActivity}
-        onBlur={() => setActiveLineIndexCell(null)}
-        onKeyUp={handleCellTextAreaActivity} 
-        onClick={handleCellTextAreaActivity}
-        className="w-full p-2 border rounded-md shadow-sm sm:text-sm resize-y min-h-[120px] mb-0.5
-                   bg-[var(--bv-input-background)] border-[var(--bv-input-border)] text-[var(--bv-input-text)]
-                   focus:ring-[var(--bv-input-focus-ring)] focus:border-[var(--bv-input-focus-ring)]"
-      />
+      <div className="relative">
+        <textarea
+          aria-label={`Content for block ${block.index + 1}`}
+          value={block.content}
+          onChange={(e) => onBlockContentChange(blockOriginalIndex, e.target.value)}
+          onSelect={handleCellTextAreaActivity}
+          onFocus={handleCellTextAreaActivity}
+          onBlur={() => setActiveLineIndexCell(null)}
+          onKeyUp={handleCellTextAreaActivity} 
+          onClick={handleCellTextAreaActivity}
+          className="w-full p-2 border rounded-md shadow-sm sm:text-sm resize-y min-h-[120px] mb-0.5
+                    bg-[var(--bv-input-background)] border-[var(--bv-input-border)] text-[var(--bv-input-text)]
+                    focus:ring-[var(--bv-input-focus-ring)] focus:border-[var(--bv-input-focus-ring)]"
+        />
+        <Button
+            onClick={() => onOpenAiSuggestions(block.content, handleApplyAiSuggestion)}
+            className="!p-1.5 absolute top-1 right-1 !bg-[var(--bv-accent-secondary)] !text-[var(--bv-accent-secondary-content)] opacity-80 hover:opacity-100"
+            title="Get AI Suggestions"
+            aria-label="AI suggestions for this block"
+        >
+            ✨
+        </Button>
+      </div>
       <div className="text-xs text-[var(--bv-text-secondary)] mt-0 mb-1.5 h-auto flex flex-col items-start">
         <span>Selected: {selectedTextLengthCell} char(s)</span>
         {activeLineIndexCell !== null && lineMetricsForActiveIndexCell ? (
@@ -432,6 +439,24 @@ const deriveCssNameFromFile = (fileName: string | undefined, defaultName: string
     return cssName;
 };
 
+interface AiPopupState {
+  isOpen: boolean;
+  targetText: string;
+  onApplySuggestionCallback: ((suggestion: string) => void) | null;
+  isLoading: boolean;
+  error: string | null;
+  suggestions: string[] | string | null;
+}
+
+const initialAiPopupState: AiPopupState = {
+  isOpen: false,
+  targetText: '',
+  onApplySuggestionCallback: null,
+  isLoading: false,
+  error: null,
+  suggestions: null,
+};
+
 
 const App: React.FC = () => {
   const [settings, setSettings] = useState<AppSettings>(DEFAULT_SETTINGS);
@@ -500,6 +525,102 @@ const App: React.FC = () => {
 
   const headerRef = useRef<HTMLElement>(null);
   const [headerHeight, setHeaderHeight] = useState(0);
+
+  // AI Integration State
+  const aiInstanceRef = useRef<GoogleGenAI | null>(null);
+  const [aiPopupState, setAiPopupState] = useState<AiPopupState>(initialAiPopupState);
+  const [aiTagPatternExamples, setAiTagPatternExamples] = useState<string>('');
+  const [aiTagPatternSuggestion, setAiTagPatternSuggestion] = useState<string>('');
+  const [aiTagPatternLoading, setAiTagPatternLoading] = useState<boolean>(false);
+  const [aiTagPatternError, setAiTagPatternError] = useState<string | null>(null);
+
+
+  useEffect(() => {
+    if (process.env.GEMINI_API_KEY) {
+      aiInstanceRef.current = new GoogleGenAI({ apiKey: process.env.GEMINI_API_KEY });
+    } else {
+      console.error("Gemini API Key not found. AI features will be disabled.");
+      // Potentially set a state here to disable AI buttons globally
+    }
+  }, []);
+
+  const openAiSuggestionsPopup = useCallback((text: string, onApply: (suggestion: string) => void) => {
+    setAiPopupState({
+      isOpen: true,
+      targetText: text,
+      onApplySuggestionCallback: onApply,
+      isLoading: false,
+      error: null,
+      suggestions: null,
+    });
+  }, []);
+
+  const closeAiSuggestionsPopup = useCallback(() => {
+    setAiPopupState(initialAiPopupState);
+  }, []);
+
+  const handleApplyAiSuggestionFromPopup = useCallback((suggestion: string) => {
+    if (aiPopupState.onApplySuggestionCallback) {
+      aiPopupState.onApplySuggestionCallback(suggestion);
+    }
+    closeAiSuggestionsPopup();
+  }, [aiPopupState.onApplySuggestionCallback, closeAiSuggestionsPopup]);
+
+  const callGeminiApi = useCallback(async (prompt: string, forPopup: boolean = true) => {
+    if (!aiInstanceRef.current) {
+      const errorMsg = "AI Client not initialized. Check API Key.";
+      if (forPopup) setAiPopupState(prev => ({ ...prev, isLoading: false, error: errorMsg, suggestions: null }));
+      else setAiTagPatternError(errorMsg);
+      return null;
+    }
+    if (forPopup) setAiPopupState(prev => ({ ...prev, isLoading: true, error: null, suggestions: null }));
+    else { setAiTagPatternLoading(true); setAiTagPatternError(null); }
+
+    try {
+      const response: GenerateContentResponse = await aiInstanceRef.current.models.generateContent({
+        model: 'gemini-2.5-flash-preview-04-17',
+        contents: prompt,
+      });
+      if (forPopup) setAiPopupState(prev => ({ ...prev, isLoading: false, suggestions: response.text }));
+      else { setAiTagPatternLoading(false); setAiTagPatternSuggestion(response.text); }
+      return response.text;
+    } catch (err: any) {
+      console.error("Gemini API call failed:", err);
+      const errorMsg = err.message || "An unknown error occurred with the AI request.";
+      if (forPopup) setAiPopupState(prev => ({ ...prev, isLoading: false, error: errorMsg, suggestions: null }));
+      else { setAiTagPatternLoading(false); setAiTagPatternError(errorMsg); }
+      return null;
+    }
+  }, []);
+
+  const handleAiTranslate = useCallback(async (text: string) => {
+    const userLanguage = navigator.language || (navigator.languages && navigator.languages[0]) || 'English';
+    const prompt = `Translate the following text to ${userLanguage} (if the text is already in ${userLanguage} or very short and untranslatable, return the original text):\n\n"${text}"`;
+    await callGeminiApi(prompt);
+  }, [callGeminiApi]);
+
+  const handleAiSuggestVariations = useCallback(async (text: string) => {
+    const prompt = `Generate 2-3 alternative variations for the following text. Present each variation clearly, perhaps as a list or separated by newlines:\n\n"${text}"`;
+    await callGeminiApi(prompt);
+  }, [callGeminiApi]);
+
+  const handleAiCheckTone = useCallback(async (text: string, desiredTone?: string) => {
+    let prompt = `Describe the tone of the following text: "${text}".`;
+    if (desiredTone && desiredTone.trim()) {
+      prompt += ` Then, suggest how to adjust the text to make it sound more "${desiredTone.trim()}". If suggestions involve rephrasing, provide the rephrased text.`;
+    }
+    await callGeminiApi(prompt);
+  }, [callGeminiApi]);
+  
+  const handleAiSuggestTagPatterns = useCallback(async () => {
+    if (!aiTagPatternExamples.trim()) {
+      setAiTagPatternError("Please provide example tags or separators.");
+      return;
+    }
+    const prompt = `Based on the following examples of text elements to be treated as tags or separators: \n\n${aiTagPatternExamples}\n\nSuggest a robust RegEx pattern to identify and match these elements. If multiple distinct types of elements are present, you can suggest multiple patterns or a combined one if feasible. Explain your reasoning briefly if necessary. The primary goal is to hide these from a preview. Prioritize simple and effective patterns. If the examples look like block separators (e.g., <PAGE>, [NEXT], ---), focus on patterns that would match those exactly. If they look like inline tags (e.g., <COLOR=RED>, [ICON_SMILE]), focus on patterns for those.`;
+    await callGeminiApi(prompt, false);
+  }, [aiTagPatternExamples, callGeminiApi]);
+
 
   useLayoutEffect(() => {
     const targetHeader = headerRef.current; 
@@ -2750,6 +2871,13 @@ const handleSaveAllToGitHubFolder = useCallback(async () => {
                 onAddGlossaryTerm={handleAddGlossaryTerm}
                 onUpdateGlossaryTerm={handleUpdateGlossaryTerm}
                 onDeleteGlossaryTerm={handleDeleteGlossaryTerm}
+                // AI Tag Pattern Props
+                aiTagPatternExamples={aiTagPatternExamples}
+                onAiTagPatternExamplesChange={setAiTagPatternExamples}
+                aiTagPatternSuggestion={aiTagPatternSuggestion}
+                onAiSuggestTagPatterns={handleAiSuggestTagPatterns}
+                aiTagPatternLoading={aiTagPatternLoading}
+                aiTagPatternError={aiTagPatternError}
               />
             )}
           </aside>
@@ -2857,23 +2985,34 @@ const handleSaveAllToGitHubFolder = useCallback(async () => {
                         Current Block Content {settings.comparisonModeEnabled && currentEditableBlockForSingleView ? '(Editable)' : ''}
                         {currentBlockIndex !== null && activeScriptBlocks.length > 0 && `(Block ${currentBlockIndex + 1} of Script: ${activeMainScript?.name || ''})`}
                       </h2>
-                      <textarea
-                        ref={mainTextAreaRef}
-                        id="current-block-content-main"
-                        aria-label="Current block content"
-                        value={settings.text} 
-                        onChange={(e) => handleCurrentBlockContentChangeInSingleView(e.target.value)}
-                        onSelect={handleMainTextAreaActivity}
-                        onFocus={handleMainTextAreaActivity}
-                        onBlur={() => setActiveLineIndexMain(null)}
-                        onKeyUp={handleMainTextAreaActivity} 
-                        onClick={handleMainTextAreaActivity}
-                        disabled={currentBlockIndex === null && activeScriptBlocks.length > 0 && !!activeMainScriptId}
-                        className="w-full p-2 border rounded-md shadow-sm sm:text-sm flex-grow resize-y min-h-[100px] mb-0.5
-                                   bg-[var(--bv-input-background)] border-[var(--bv-input-border)] text-[var(--bv-input-text)]
-                                   focus:ring-[var(--bv-input-focus-ring)] focus:border-[var(--bv-input-focus-ring)] placeholder:text-[var(--bv-text-secondary)]"
-                        placeholder={activeScriptBlocks.length > 0 && currentBlockIndex === null ? "Select a block from the navigation to edit." : !activeMainScriptId ? "Load a main script to begin..." : "Type here..."}
-                      />
+                      <div className="relative w-full flex-grow">
+                        <textarea
+                          ref={mainTextAreaRef}
+                          id="current-block-content-main"
+                          aria-label="Current block content"
+                          value={settings.text} 
+                          onChange={(e) => handleCurrentBlockContentChangeInSingleView(e.target.value)}
+                          onSelect={handleMainTextAreaActivity}
+                          onFocus={handleMainTextAreaActivity}
+                          onBlur={() => setActiveLineIndexMain(null)}
+                          onKeyUp={handleMainTextAreaActivity} 
+                          onClick={handleMainTextAreaActivity}
+                          disabled={currentBlockIndex === null && activeScriptBlocks.length > 0 && !!activeMainScriptId}
+                          className="w-full h-full p-2 border rounded-md shadow-sm sm:text-sm resize-y min-h-[100px] mb-0.5
+                                    bg-[var(--bv-input-background)] border-[var(--bv-input-border)] text-[var(--bv-input-text)]
+                                    focus:ring-[var(--bv-input-focus-ring)] focus:border-[var(--bv-input-focus-ring)] placeholder:text-[var(--bv-text-secondary)]"
+                          placeholder={activeScriptBlocks.length > 0 && currentBlockIndex === null ? "Select a block from the navigation to edit." : !activeMainScriptId ? "Load a main script to begin..." : "Type here..."}
+                        />
+                        <Button
+                            onClick={() => openAiSuggestionsPopup(settings.text, handleCurrentBlockContentChangeInSingleView)}
+                            className="!p-1.5 absolute top-1 right-1 !bg-[var(--bv-accent-secondary)] !text-[var(--bv-accent-secondary-content)] opacity-80 hover:opacity-100"
+                            title="Get AI Suggestions"
+                            aria-label="AI suggestions for current block"
+                            disabled={!process.env.GEMINI_API_KEY || (currentBlockIndex === null && activeScriptBlocks.length > 0 && !!activeMainScriptId)}
+                        >
+                            ✨
+                        </Button>
+                      </div>
                       <div className="text-xs text-[var(--bv-text-secondary)] mt-0 mb-1.5 h-auto flex flex-row justify-between items-baseline w-full">
                         <div className="flex flex-col items-start">
                           <span>Selected: {selectedTextLengthMain} char(s)</span>
@@ -2970,6 +3109,7 @@ const handleSaveAllToGitHubFolder = useCallback(async () => {
                         defaultCharacterByteValue={settings.defaultCharacterByteValue}
                         enableByteRestrictionInComparisonMode={settings.enableByteRestrictionInComparisonMode}
                         activeComparisonMode={settings.comparisonModeEnabled}
+                        onOpenAiSuggestions={openAiSuggestionsPopup}
                       />
                     );
                   })}
@@ -3022,6 +3162,18 @@ const handleSaveAllToGitHubFolder = useCallback(async () => {
         currentStep={currentTutorialStep}
         onClose={(markCompleted) => handleCloseTutorial(markCompleted)}
         onSetStep={setCurrentTutorialStep}
+      />
+      <AiSuggestionsPopup
+        isOpen={aiPopupState.isOpen}
+        onClose={closeAiSuggestionsPopup}
+        targetText={aiPopupState.targetText}
+        onApplySuggestion={handleApplyAiSuggestionFromPopup}
+        isLoading={aiPopupState.isLoading}
+        error={aiPopupState.error}
+        suggestions={aiPopupState.suggestions}
+        onTranslate={handleAiTranslate}
+        onSuggestVariations={handleAiSuggestVariations}
+        onCheckTone={handleAiCheckTone}
       />
     </div>
   );

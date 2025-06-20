@@ -77,6 +77,13 @@ interface ControlsPanelProps {
   onAddGlossaryTerm: (term: string, translation: string, category: GlossaryCategory) => void;
   onUpdateGlossaryTerm: (id: string, term: string, translation: string, category: GlossaryCategory) => void;
   onDeleteGlossaryTerm: (id: string) => void;
+  // AI Tag Pattern Props
+  aiTagPatternExamples: string;
+  onAiTagPatternExamplesChange: (examples: string) => void;
+  aiTagPatternSuggestion: string;
+  onAiSuggestTagPatterns: () => Promise<void>;
+  aiTagPatternLoading: boolean;
+  aiTagPatternError: string | null;
 }
 
 interface SectionProps {
@@ -96,9 +103,11 @@ const DraggableSectionWrapper: React.FC<React.PropsWithChildren<{
   onDrop?: React.DragEventHandler<HTMLDivElement>;
   isDragging?: boolean;
   isDragOver?: boolean;
+  ['data-section-id']?: string; // Add data-section-id for dragLeave logic
 }>> = ({ children, isDragging, isDragOver, ...dragProps }) => {
   return (
     <div
+      data-section-id={dragProps['data-section-id']}
       onDragEnter={dragProps.onDragEnter}
       onDragOver={dragProps.onDragOver}
       onDragLeave={dragProps.onDragLeave}
@@ -245,6 +254,10 @@ export const ControlsPanel: React.FC<ControlsPanelProps> = (props) => {
     // overflowSettingsPanelOpen, // Not directly used for section open state here
     onToggleOverflowSettingsPanel,
     glossaryTerms, onAddGlossaryTerm, onUpdateGlossaryTerm, onDeleteGlossaryTerm,
+    // AI Tag Pattern Props
+    aiTagPatternExamples, onAiTagPatternExamplesChange,
+    aiTagPatternSuggestion, onAiSuggestTagPatterns,
+    aiTagPatternLoading, aiTagPatternError,
   } = props;
 
   const customFontFilePickerRef = useRef<HTMLInputElement>(null);
@@ -276,11 +289,12 @@ export const ControlsPanel: React.FC<ControlsPanelProps> = (props) => {
 
 
   useEffect(() => {
-    const newCanonicalText = settings.blockSeparators.join(',');
-    if (blockSeparatorsInputText !== newCanonicalText) {
-      setBlockSeparatorsInputText(newCanonicalText);
+    // This effect syncs the local input text if the canonical settings.blockSeparators array changes externally.
+    const newSeparatorsText = settings.blockSeparators.join(',');
+    if (blockSeparatorsInputText !== newSeparatorsText) {
+      setBlockSeparatorsInputText(newSeparatorsText);
     }
-  }, [settings.blockSeparators, blockSeparatorsInputText]);
+  }, [settings.blockSeparators]); // Only depends on the canonical source
 
 
   const handleBlockSeparatorsInputChange = useCallback((e: React.ChangeEvent<HTMLInputElement>) => {
@@ -643,6 +657,17 @@ export const ControlsPanel: React.FC<ControlsPanelProps> = (props) => {
     setEditingGlossaryItemCategory(null);
     setShowGlossaryFormFor(null);
   }, []);
+
+  const handleCopyAiSuggestion = async () => {
+    if (!aiTagPatternSuggestion) return;
+    try {
+      await navigator.clipboard.writeText(aiTagPatternSuggestion);
+      alert('AI suggestion copied to clipboard!');
+    } catch (err) {
+      console.error('Failed to copy AI suggestion: ', err);
+      alert('Failed to copy suggestion.');
+    }
+  };
 
 
   const getPanelSectionsConfig = useCallback((currentProps: ControlsPanelProps): PanelSectionItem[] => {
@@ -1135,6 +1160,48 @@ export const ControlsPanel: React.FC<ControlsPanelProps> = (props) => {
             <LabelInputContainer label="General Tag Patterns to Hide:" htmlFor="tagPatternsToHide" subText="Enter RegEx patterns, one per line. Applied if 'Hide Tags' is enabled. These are for non-coloring, non-image tags.">
               <TextAreaInput id="tagPatternsToHide" value={settings.tagPatternsToHide.join('\n')} onChange={(e) => handleTagPatternsChange(e.target.value)} rows={3} placeholder="e.g. <[^>]*>\n\\[[^\\]]*\\]" />
             </LabelInputContainer>
+
+             {/* AI Tag Pattern Suggester */}
+            <div className="mt-3 pt-3 border-t border-[var(--bv-border-color-light)]">
+                <h4 className="text-md font-semibold text-[var(--bv-accent-primary)] mb-2">AI Tag/Separator Pattern Suggester</h4>
+                <LabelInputContainer label="Examples of Tags/Separators (one per line):" htmlFor="aiTagExamples" subText="Provide examples like <PAGE>, [NEXT], <COLOR:RED>, {SPEAKER_X}">
+                    <TextAreaInput
+                        id="aiTagExamples"
+                        value={restOfProps.aiTagPatternExamples}
+                        onChange={(e) => restOfProps.onAiTagPatternExamplesChange(e.target.value)}
+                        rows={3}
+                        placeholder="e.g. <SPEAKER_A>\n[SOUND_EFFECT_BEEP]\n---"
+                    />
+                </LabelInputContainer>
+                <Button 
+                    onClick={restOfProps.onAiSuggestTagPatterns} 
+                    disabled={restOfProps.aiTagPatternLoading || !process.env.GEMINI_API_KEY} 
+                    className="w-full mt-1"
+                >
+                    {restOfProps.aiTagPatternLoading ? '✨ Thinking...' : 'Suggest Pattern with AI'}
+                </Button>
+                {restOfProps.aiTagPatternError && (
+                    <p className="text-xs text-red-500 mt-1">{restOfProps.aiTagPatternError}</p>
+                )}
+                {restOfProps.aiTagPatternSuggestion && !restOfProps.aiTagPatternLoading && (
+                    <div className="mt-2">
+                        <LabelInputContainer label="AI Suggested Pattern(s):" htmlFor="aiTagSuggestionDisplay">
+                             <TextAreaInput 
+                                id="aiTagSuggestionDisplay"
+                                value={restOfProps.aiTagPatternSuggestion} 
+                                readOnly 
+                                rows={4}
+                                className="bg-[var(--bv-element-background)]"
+                             />
+                        </LabelInputContainer>
+                        <Button onClick={handleCopyAiSuggestion} className="text-xs mt-1 !py-1 !px-2 w-full !bg-gray-500 hover:!bg-gray-600">
+                            Copy Suggestion
+                        </Button>
+                        <p className="text-xs text-[var(--bv-text-secondary)] mt-1">Review and test suggestion. You can copy parts or all of it into the 'General Tag Patterns' or 'Block Separators' fields.</p>
+                    </div>
+                )}
+                 {!process.env.GEMINI_API_KEY && <p className="text-xs text-orange-500 mt-1">AI features require an API Key.</p>}
+            </div>
             
             
             <div className="mt-4 pt-3 border-t border-[var(--bv-border-color-light)]">
@@ -1172,69 +1239,64 @@ export const ControlsPanel: React.FC<ControlsPanelProps> = (props) => {
                         <span className="text-xs font-mono truncate" title={`Opening: ${tag.openingTag}\nClosing: ${tag.closingTag}`}>
                           <code>{tag.openingTag}</code>...<code>{tag.closingTag}</code>
                         </span>
-                        <div style={{ backgroundColor: tag.color, width: '16px', height: '16px', borderRadius: '4px', border: '1px solid var(--bv-border-color)' }} title={`Color: ${tag.color}`}></div>
+                        <div style={{ backgroundColor: tag.color, width: '16px', height: '16px', borderRadius: '4px', border: '1px solid var(--bv-border-color)' }} className="flex-shrink-0"></div>
                       </div>
-                      <div className="flex-shrink-0 space-x-1">
-                        <Button onClick={() => handleStartEditColorTag(tag)} className="!p-1 text-xs !bg-blue-500 hover:!bg-blue-600" title="Edit Tag">✏️</Button>
-                        <Button onClick={() => handleDeleteColorTag(tag.id)} className="!p-1 text-xs !bg-red-500 hover:!bg-red-600" title="Delete Tag">🗑️</Button>
+                      <div className="flex gap-1 flex-shrink-0">
+                        <Button onClick={() => handleStartEditColorTag(tag)} className="text-xs !p-1 !bg-blue-500 hover:!bg-blue-600">Edit</Button>
+                        <Button onClick={() => handleDeleteColorTag(tag.id)} className="text-xs !p-1 !bg-red-500 hover:!bg-red-600">Del</Button>
                       </div>
                     </div>
                   ))}
                 </div>
               )}
             </div>
-
             
             <div className="mt-4 pt-3 border-t border-[var(--bv-border-color-light)]">
-              <h4 className="text-md font-semibold mb-2 text-[var(--bv-accent-primary)]">Image Tags (Emojis/Icons)</h4>
+              <h4 className="text-md font-semibold mb-2 text-[var(--bv-accent-primary)]">Image Tags</h4>
               {isEditingImageTag ? (
-                <div className="p-3 border border-[var(--bv-border-color)] rounded-md space-y-2 bg-[var(--bv-element-background)] mb-3">
-                  <h5 className="text-sm font-medium">{editingImageTagId ? 'Edit' : 'Add New'} Image Tag</h5>
-                  <LabelInputContainer label="Tag String" htmlFor="editingImageTagString">
-                    <TextInput id="editingImageTagString" value={editingImageTagFields.tag || ''} onChange={e => handleEditingImageTagFieldChange('tag', e.target.value)} placeholder="e.g. [GOLD_COIN]" />
-                  </LabelInputContainer>
-                  <LabelInputContainer label="Image File" htmlFor="editingImageTagFile">
-                    <FileInput accept="image/*" onChange={handleImageTagFileSelected} buttonLabel={editingImageTagFile ? `Selected: ${editingImageTagFile.name.substring(0,20)}...` : "Choose Image"} />
-                    {editingImageTagFields.imageUrl && !editingImageTagFile && <img src={editingImageTagFields.imageUrl} alt="Current" className="mt-1 h-8 w-8 object-contain border border-[var(--bv-border-color-light)]"/>}
-                    {editingImageTagPreviewUrl && editingImageTagFile && <img src={editingImageTagPreviewUrl} alt="New preview" className="mt-1 h-8 w-8 object-contain border border-[var(--bv-border-color-light)]"/>}
-                  </LabelInputContainer>
-                   <div className="flex gap-2">
-                        <LabelInputContainer label="Width (px)" htmlFor="editingImageTagWidth" subText="Display width in preview.">
-                            <TextInput type="number" id="editingImageTagWidth" value={editingImageTagFields.width || 0} onChange={e => handleEditingImageTagFieldChange('width', parseInt(e.target.value, 10))} min="1" className="w-20"/>
-                        </LabelInputContainer>
-                        <LabelInputContainer label="Height (px)" htmlFor="editingImageTagHeight" subText="Display height in preview.">
-                            <TextInput type="number" id="editingImageTagHeight" value={editingImageTagFields.height || 0} onChange={e => handleEditingImageTagFieldChange('height', parseInt(e.target.value, 10))} min="1" className="w-20"/>
-                        </LabelInputContainer>
-                   </div>
-                  <div className="flex gap-2 mt-2">
-                    <Button onClick={handleSaveImageTag} className="flex-1">Save Image Tag</Button>
-                    <Button onClick={() => {
-                        setIsEditingImageTag(false);
-                        setEditingImageTagFile(null); 
-                      }} 
-                      className="flex-1 !bg-gray-500 hover:!bg-gray-600">Cancel</Button>
-                  </div>
-                </div>
+                 <div className="p-3 border border-[var(--bv-border-color)] rounded-md space-y-2 bg-[var(--bv-element-background)] mb-3">
+                    <h5 className="text-sm font-medium">{editingImageTagId ? 'Edit' : 'Add New'} Image Tag</h5>
+                    <LabelInputContainer label="Tag String" htmlFor="editingImageTagString"><TextInput id="editingImageTagString" value={editingImageTagFields.tag || ''} onChange={e => handleEditingImageTagFieldChange('tag', e.target.value)} placeholder="e.g. [COIN]" /></LabelInputContainer>
+                    <LabelInputContainer label="Image File">
+                      <FileInput accept="image/*" onChange={handleImageTagFileSelected} buttonLabel={editingImageTagFields.imageUrl || editingImageTagPreviewUrl ? "Change Image" : "Select Image"} />
+                    </LabelInputContainer>
+                    {(editingImageTagPreviewUrl || editingImageTagFields.imageUrl) && (
+                      <div className="my-1">
+                        <img src={editingImageTagPreviewUrl || editingImageTagFields.imageUrl} alt="Preview" className="max-w-[100px] max-h-[50px] border border-[var(--bv-border-color)] rounded" />
+                      </div>
+                    )}
+                    <div className="grid grid-cols-2 gap-2">
+                        <InputWithSlider label="Width" unit="px" id="editingImageTagWidth" value={editingImageTagFields.width} onChange={val => handleEditingImageTagFieldChange('width', val)} min={1} max={512} step={1} />
+                        <InputWithSlider label="Height" unit="px" id="editingImageTagHeight" value={editingImageTagFields.height} onChange={val => handleEditingImageTagFieldChange('height', val)} min={1} max={512} step={1} />
+                    </div>
+                    <LabelInputContainer label="Enabled" htmlFor="editingImageTagEnabled" inline>
+                      <input type="checkbox" id="editingImageTagEnabled" checked={editingImageTagFields.enabled} onChange={e => handleEditingImageTagFieldChange('enabled', e.target.checked)} className="h-5 w-5 text-[var(--bv-accent-primary)] border-[var(--bv-input-border)] rounded focus:ring-[var(--bv-input-focus-ring)]" />
+                    </LabelInputContainer>
+                    <div className="flex gap-2 mt-2">
+                        <Button onClick={handleSaveImageTag} className="flex-1">Save Image Tag</Button>
+                        <Button onClick={() => setIsEditingImageTag(false)} className="flex-1 !bg-gray-500 hover:!bg-gray-600">Cancel</Button>
+                    </div>
+                 </div>
               ) : (
                 <Button onClick={handleStartAddNewImageTag} className="w-full mb-3">Add New Image Tag</Button>
               )}
-              {settings.imageTags.length === 0 && !isEditingImageTag && (
+               {settings.imageTags.length === 0 && !isEditingImageTag && (
                 <p className="text-xs text-[var(--bv-text-secondary)]">No image tags defined.</p>
               )}
               {settings.imageTags.length > 0 && (
                 <div className="space-y-2 max-h-60 overflow-y-auto pr-1">
-                  {settings.imageTags.map(imgTag => (
-                    <div key={imgTag.id} className="p-2 border border-[var(--bv-border-color-light)] rounded-md bg-[var(--bv-element-background)] flex items-center justify-between gap-2">
+                  {settings.imageTags.map(tag => (
+                    <div key={tag.id} className="p-2 border border-[var(--bv-border-color-light)] rounded-md bg-[var(--bv-element-background)] flex items-center justify-between gap-2">
                       <div className="flex items-center gap-2 flex-grow">
-                        <input type="checkbox" checked={imgTag.enabled} onChange={e => handleToggleImageTagEnabled(imgTag.id, e.target.checked)} className="h-4 w-4 text-[var(--bv-accent-primary)] border-[var(--bv-input-border)] rounded focus:ring-[var(--bv-input-focus-ring)] flex-shrink-0" title={imgTag.enabled ? 'Disable Tag' : 'Enable Tag'} />
-                        <img src={imgTag.imageUrl} alt={imgTag.tag} className="h-6 w-6 object-contain flex-shrink-0" />
-                        <span className="text-xs font-mono truncate flex-grow" title={`Tag: ${imgTag.tag}\nSize: ${imgTag.width}x${imgTag.height}px`}>
-                          <code>{imgTag.tag}</code> ({imgTag.width}x{imgTag.height})
+                        <input type="checkbox" checked={tag.enabled} onChange={e => handleToggleImageTagEnabled(tag.id, e.target.checked)} className="h-4 w-4 text-[var(--bv-accent-primary)] border-[var(--bv-input-border)] rounded focus:ring-[var(--bv-input-focus-ring)] flex-shrink-0" title={tag.enabled ? 'Disable Tag' : 'Enable Tag'} />
+                        <img src={tag.imageUrl} alt={tag.tag} className="w-6 h-6 object-contain border border-[var(--bv-border-color)] rounded flex-shrink-0" />
+                        <span className="text-xs font-mono truncate" title={`Tag: ${tag.tag}, Size: ${tag.width}x${tag.height}`}>
+                          <code>{tag.tag}</code> ({tag.width}x{tag.height})
                         </span>
                       </div>
-                      <div className="flex-shrink-0 space-x-1">
-                        <Button onClick={() => handleStartEditImageTag(imgTag)} className="!p-1 text-xs !bg-blue-500 hover:!bg-blue-600" title="Edit Image Tag">✏️</Button>
-                        <Button onClick={() => handleDeleteImageTag(imgTag.id)} className="!p-1 text-xs !bg-red-500 hover:!bg-red-600" title="Delete Image Tag">🗑️</Button>
+                      <div className="flex gap-1 flex-shrink-0">
+                        <Button onClick={() => handleStartEditImageTag(tag)} className="text-xs !p-1 !bg-blue-500 hover:!bg-blue-600">Edit</Button>
+                        <Button onClick={() => handleDeleteImageTag(tag.id)} className="text-xs !p-1 !bg-red-500 hover:!bg-red-600">Del</Button>
                       </div>
                     </div>
                   ))}
@@ -1245,350 +1307,317 @@ export const ControlsPanel: React.FC<ControlsPanelProps> = (props) => {
         )
       },
       {
-        id: 'glossary-management-section', title: 'Glossary Management', defaultOpen: false, content: (
-          <>
-            {showGlossaryFormFor && (
-              <div className="p-3 border border-[var(--bv-border-color)] rounded-md space-y-2 bg-[var(--bv-element-background)] mb-3">
-                <h5 className="text-sm font-medium">
-                  {editingGlossaryItemId ? `Edit ${editingGlossaryItemCategory === 'name' ? 'Name' : 'Term'}` : `Add New ${showGlossaryFormFor === 'name' ? 'Name' : 'Term'}`}
-                </h5>
-                <LabelInputContainer label="Term" htmlFor="glossaryTermInput">
-                  <TextInput 
-                    id="glossaryTermInput" 
-                    value={glossaryTermInput} 
-                    onChange={e => setGlossaryTermInput(e.target.value)} 
-                    placeholder="Enter term" 
-                  />
-                </LabelInputContainer>
-                <LabelInputContainer label="Translation" htmlFor="glossaryTranslationInput">
-                  <TextAreaInput 
-                    id="glossaryTranslationInput" 
-                    value={glossaryTranslationInput} 
-                    onChange={e => setGlossaryTranslationInput(e.target.value)} 
-                    placeholder="Enter translation" 
-                    rows={3}
-                  />
-                </LabelInputContainer>
-                <div className="flex gap-2 mt-2">
-                  <Button onClick={handleSaveGlossaryItem} className="flex-1">
-                    {editingGlossaryItemId ? `Update ${editingGlossaryItemCategory === 'name' ? 'Name' : 'Term'}` : `Add ${showGlossaryFormFor === 'name' ? 'Name' : 'Term'}`}
-                  </Button>
-                  <Button onClick={handleCancelEditOrAddGlossaryItem} className="flex-1 !bg-gray-500 hover:!bg-gray-600">
-                    Cancel
-                  </Button>
-                </div>
-              </div>
-            )}
-
-            {/* Names Section */}
-            <div className="mb-4">
-              <div className="flex justify-between items-center mb-2">
-                <h4 className="text-md font-semibold text-[var(--bv-accent-primary)]">Names</h4>
-                {!showGlossaryFormFor && (
-                  <Button onClick={() => handleShowAddGlossaryItemForm('name')} className="text-xs !py-1 !px-2">
-                    Add New Name
-                  </Button>
-                )}
-              </div>
-              {namesGlossaryItems.length === 0 && !showGlossaryFormFor && (
-                <p className="text-xs text-[var(--bv-text-secondary)]">No names defined.</p>
-              )}
-              {namesGlossaryItems.length > 0 && (
-                <div className="space-y-2 max-h-48 overflow-y-auto pr-1 border border-[var(--bv-border-color-light)] rounded-md p-2">
-                  {namesGlossaryItems.map(gItem => (
-                    <div key={gItem.id} className="p-2 border border-[var(--bv-border-color)] rounded-md bg-[var(--bv-element-background)]">
-                      <div className="flex justify-between items-start gap-2">
-                        <div>
-                          <strong className="text-sm text-[var(--bv-text-primary)] block break-all">{gItem.term}</strong>
-                          <p className="text-xs text-[var(--bv-text-secondary)] mt-0.5 break-words whitespace-pre-wrap">{gItem.translation}</p>
-                        </div>
-                        <div className="flex-shrink-0 space-x-1 mt-0.5">
-                          <Button onClick={() => handleStartEditGlossaryItem(gItem)} className="!p-1 text-xs !bg-blue-500 hover:!bg-blue-600" title="Edit Item">✏️</Button>
-                          <Button onClick={() => onDeleteGlossaryTerm(gItem.id)} className="!p-1 text-xs !bg-red-500 hover:!bg-red-600" title="Delete Item">🗑️</Button>
-                        </div>
-                      </div>
-                    </div>
-                  ))}
-                </div>
-              )}
-            </div>
-
-            {/* Terms Section */}
-            <div className="mb-4">
-              <div className="flex justify-between items-center mb-2">
-                <h4 className="text-md font-semibold text-[var(--bv-accent-primary)]">Terms</h4>
-                 {!showGlossaryFormFor && (
-                    <Button onClick={() => handleShowAddGlossaryItemForm('term')} className="text-xs !py-1 !px-2">
-                      Add New Term
-                    </Button>
-                  )}
-              </div>
-              {termsGlossaryItems.length === 0 && !showGlossaryFormFor && (
-                <p className="text-xs text-[var(--bv-text-secondary)]">No terms defined.</p>
-              )}
-              {termsGlossaryItems.length > 0 && (
-                 <div className="space-y-2 max-h-48 overflow-y-auto pr-1 border border-[var(--bv-border-color-light)] rounded-md p-2">
-                  {termsGlossaryItems.map(gItem => (
-                    <div key={gItem.id} className="p-2 border border-[var(--bv-border-color)] rounded-md bg-[var(--bv-element-background)]">
-                      <div className="flex justify-between items-start gap-2">
-                        <div>
-                          <strong className="text-sm text-[var(--bv-text-primary)] block break-all">{gItem.term}</strong>
-                          <p className="text-xs text-[var(--bv-text-secondary)] mt-0.5 break-words whitespace-pre-wrap">{gItem.translation}</p>
-                        </div>
-                        <div className="flex-shrink-0 space-x-1 mt-0.5">
-                          <Button onClick={() => handleStartEditGlossaryItem(gItem)} className="!p-1 text-xs !bg-blue-500 hover:!bg-blue-600" title="Edit Item">✏️</Button>
-                          <Button onClick={() => onDeleteGlossaryTerm(gItem.id)} className="!p-1 text-xs !bg-red-500 hover:!bg-red-600" title="Delete Item">🗑️</Button>
-                        </div>
-                      </div>
-                    </div>
-                  ))}
-                </div>
-              )}
-            </div>
-          </>
+        id: 'byte-bit-counting-section', title: 'Byte/Bit Counting & Restrictions', defaultOpen: false, content: (
+           <>
+            <LabelInputContainer label="Custom Character Byte Map" htmlFor="customByteMapString" subText="Define byte values for characters/tags (e.g., A=1, €=2, [ICON]=0). One per line. Lines starting with # are comments. Tags go in [brackets].">
+                <TextAreaInput 
+                    id="customByteMapString"
+                    value={settings.customByteMapString}
+                    onChange={(e) => onSettingsChange('customByteMapString', e.target.value)}
+                    rows={6}
+                    placeholder={`# Example:\nA=1\nB=1\n…\nЯ=2\n€=3\n[ICON_SMILE]=0`}
+                />
+            </LabelInputContainer>
+            <InputWithSlider label="Default Byte Value" unit="bytes" id="defaultCharacterByteValue" value={settings.defaultCharacterByteValue} onChange={(val) => onSettingsChange('defaultCharacterByteValue', val)} min={0} max={8} step={1} subText="For characters not in the custom map." />
+            <LabelInputContainer label="Enable Byte Restriction in Comparison Mode" htmlFor="enableByteRestriction" inline disabled={!settings.comparisonModeEnabled} subText={!settings.comparisonModeEnabled ? "Enable Comparison Mode first." : "Prevents edited lines from exceeding original line byte counts."}>
+                <input type="checkbox" id="enableByteRestriction" checked={settings.enableByteRestrictionInComparisonMode} onChange={(e) => onSettingsChange('enableByteRestrictionInComparisonMode', e.target.checked)} className="h-5 w-5 text-[var(--bv-accent-primary)] border-[var(--bv-input-border)] rounded focus:ring-[var(--bv-input-focus-ring)]" disabled={!settings.comparisonModeEnabled} />
+            </LabelInputContainer>
+           </>
         )
       },
-       {
-        id: 'byte-bit-counting-section', title: 'Byte/Bit Counting & Restrictions', defaultOpen: false, content: (
-          <>
-            <LabelInputContainer label="Custom Character Byte Map" htmlFor="customByteMapString" subText="One char/tag per line, e.g., A=1 or [ICON]=2. '#' starts a comment.">
-              <TextAreaInput
-                id="customByteMapString"
-                value={settings.customByteMapString}
-                onChange={(e) => onSettingsChange('customByteMapString', e.target.value)}
-                rows={6}
-                placeholder={"A=1\nB=1\n€=3\n[SMILEY_ICON]=2\n# This is a comment"}
-              />
-            </LabelInputContainer>
-            <InputWithSlider 
-              label="Default Byte Value for Unmapped Chars" 
-              unit="bytes" 
-              id="defaultCharacterByteValue" 
-              value={settings.defaultCharacterByteValue} 
-              onChange={(val) => onSettingsChange('defaultCharacterByteValue', Math.max(0, val))} 
-              min={0} max={8} step={1} 
-              subText="Bytes for chars not in the map."
-            />
-            <LabelInputContainer 
-              label="Enable Byte Restriction in Comparison Mode" 
-              htmlFor="enableByteRestriction" 
-              inline
-              disabled={!settings.comparisonModeEnabled}
-              subText={!settings.comparisonModeEnabled ? "Enable Comparison Mode first." : "Prevent lines in edited script from exceeding original's byte count."}
-            >
-              <input 
-                type="checkbox" 
-                id="enableByteRestriction" 
-                checked={settings.enableByteRestrictionInComparisonMode} 
-                onChange={(e) => onSettingsChange('enableByteRestrictionInComparisonMode', e.target.checked)}
-                className="h-5 w-5 text-[var(--bv-accent-primary)] border-[var(--bv-input-border)] rounded focus:ring-[var(--bv-input-focus-ring)]"
-                disabled={!settings.comparisonModeEnabled}
-              />
-            </LabelInputContainer>
-          </>
+      {
+        id: 'glossary-section', title: 'Glossary', defaultOpen: false, content: (
+            <>
+                {(['name', 'term'] as GlossaryCategory[]).map(category => (
+                    <div key={category} className="mb-4">
+                        <div className="flex justify-between items-center mb-1">
+                            <h4 className="text-md font-semibold text-[var(--bv-accent-primary)] capitalize">{category}s</h4>
+                            <Button onClick={() => handleShowAddGlossaryItemForm(category)} className="text-xs !py-1 !px-2">
+                                Add New {category.charAt(0).toUpperCase() + category.slice(1)}
+                            </Button>
+                        </div>
+
+                        {showGlossaryFormFor === category && (
+                            <div className="p-3 border border-[var(--bv-border-color)] rounded-md space-y-2 bg-[var(--bv-element-background)] mb-3">
+                                <h5 className="text-sm font-medium">{editingGlossaryItemId ? 'Edit' : 'Add New'} {category}</h5>
+                                <LabelInputContainer label={category === 'name' ? 'Name' : 'Term'} htmlFor={`glossary-${category}-term`}>
+                                    <TextInput id={`glossary-${category}-term`} value={glossaryTermInput} onChange={e => setGlossaryTermInput(e.target.value)} placeholder={category === 'name' ? 'e.g. Elara' : 'e.g. Mana Potion'} />
+                                </LabelInputContainer>
+                                <LabelInputContainer label="Translation/Notes" htmlFor={`glossary-${category}-translation`}>
+                                    <TextInput id={`glossary-${category}-translation`} value={glossaryTranslationInput} onChange={e => setGlossaryTranslationInput(e.target.value)} placeholder={category === 'name' ? 'e.g. エララ' : 'e.g. マナポーション'} />
+                                </LabelInputContainer>
+                                <div className="flex gap-2 mt-2">
+                                    <Button onClick={handleSaveGlossaryItem} className="flex-1">Save {category}</Button>
+                                    <Button onClick={handleCancelEditOrAddGlossaryItem} className="flex-1 !bg-gray-500 hover:!bg-gray-600">Cancel</Button>
+                                </div>
+                            </div>
+                        )}
+                        {(category === 'name' ? namesGlossaryItems : termsGlossaryItems).length === 0 && showGlossaryFormFor !== category && (
+                            <p className="text-xs text-[var(--bv-text-secondary)]">No {category}s defined.</p>
+                        )}
+                        {(category === 'name' ? namesGlossaryItems : termsGlossaryItems).length > 0 && (
+                            <div className="space-y-1 max-h-40 overflow-y-auto pr-1">
+                                {(category === 'name' ? namesGlossaryItems : termsGlossaryItems).map(item => (
+                                    <div key={item.id} className="p-1.5 border border-[var(--bv-border-color-light)] rounded bg-[var(--bv-element-background)] flex items-center justify-between gap-2 text-xs">
+                                        <div className="truncate flex-grow">
+                                            <strong className="text-[var(--bv-text-primary)]">{item.term}</strong>
+                                            {item.translation && <span className="text-[var(--bv-text-secondary)]"> → {item.translation}</span>}
+                                        </div>
+                                        <div className="flex gap-1 flex-shrink-0">
+                                            <Button onClick={() => handleStartEditGlossaryItem(item)} className="!p-0.5 !text-xs !bg-blue-500 hover:!bg-blue-600">Edit</Button>
+                                            <Button onClick={() => onDeleteGlossaryTerm(item.id)} className="!p-0.5 !text-xs !bg-red-500 hover:!bg-red-600">Del</Button>
+                                        </div>
+                                    </div>
+                                ))}
+                            </div>
+                        )}
+                    </div>
+                ))}
+            </>
         )
       },
       {
         id: 'github-sync-section', title: 'GitHub Folder Sync', defaultOpen: false, content: (
-           <>
-            <LabelInputContainer label="Personal Access Token (PAT)" htmlFor="githubPat" subText="Requires 'repo' scope. Store securely.">
-                <TextInput type="password" id="githubPat" value={restOfProps.gitHubSettings.pat} onChange={(e) => restOfProps.onGitHubSettingsChange('pat', e.target.value)} placeholder="ghp_YourTokenHere" />
+          <>
+            <LabelInputContainer label="GitHub Personal Access Token (PAT)" htmlFor="githubPat" subText="Requires 'repo' scope. Store securely.">
+                <TextInput type="password" id="githubPat" value={restOfProps.gitHubSettings.pat} onChange={(e) => restOfProps.onGitHubSettingsChange('pat', e.target.value)} placeholder="Enter PAT" />
             </LabelInputContainer>
-            <LabelInputContainer label="Repository (owner/repo)" htmlFor="githubRepo" subText="e.g., username/my-project">
+            <LabelInputContainer label="Repository (owner/repo-name)" htmlFor="githubRepo" subText="e.g., MyUser/MyGameTranslation">
                 <TextInput id="githubRepo" value={restOfProps.gitHubSettings.repoFullName} onChange={(e) => restOfProps.onGitHubSettingsChange('repoFullName', e.target.value)} placeholder="owner/repo-name" />
             </LabelInputContainer>
-             <LabelInputContainer label="Branch" htmlFor="githubBranch" subText="Default: 'main'">
-                <TextInput id="githubBranch" value={restOfProps.gitHubSettings.branch} onChange={(e) => restOfProps.onGitHubSettingsChange('branch', e.target.value)} placeholder="main" />
+            <LabelInputContainer label="Branch (optional, defaults to repo default)" htmlFor="githubBranch">
+                <TextInput id="githubBranch" value={restOfProps.gitHubSettings.branch} onChange={(e) => restOfProps.onGitHubSettingsChange('branch', e.target.value)} placeholder="e.g., main or develop" />
             </LabelInputContainer>
-
-            <div className="mt-3 pt-3 border-t border-[var(--bv-border-color-light)]">
-                <h4 className="text-md font-semibold text-[var(--bv-text-primary)] mb-1">Main Script Paths</h4>
-                <LabelInputContainer label="File Path (for single file ops)" htmlFor="githubFilePathMain" subText="e.g., scripts/chapter1.txt">
-                    <TextInput id="githubFilePathMain" value={restOfProps.gitHubSettings.filePath} onChange={(e) => restOfProps.onGitHubSettingsChange('filePath', e.target.value)} placeholder="path/to/your/main_script.txt" />
+             <div className="my-2 p-2 border border-dashed border-[var(--bv-accent-secondary)] rounded-md">
+                 <LabelInputContainer label="Main Scripts: File or Folder Path" htmlFor="githubFilePath" subText="Path to a single .txt file or a folder containing multiple .txt files (for main scripts).">
+                    <TextInput id="githubFilePath" value={restOfProps.gitHubSettings.filePath} onChange={(e) => restOfProps.onGitHubSettingsChange('filePath', e.target.value)} placeholder="e.g., scripts/chapter1.txt or scripts/all_dialogue/" />
                 </LabelInputContainer>
                 <div className="grid grid-cols-2 gap-2 mt-1">
-                    <Button onClick={restOfProps.onSaveFileToGitHub} disabled={githubMainOpsDisabled} className="!bg-blue-600 hover:!bg-blue-700 text-xs !py-1" title="Save active script to its GitHub path">Save Active to Path</Button>
-                    <Button onClick={restOfProps.onSaveAllToGitHubFolder} disabled={githubMainOpsDisabled} className="!bg-blue-500 hover:!bg-blue-600 text-xs !py-1" title="Save all changed main scripts to their respective paths in the folder">Save All to Folder</Button>
+                    <Button onClick={restOfProps.onLoadFileFromGitHub} disabled={githubMainOpsDisabled} className="!bg-green-600 hover:!bg-green-700 text-xs !py-1">Load File</Button>
+                    <Button onClick={restOfProps.onLoadAllFromGitHubFolder} disabled={githubMainOpsDisabled} className="!bg-green-500 hover:!bg-green-600 text-xs !py-1">Load All from Folder</Button>
+                </div>
+                 <div className="grid grid-cols-2 gap-2 mt-1">
+                    <Button onClick={restOfProps.onSaveFileToGitHub} disabled={githubMainOpsDisabled || restOfProps.mainScripts.length === 0} className="!bg-blue-600 hover:!bg-blue-700 text-xs !py-1">Save Active to Path</Button>
+                    <Button onClick={restOfProps.onSaveAllToGitHubFolder} disabled={githubMainOpsDisabled || restOfProps.mainScripts.length === 0} className="!bg-blue-500 hover:!bg-blue-600 text-xs !py-1">Save All Changed to Folder</Button>
+                </div>
+            </div>
+            <div className="my-2 p-2 border border-dashed border-purple-500 rounded-md">
+                <LabelInputContainer label="Original Scripts: File or Folder Path" htmlFor="githubOriginalFilePath" subText="Path for original/reference scripts (used in Comparison Mode).">
+                    <TextInput id="githubOriginalFilePath" value={restOfProps.gitHubSettings.originalFilePath} onChange={(e) => restOfProps.onGitHubSettingsChange('originalFilePath', e.target.value)} placeholder="e.g., original_scripts/chapter1.txt" />
+                </LabelInputContainer>
+                 <div className="grid grid-cols-2 gap-2 mt-1">
+                    <Button onClick={restOfProps.onLoadFileFromGitHubForOriginal} disabled={githubOriginalOpsDisabled} className="!bg-purple-600 hover:!bg-purple-700 text-xs !py-1">Load File (Original)</Button>
+                    <Button onClick={restOfProps.onLoadAllFromGitHubFolderForOriginal} disabled={githubOriginalOpsDisabled} className="!bg-purple-500 hover:!bg-purple-600 text-xs !py-1">Load All from Folder (Original)</Button>
                 </div>
             </div>
 
-            <div className="mt-3 pt-3 border-t border-[var(--bv-border-color-light)]">
-                <h4 className="text-md font-semibold text-[var(--bv-text-primary)] mb-1">Original Script Paths (for Comparison)</h4>
-                <LabelInputContainer label="File Path (for single file ops)" htmlFor="githubFilePathOriginal" subText="e.g., original_scripts/chapter1.txt">
-                    <TextInput id="githubFilePathOriginal" value={restOfProps.gitHubSettings.originalFilePath} onChange={(e) => restOfProps.onGitHubSettingsChange('originalFilePath', e.target.value)} placeholder="path/to/your/original_script.txt" />
-                </LabelInputContainer>
-            </div>
-            {restOfProps.isGitHubLoading && <p className="text-sm text-yellow-500 mt-2 animate-pulse">{restOfProps.gitHubStatusMessage || "Loading from GitHub..."}</p>}
-            {!restOfProps.isGitHubLoading && restOfProps.gitHubStatusMessage && <p className={`text-sm mt-2 ${restOfProps.gitHubStatusMessage.startsWith("Error:") ? 'text-red-500' : 'text-green-500'}`}>{restOfProps.gitHubStatusMessage}</p>}
-           </>
+            {restOfProps.isGitHubLoading && <p className="text-sm text-blue-500 mt-1">Working with GitHub...</p>}
+            {restOfProps.gitHubStatusMessage && (
+                <p className={`text-sm mt-1 ${restOfProps.gitHubStatusMessage.startsWith('Error:') ? 'text-red-500' : 'text-[var(--bv-text-secondary)]'}`}>
+                    {restOfProps.gitHubStatusMessage}
+                </p>
+            )}
+            <p className="text-xs text-[var(--bv-text-secondary)] mt-2">
+                Note: GitHub operations use the paths specified above. "Save Active to Path" saves the currently active main script to the "Main Scripts: File Path". "Save All Changed to Folder" saves all modified main scripts to the "Main Scripts: Folder Path", creating files named after the script names.
+            </p>
+          </>
         )
-      }
+      },
     ];
   }, [
-    props, // Main prop object
-    settings, onSettingsChange, onNestedSettingsChange, // Destructured from props, but props covers them
-    mainScripts, activeMainScriptId, loadedCustomFontName, glossaryTerms, // Other props items
-    blockSeparatorsInputText, activeNavigationTab,
+    settings, onSettingsChange, onNestedSettingsChange, props, // Main props object for all restOfProps
+    blockSeparatorsInputText, handleBlockSeparatorsInputChange, handleBlockSeparatorsInputBlur,
+    handleFontFamilyChange, handleFontFileSelected, loadedCustomFontName, customFontFilePickerRef,
     isEditingColorTag, editingColorTag, editingColorTagId,
-    isEditingImageTag, editingImageTagFields, editingImageTagId, editingImageTagFile, editingImageTagPreviewUrl,
-    glossaryTermInput, glossaryTranslationInput, editingGlossaryItemId, editingGlossaryItemCategory, showGlossaryFormFor,
-    // Callbacks from ControlsPanel scope (ensure they are memoized themselves)
-    handleBlockSeparatorsInputChange, handleBlockSeparatorsInputBlur,
-    handlePrimaryBgImageUpload, handleSecondaryBgImageUpload, handleBitmapFontImageUpload,
-    handleFontFileSelected, handleFontFamilyChange,
-    handleStartAddNewColorTag, handleStartEditColorTag, handleSaveColorTag, handleDeleteColorTag, handleToggleColorTagEnabled, handleEditingColorTagChange,
-    handleStartAddNewImageTag, handleStartEditImageTag, handleImageTagFileSelected, handleEditingImageTagFieldChange, handleSaveImageTag, handleDeleteImageTag, handleToggleImageTagEnabled,
+    handleStartAddNewColorTag, handleStartEditColorTag, handleSaveColorTag, handleDeleteColorTag,
+    handleToggleColorTagEnabled, handleEditingColorTagChange,
+    isEditingImageTag, editingImageTagFields, editingImageTagId, editingImageTagPreviewUrl,
+    handleStartAddNewImageTag, handleStartEditImageTag, handleImageTagFileSelected,
+    handleEditingImageTagFieldChange, handleSaveImageTag, handleDeleteImageTag, handleToggleImageTagEnabled,
     handleTagPatternsChange, handleCustomLineBreakTagsChange, handlePixelMarginChange,
-    handleShowAddGlossaryItemForm, handleSaveGlossaryItem, handleStartEditGlossaryItem, handleCancelEditOrAddGlossaryItem,
-    setActiveNavigationTab, setGlossaryTermInput, setGlossaryTranslationInput, // State setters
+    activeNavigationTab, setActiveNavigationTab, // For Script & Block Navigation
+    handlePrimaryBgImageUpload, handleSecondaryBgImageUpload, handleBitmapFontImageUpload, // For file inputs
+    glossaryTerms, // From props
+    glossaryTermInput, glossaryTranslationInput, editingGlossaryItemId, editingGlossaryItemCategory, showGlossaryFormFor, // Glossary local state
+    handleShowAddGlossaryItemForm, handleSaveGlossaryItem, handleStartEditGlossaryItem, handleCancelEditOrAddGlossaryItem, // Glossary handlers
+    aiTagPatternExamples, aiTagPatternSuggestion, aiTagPatternLoading, aiTagPatternError, // AI state from props
+    onAiTagPatternExamplesChange, onAiSuggestTagPatterns, // AI handlers from props
+    handleCopyAiSuggestion // Local AI handler
   ]);
 
-  const panelItems = useMemo(() => getPanelSectionsConfig(props), [getPanelSectionsConfig, props]);
 
-  const [panelSectionsOrder, setPanelSectionsOrder] = useState<string[]>(() => panelItems.map(s => s.id));
-  const [openSections, setOpenSections] = useState<Record<string, boolean>>(() =>
-    panelItems.reduce((acc, section) => {
-      acc[section.id] = section.defaultOpen ?? false;
-      return acc;
-    }, {} as Record<string, boolean>)
-  );
-  
+  // State for section order and open/closed status
+  const [panelSections, setPanelSections] = useState<PanelSectionItem[]>(() => {
+    const initialConfig = getPanelSectionsConfig(props);
+    const savedOrder = localStorage.getItem('bv_panelSectionsOrder_v2');
+    if (savedOrder) {
+      try {
+        const orderedIds = JSON.parse(savedOrder) as string[];
+        const sectionsMap = new Map(initialConfig.map(s => [s.id, s]));
+        const orderedConfig: PanelSectionItem[] = [];
+        orderedIds.forEach(id => {
+            const section = sectionsMap.get(id);
+            if (section) {
+                orderedConfig.push(section);
+                sectionsMap.delete(id); // Remove from map to track remaining
+            }
+        });
+        // Add any new sections from current config not in saved order
+        sectionsMap.forEach(section => orderedConfig.push(section));
+        return orderedConfig;
+      } catch (e) { console.warn("Error parsing saved section order", e); }
+    }
+    return initialConfig;
+  });
+
+  const [openSections, setOpenSections] = useState<Record<string, boolean>>(() => {
+    const initialConfig = getPanelSectionsConfig(props); // Use current props for defaultOpen
+    const savedOpenStates = localStorage.getItem('bv_openSections_v2');
+    let openState: Record<string, boolean> = {};
+    initialConfig.forEach(section => {
+      openState[section.id] = section.defaultOpen ?? false;
+    });
+    if (savedOpenStates) {
+      try {
+        openState = { ...openState, ...JSON.parse(savedOpenStates) };
+      } catch (e) { console.warn("Error parsing saved open sections", e); }
+    }
+    return openState;
+  });
+
+  // Effect to update panelSections content if getPanelSectionsConfig produces different content,
+  // while preserving order and open states.
+  useEffect(() => {
+    const newGeneratedConfig = getPanelSectionsConfig(props);
+    const newConfigMap = new Map(newGeneratedConfig.map(s => [s.id, s]));
+
+    setPanelSections(prevPanelSections => {
+        let updatedSections = prevPanelSections
+            .map(ps => newConfigMap.get(ps.id) || ps) // Update content of existing sections
+            .filter(s => newConfigMap.has(s.id));     // Remove sections no longer in new config
+
+        // Add any new sections from newGeneratedConfig not in prevPanelSections (append them)
+        newGeneratedConfig.forEach(newSection => {
+            if (!updatedSections.some(us => us.id === newSection.id)) {
+                updatedSections.push(newSection);
+            }
+        });
+        return updatedSections;
+    });
+    
+    setOpenSections(prevOpenSections => {
+        const newOpenState = { ...prevOpenSections };
+        newGeneratedConfig.forEach(newSection => {
+            if (!(newSection.id in newOpenState)) { // If section is new or state was missing
+                newOpenState[newSection.id] = newSection.defaultOpen ?? false;
+            }
+        });
+        // Prune open states for sections that no longer exist
+        Object.keys(newOpenState).forEach(sectionId => {
+            if (!newConfigMap.has(sectionId)) {
+                delete newOpenState[sectionId];
+            }
+        });
+        return newOpenState;
+    });
+  }, [props, getPanelSectionsConfig]);
+
+
+  useEffect(() => {
+    const orderedIds = panelSections.map(s => s.id);
+    localStorage.setItem('bv_panelSectionsOrder_v2', JSON.stringify(orderedIds));
+  }, [panelSections]);
+
+  useEffect(() => {
+    localStorage.setItem('bv_openSections_v2', JSON.stringify(openSections));
+  }, [openSections]);
+
+  const toggleSection = (sectionId: string) => {
+    setOpenSections(prev => ({ ...prev, [sectionId]: !prev[sectionId] }));
+  };
+
   const [draggedSectionId, setDraggedSectionId] = useState<string | null>(null);
   const [dragOverSectionId, setDragOverSectionId] = useState<string | null>(null);
 
-  useEffect(() => {
-    const newOrderFromItems = panelItems.map(s => s.id);
-    setPanelSectionsOrder(currentOrder => {
-      const currentOrderSet = new Set(currentOrder);
-      const newOrderSet = new Set(newOrderFromItems);
-      const maintainedOrder = currentOrder.filter(id => newOrderSet.has(id));
-      const addedIds = newOrderFromItems.filter(id => !currentOrderSet.has(id));
-      return [...maintainedOrder, ...addedIds];
-    });
-
-    setOpenSections(currentOpenSections => {
-      const nextOpenSections = { ...currentOpenSections };
-      const itemIds = new Set(panelItems.map(s => s.id));
-      panelItems.forEach(item => {
-        if (nextOpenSections[item.id] === undefined) {
-          // Initialize open state based on defaultOpen from panelItems,
-          // which itself is derived from props.overflowSettingsPanelOpen for the specific section.
-          nextOpenSections[item.id] = item.defaultOpen ?? false;
-        }
-      });
-      Object.keys(nextOpenSections).forEach(id => {
-        if (!itemIds.has(id)) {
-          delete nextOpenSections[id];
-        }
-      });
-      return nextOpenSections;
-    });
-  }, [panelItems]);
-
-
-  const handleToggleSection = useCallback((sectionId: string) => {
-    setOpenSections(prevOpenSections => {
-      const newOpenState = !prevOpenSections[sectionId];
-      if (sectionId === 'overflow-settings-section') {
-        // This call updates App.tsx's overflowSettingsPanelOpen state,
-        // which then flows down to PreviewArea's showPixelMarginGuides prop.
-        onToggleOverflowSettingsPanel();
-      }
-      return { ...prevOpenSections, [sectionId]: newOpenState };
-    });
-  }, [onToggleOverflowSettingsPanel]);
-
-
-  const handleDragStart = useCallback((e: React.DragEvent<HTMLButtonElement>, sectionId: string) => {
+  const handleDragStart = (event: React.DragEvent<HTMLButtonElement>, sectionId: string) => {
+    event.dataTransfer.effectAllowed = 'move';
     setDraggedSectionId(sectionId);
-    if (e.dataTransfer) {
-      e.dataTransfer.effectAllowed = 'move';
-      e.dataTransfer.setData('text/plain', sectionId);
-    }
-  }, []);
+    event.currentTarget.closest('.draggable-section-wrapper')?.classList.add('dragging-section-active');
+  };
 
-  const handleDragEnd = useCallback(() => {
+  const handleDragEnd = (event: React.DragEvent<HTMLButtonElement>) => {
+    event.currentTarget.closest('.draggable-section-wrapper')?.classList.remove('dragging-section-active');
     setDraggedSectionId(null);
     setDragOverSectionId(null);
-  }, []);
+  };
 
-  const handleDragOver = useCallback((e: React.DragEvent<HTMLDivElement>) => {
-    e.preventDefault(); 
-    if (draggedSectionId && e.dataTransfer) {
-      e.dataTransfer.dropEffect = 'move';
+  const handleDragOver = (event: React.DragEvent<HTMLDivElement>) => {
+    event.preventDefault();
+    if (draggedSectionId) {
+      event.dataTransfer.dropEffect = 'move';
     }
-  }, [draggedSectionId]);
+  };
 
-  const handleDragEnter = useCallback((e: React.DragEvent<HTMLDivElement>, targetSectionId: string) => {
-    e.preventDefault();
-    if (draggedSectionId && draggedSectionId !== targetSectionId) {
-      setDragOverSectionId(targetSectionId);
+  const handleDragEnter = (event: React.DragEvent<HTMLDivElement>, sectionId: string) => {
+    event.preventDefault();
+    if (draggedSectionId && draggedSectionId !== sectionId) {
+      setDragOverSectionId(sectionId);
     }
-  }, [draggedSectionId]);
-
-  const handleDragLeave = useCallback((e: React.DragEvent<HTMLDivElement>, targetSectionId: string) => {
-      if (!e.currentTarget.contains(e.relatedTarget as Node)) {
-          if (dragOverSectionId === targetSectionId) {
+  };
+  
+  const handleDragLeave = (event: React.DragEvent<HTMLDivElement>) => {
+    const wrapper = event.currentTarget as HTMLElement;
+    const related = event.relatedTarget as HTMLElement;
+    if (!wrapper.contains(related)) {
+        // Only clear dragOverSectionId if leaving the current drag-over target
+        if (dragOverSectionId === wrapper.dataset.sectionId) {
             setDragOverSectionId(null);
-          }
-      }
-  }, [dragOverSectionId]);
+        }
+    }
+  };
 
-  const handleDrop = useCallback((e: React.DragEvent<HTMLDivElement>, targetSectionId: string) => {
-    e.preventDefault();
-    if (!draggedSectionId || draggedSectionId === targetSectionId) {
-      setDragOverSectionId(null);
+  const handleDrop = (event: React.DragEvent<HTMLDivElement>, dropTargetIndex: number) => {
+    event.preventDefault();
+    if (!draggedSectionId) return;
+
+    const draggedItemIndex = panelSections.findIndex(s => s.id === draggedSectionId);
+    if (draggedItemIndex === -1 || draggedItemIndex === dropTargetIndex) {
       setDraggedSectionId(null);
+      setDragOverSectionId(null);
       return;
     }
 
-    setPanelSectionsOrder(prevOrder => {
-      const newOrder = [...prevOrder];
-      const draggedIndex = newOrder.indexOf(draggedSectionId);
-      const targetIndex = newOrder.indexOf(targetSectionId);
+    const newSections = Array.from(panelSections);
+    const [draggedItem] = newSections.splice(draggedItemIndex, 1);
+    newSections.splice(dropTargetIndex, 0, draggedItem);
 
-      if (draggedIndex === -1 || targetIndex === -1) return prevOrder;
-
-      const [draggedItem] = newOrder.splice(draggedIndex, 1);
-      newOrder.splice(targetIndex, 0, draggedItem);
-      return newOrder;
-    });
-    setDragOverSectionId(null);
+    setPanelSections(newSections);
     setDraggedSectionId(null);
-  }, [draggedSectionId]);
-
-  const sectionsById = useMemo(() => 
-    panelItems.reduce((acc, section) => {
-      acc[section.id] = section;
-      return acc;
-    }, {} as Record<string, PanelSectionItem>), 
-    [panelItems]
-  );
-  
-  const sortedPanelSections = useMemo(() => 
-    panelSectionsOrder
-      .map(id => sectionsById[id])
-      .filter(Boolean),
-    [panelSectionsOrder, sectionsById]
-  );
+    setDragOverSectionId(null);
+  };
 
   return (
-    <div ref={controlsPanelRef} className="h-full overflow-y-auto p-1 space-y-0.5 controls-panel-scroll-container" role="form" aria-label="Controls Panel">
-      {sortedPanelSections.map((section) => (
+    <div 
+        ref={controlsPanelRef} 
+        className="controls-panel space-y-0.5 p-0.5 overflow-y-auto h-full scrollbar-thin scrollbar-thumb-[var(--bv-scrollbar-thumb)] scrollbar-track-[var(--bv-scrollbar-track)] scrollbar-thumb-rounded scrollbar-track-rounded"
+        aria-label="Controls Panel"
+    >
+      {panelSections.map((section, index) => (
         <DraggableSectionWrapper
           key={section.id}
+          data-section-id={section.id}
           onDragEnter={(e) => handleDragEnter(e, section.id)}
           onDragOver={handleDragOver}
-          onDragLeave={(e) => handleDragLeave(e, section.id)}
-          onDrop={(e) => handleDrop(e, section.id)}
+          onDragLeave={handleDragLeave}
+          onDrop={(e) => handleDrop(e, index)}
           isDragging={draggedSectionId === section.id}
-          isDragOver={dragOverSectionId === section.id && draggedSectionId !== section.id}
+          isDragOver={dragOverSectionId === section.id}
         >
           <Section
-            id={section.id}
+            id={`panel-section-${section.id}`}
             title={section.title}
             isOpen={openSections[section.id] ?? section.defaultOpen ?? false}
-            onToggle={() => handleToggleSection(section.id)}
+            onToggle={() => toggleSection(section.id)}
             onDragStartButton={(e) => handleDragStart(e, section.id)}
             onDragEndButton={handleDragEnd}
           >
