@@ -1,5 +1,5 @@
 {
-  "name": "Mod AI Banana Vision Text Previewer",
+  "name": "4 Banana Vision Text Previewer",
   "description": "A web application for previewing text with various styling options, including system fonts, bitmap fonts, shadows, and outlines. Useful for romhacking and game development text visualization.",
   "requestFramePermissions": [],
   "prompt": ""
