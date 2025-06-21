@@ -1,6 +1,6 @@
 
-import React from 'react';
-import { ThemeKey, CustomThemeColors, AppThemeSettings, ResolvedThemeColors } from '../types';
+import React, { useState } from 'react';
+import { ThemeKey, CustomThemeColors, AppThemeSettings, ResolvedThemeColors, ApiSettings } from '../types';
 import { LabelInputContainer, TextInput, Button } from './ControlsPanel'; // Re-use styled components
 
 interface SpecialSettingsMenuProps {
@@ -12,6 +12,7 @@ interface SpecialSettingsMenuProps {
   onSaveCustomTheme: () => void;
   onResetCustomTheme: () => void;
   allThemeDefinitions: Record<Exclude<ThemeKey, 'custom'>, ResolvedThemeColors>;
+  onApiSettingsChange: (newSettings: Partial<ApiSettings>) => void;
 }
 
 // Updated QR code with the one provided by the user
@@ -27,11 +28,13 @@ const SpecialSettingsMenu: React.FC<SpecialSettingsMenuProps> = ({
   onCustomColorChange,
   onSaveCustomTheme,
   onResetCustomTheme,
-  allThemeDefinitions
+  allThemeDefinitions,
+  onApiSettingsChange
 }) => {
   if (!isOpen) return null;
 
-  const { activeThemeKey, customColors } = appThemeSettings;
+  const { activeThemeKey, customColors, apiSettings } = appThemeSettings;
+  const [tempApiKey, setTempApiKey] = useState(apiSettings.geminiApiKey);
 
   const handleThemeKeyChange = (key: ThemeKey) => {
     onThemeSettingsChange({ activeThemeKey: key });
@@ -83,6 +86,57 @@ const SpecialSettingsMenu: React.FC<SpecialSettingsMenuProps> = ({
             <svg xmlns="http://www.w3.org/2000/svg" className="h-6 w-6" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" /></svg>
           </button>
         </div>
+
+        {/* API Settings Section */}
+        <section className="mb-8">
+          <h3 className="text-xl font-semibold mb-4 border-b border-[var(--bv-border-color-light)] pb-2">API Settings</h3>
+          
+          <div className="space-y-4">
+            <LabelInputContainer label="Gemini API Key" htmlFor="gemini-api-key">
+              <div className="flex gap-2">
+                <TextInput
+                  id="gemini-api-key"
+                  type="password"
+                  value={tempApiKey}
+                  onChange={(e) => setTempApiKey(e.target.value)}
+                  placeholder="Enter your Gemini API key"
+                  className="flex-1"
+                />
+                <Button 
+                  onClick={() => {
+                    onApiSettingsChange({ geminiApiKey: tempApiKey });
+                  }}
+                  className="px-4"
+                >
+                  Save
+                </Button>
+              </div>
+              <p className="text-xs text-[var(--bv-text-secondary)] mt-1">
+                Your API key is stored locally and never sent to external servers except Google's Gemini API.
+              </p>
+              {apiSettings.geminiApiKey && (
+                <p className="text-xs text-green-600 mt-1">
+                  ✓ API key configured - AI features are enabled
+                </p>
+              )}
+              {!apiSettings.geminiApiKey && (
+                <p className="text-xs text-orange-500 mt-1">
+                  ⚠ No API key configured - AI features are disabled
+                </p>
+              )}
+            </LabelInputContainer>
+            
+            <div className="text-sm text-[var(--bv-text-secondary)] bg-[var(--bv-element-background-secondary)] p-3 rounded">
+              <p className="font-medium mb-2">How to get a Gemini API key:</p>
+              <ol className="list-decimal list-inside space-y-1 text-xs">
+                <li>Visit <a href="https://aistudio.google.com/app/apikey" target="_blank" rel="noopener noreferrer" className="text-[var(--bv-accent-primary)] hover:underline">Google AI Studio</a></li>
+                <li>Sign in with your Google account</li>
+                <li>Click "Create API Key"</li>
+                <li>Copy the generated key and paste it above</li>
+              </ol>
+            </div>
+          </div>
+        </section>
 
         {/* Theme Customization Section */}
         <section className="mb-8">

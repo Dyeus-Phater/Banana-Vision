@@ -1,13 +1,18 @@
 
 
-import type { ThemeKey, CustomThemeColors, AppThemeSettings, ResolvedThemeColors } from '../types'; // Adjust path as needed
+import type { ThemeKey, CustomThemeColors, AppThemeSettings, ResolvedThemeColors, ApiSettings } from '../types'; // Adjust path as needed
 import { DEFAULT_BANANA_THEME_COLORS, DEFAULT_CUSTOM_THEME_TEMPLATE, ALL_THEME_DEFINITIONS } from '../constants'; // Adjust path as needed
 
 const THEME_SETTINGS_STORAGE_KEY = 'bananaVision_themeSettings';
 
+const DEFAULT_API_SETTINGS: ApiSettings = {
+  geminiApiKey: '',
+};
+
 const DEFAULT_APP_THEME_SETTINGS: AppThemeSettings = {
   activeThemeKey: 'banana',
   customColors: DEFAULT_CUSTOM_THEME_TEMPLATE,
+  apiSettings: DEFAULT_API_SETTINGS,
 };
 
 export const loadThemeSettings = (): AppThemeSettings => {
@@ -20,15 +25,20 @@ export const loadThemeSettings = (): AppThemeSettings => {
         ...DEFAULT_CUSTOM_THEME_TEMPLATE,
         ...(parsed.customColors || {}),
       };
+      const completeApiSettings: ApiSettings = {
+        ...DEFAULT_API_SETTINGS,
+        ...(parsed.apiSettings || {}),
+      };
       return {
         activeThemeKey: parsed.activeThemeKey || DEFAULT_APP_THEME_SETTINGS.activeThemeKey,
         customColors: completeCustomColors,
+        apiSettings: completeApiSettings,
       };
     }
-    return { ...DEFAULT_APP_THEME_SETTINGS, customColors: { ...DEFAULT_CUSTOM_THEME_TEMPLATE } };
+    return { ...DEFAULT_APP_THEME_SETTINGS, customColors: { ...DEFAULT_CUSTOM_THEME_TEMPLATE }, apiSettings: { ...DEFAULT_API_SETTINGS } };
   } catch (error) {
     console.error("Error loading theme settings from localStorage:", error);
-    return { ...DEFAULT_APP_THEME_SETTINGS, customColors: { ...DEFAULT_CUSTOM_THEME_TEMPLATE } };
+    return { ...DEFAULT_APP_THEME_SETTINGS, customColors: { ...DEFAULT_CUSTOM_THEME_TEMPLATE }, apiSettings: { ...DEFAULT_API_SETTINGS } };
   }
 };
 

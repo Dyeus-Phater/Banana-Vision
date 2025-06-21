@@ -252,12 +252,27 @@ export const ControlsPanel: React.FC<ControlsPanelProps> = (props) => {
     mainScripts, activeMainScriptId, 
     loadedCustomFontName, 
     // overflowSettingsPanelOpen, // Not directly used for section open state here
-    onToggleOverflowSettingsPanel,
+    // onToggleOverflowSettingsPanel, // This prop is not used
     glossaryTerms, onAddGlossaryTerm, onUpdateGlossaryTerm, onDeleteGlossaryTerm,
     // AI Tag Pattern Props
     aiTagPatternExamples, onAiTagPatternExamplesChange,
     aiTagPatternSuggestion, onAiSuggestTagPatterns,
     aiTagPatternLoading, aiTagPatternError,
+    // Explicitly list props used in getPanelSectionsConfig or its returned content
+    onTextFileUpload, onSetActiveMainScriptId, onClearMainScripts, activeScriptBlocks,
+    currentBlockIndex, onSetCurrentBlockIndex, showOnlyOverflowingBlocks,
+    onShowOnlyOverflowingBlocksChange, displayedBlocksForView, onLoadCustomFont,
+    overflowSettingsPanelOpen, originalScripts, onOriginalScriptUpload,
+    matchedOriginalScriptName, onClearOriginalScripts, viewMode, onViewModeChange,
+    findText, onFindTextChange, replaceText, onReplaceTextChange,
+    findIsCaseSensitive, onFindIsCaseSensitiveChange, findMatchWholeWord,
+    onFindMatchWholeWordChange, findScope, onFindScopeChange, onFindNext,
+    onReplace, onReplaceAll, findResultsMessage, isFindCurrentBlockDisabled,
+    findResultSummary, onNavigateToFindResult, gitHubSettings, onGitHubSettingsChange,
+    onLoadFileFromGitHub, onSaveFileToGitHub, onLoadAllFromGitHubFolder,
+    onSaveAllToGitHubFolder, onLoadFileFromGitHubForOriginal,
+    onLoadAllFromGitHubFolderForOriginal, isGitHubLoading, gitHubStatusMessage,
+    activeThemeKey
   } = props;
 
   const customFontFilePickerRef = useRef<HTMLInputElement>(null);
@@ -671,29 +686,34 @@ export const ControlsPanel: React.FC<ControlsPanelProps> = (props) => {
 
 
   const getPanelSectionsConfig = useCallback((currentProps: ControlsPanelProps): PanelSectionItem[] => {
-    const { settings, onSettingsChange, onNestedSettingsChange, ...restOfProps } = currentProps;
+    const { 
+        settings: currentSettings, 
+        onSettingsChange: currentOnSettingsChange, 
+        onNestedSettingsChange: currentOnNestedSettingsChange, 
+        ...restOfProps 
+    } = currentProps;
 
     const handleToggleTreatEachLineAsBlock = (checked: boolean) => {
-        onSettingsChange('treatEachLineAsBlock', checked);
+        currentOnSettingsChange('treatEachLineAsBlock', checked);
         if (checked) {
-            onSettingsChange('useCustomBlockSeparator', false);
-            onSettingsChange('useEmptyLinesAsSeparator', false);
+            currentOnSettingsChange('useCustomBlockSeparator', false);
+            currentOnSettingsChange('useEmptyLinesAsSeparator', false);
         }
     };
 
     const handleToggleUseCustomBlockSeparator = (checked: boolean) => {
-        onSettingsChange('useCustomBlockSeparator', checked);
+        currentOnSettingsChange('useCustomBlockSeparator', checked);
         if (checked) {
-            onSettingsChange('treatEachLineAsBlock', false);
-            onSettingsChange('useEmptyLinesAsSeparator', false);
+            currentOnSettingsChange('treatEachLineAsBlock', false);
+            currentOnSettingsChange('useEmptyLinesAsSeparator', false);
         }
     };
     
     const handleToggleUseEmptyLinesAsSeparator = (checked: boolean) => {
-        onSettingsChange('useEmptyLinesAsSeparator', checked);
+        currentOnSettingsChange('useEmptyLinesAsSeparator', checked);
         if (checked) {
-            onSettingsChange('treatEachLineAsBlock', false);
-            onSettingsChange('useCustomBlockSeparator', false);
+            currentOnSettingsChange('treatEachLineAsBlock', false);
+            currentOnSettingsChange('useCustomBlockSeparator', false);
         }
     };
     
@@ -704,17 +724,17 @@ export const ControlsPanel: React.FC<ControlsPanelProps> = (props) => {
     const namesGlossaryItems = restOfProps.glossaryTerms.filter(gt => gt.category === 'name');
     const termsGlossaryItems = restOfProps.glossaryTerms.filter(gt => gt.category === 'term');
 
-    const displayCustomFontNameInConfig = settings.systemFont.customFontFileName 
-        ? settings.systemFont.customFontFileName.split('/').pop()?.split('\\').pop()
-        : loadedCustomFontName; 
+    const displayCustomFontNameInConfig = currentSettings.systemFont.customFontFileName 
+        ? currentSettings.systemFont.customFontFileName.split('/').pop()?.split('\\').pop()
+        : restOfProps.loadedCustomFontName; 
 
-    const showCustomFontLoadUIInConfig = settings.currentFontType === 'system' &&
-                               (settings.systemFont.fontFamily === "Custom..." || 
-                                (settings.systemFont.customFontBase64 && settings.systemFont.customFontFileName) || 
-                                (loadedCustomFontName && settings.systemFont.fontFamily === loadedCustomFontName));
+    const showCustomFontLoadUIInConfig = currentSettings.currentFontType === 'system' &&
+                               (currentSettings.systemFont.fontFamily === "Custom..." || 
+                                (currentSettings.systemFont.customFontBase64 && currentSettings.systemFont.customFontFileName) || 
+                                (restOfProps.loadedCustomFontName && currentSettings.systemFont.fontFamily === restOfProps.loadedCustomFontName));
 
-    const activeMainScriptNameInConfig = mainScripts.find(s => s.id === activeMainScriptId)?.name || null;
-    const isFindReplaceDisabledInConfig = mainScripts.length === 0;
+    const activeMainScriptNameInConfig = restOfProps.mainScripts.find(s => s.id === restOfProps.activeMainScriptId)?.name || null;
+    const isFindReplaceDisabledInConfig = restOfProps.mainScripts.length === 0;
 
 
     return [
@@ -783,47 +803,47 @@ export const ControlsPanel: React.FC<ControlsPanelProps> = (props) => {
             </div>
             
              <div className="mt-2 space-y-1">
-                <LabelInputContainer label="Treat each line as a block" htmlFor="treatEachLineAsBlock" inline disabled={settings.useCustomBlockSeparator || settings.useEmptyLinesAsSeparator}>
+                <LabelInputContainer label="Treat each line as a block" htmlFor="treatEachLineAsBlock" inline disabled={currentSettings.useCustomBlockSeparator || currentSettings.useEmptyLinesAsSeparator}>
                     <input 
                         type="checkbox" 
                         id="treatEachLineAsBlock" 
-                        checked={settings.treatEachLineAsBlock} 
+                        checked={currentSettings.treatEachLineAsBlock} 
                         onChange={(e) => handleToggleTreatEachLineAsBlock(e.target.checked)}
-                        disabled={settings.useCustomBlockSeparator || settings.useEmptyLinesAsSeparator}
+                        disabled={currentSettings.useCustomBlockSeparator || currentSettings.useEmptyLinesAsSeparator}
                         className="h-5 w-5 text-[var(--bv-accent-primary)] border-[var(--bv-input-border)] rounded focus:ring-[var(--bv-input-focus-ring)]"
                     />
                 </LabelInputContainer>
                 
-                <LabelInputContainer label="Use Empty Lines as Separators" htmlFor="useEmptyLinesAsSeparator" inline disabled={settings.treatEachLineAsBlock || settings.useCustomBlockSeparator} subText="One or more empty lines separate blocks.">
+                <LabelInputContainer label="Use Empty Lines as Separators" htmlFor="useEmptyLinesAsSeparator" inline disabled={currentSettings.treatEachLineAsBlock || currentSettings.useCustomBlockSeparator} subText="One or more empty lines separate blocks.">
                     <input 
                         type="checkbox" 
                         id="useEmptyLinesAsSeparator" 
-                        checked={settings.useEmptyLinesAsSeparator} 
+                        checked={currentSettings.useEmptyLinesAsSeparator} 
                         onChange={(e) => handleToggleUseEmptyLinesAsSeparator(e.target.checked)}
-                        disabled={settings.treatEachLineAsBlock || settings.useCustomBlockSeparator}
+                        disabled={currentSettings.treatEachLineAsBlock || currentSettings.useCustomBlockSeparator}
                         className="h-5 w-5 text-[var(--bv-accent-primary)] border-[var(--bv-input-border)] rounded focus:ring-[var(--bv-input-focus-ring)]"
                     />
                 </LabelInputContainer>
 
-                <LabelInputContainer label="Use Custom Block Separators" htmlFor="useCustomBlockSeparator" inline disabled={settings.treatEachLineAsBlock || settings.useEmptyLinesAsSeparator}>
+                <LabelInputContainer label="Use Custom Block Separators" htmlFor="useCustomBlockSeparator" inline disabled={currentSettings.treatEachLineAsBlock || currentSettings.useEmptyLinesAsSeparator}>
                     <input 
                         type="checkbox" 
                         id="useCustomBlockSeparator" 
-                        checked={settings.useCustomBlockSeparator} 
+                        checked={currentSettings.useCustomBlockSeparator} 
                         onChange={(e) => handleToggleUseCustomBlockSeparator(e.target.checked)}
-                        disabled={settings.treatEachLineAsBlock || settings.useEmptyLinesAsSeparator}
+                        disabled={currentSettings.treatEachLineAsBlock || currentSettings.useEmptyLinesAsSeparator}
                         className="h-5 w-5 text-[var(--bv-accent-primary)] border-[var(--bv-input-border)] rounded focus:ring-[var(--bv-input-focus-ring)]" 
                     />
                 </LabelInputContainer>
-                {settings.useCustomBlockSeparator && (
-                    <LabelInputContainer label="Block Separators (comma-separated)" htmlFor="blockSeparators" disabled={!settings.useCustomBlockSeparator || settings.treatEachLineAsBlock || settings.useEmptyLinesAsSeparator}>
+                {currentSettings.useCustomBlockSeparator && (
+                    <LabelInputContainer label="Block Separators (comma-separated)" htmlFor="blockSeparators" disabled={!currentSettings.useCustomBlockSeparator || currentSettings.treatEachLineAsBlock || currentSettings.useEmptyLinesAsSeparator}>
                         <TextInput 
                             id="blockSeparators" 
                             value={blockSeparatorsInputText} 
                             onChange={handleBlockSeparatorsInputChange}
                             onBlur={handleBlockSeparatorsInputBlur}
                             placeholder="e.g. <PAGE>,[END]"
-                            disabled={!settings.useCustomBlockSeparator || settings.treatEachLineAsBlock || settings.useEmptyLinesAsSeparator}
+                            disabled={!currentSettings.useCustomBlockSeparator || currentSettings.treatEachLineAsBlock || currentSettings.useEmptyLinesAsSeparator}
                         />
                     </LabelInputContainer>
                 )}
@@ -836,16 +856,16 @@ export const ControlsPanel: React.FC<ControlsPanelProps> = (props) => {
                 <input
                   type="checkbox"
                   id="useCustomLineBreakTags"
-                  checked={settings.useCustomLineBreakTags}
-                  onChange={(e) => onSettingsChange('useCustomLineBreakTags', e.target.checked)}
+                  checked={currentSettings.useCustomLineBreakTags}
+                  onChange={(e) => currentOnSettingsChange('useCustomLineBreakTags', e.target.checked)}
                   className="h-5 w-5 text-[var(--bv-accent-primary)] border-[var(--bv-input-border)] rounded focus:ring-[var(--bv-input-focus-ring)]"
                 />
               </LabelInputContainer>
-              {settings.useCustomLineBreakTags && (
+              {currentSettings.useCustomLineBreakTags && (
                 <LabelInputContainer label="Custom Line Break Tags (one per line):" htmlFor="customLineBreakTags" subText="These tags will be replaced with newlines in the preview.">
                   <TextAreaInput
                     id="customLineBreakTags"
-                    value={settings.customLineBreakTags.join('\n')}
+                    value={currentSettings.customLineBreakTags.join('\n')}
                     onChange={(e) => handleCustomLineBreakTagsChange(e.target.value)}
                     rows={3}
                     placeholder="e.g. <br>\n[NEWLINE]"
@@ -855,7 +875,7 @@ export const ControlsPanel: React.FC<ControlsPanelProps> = (props) => {
             </div>
             
             <LabelInputContainer label="Enable Comparison Mode" htmlFor="comparisonModeEnabled" inline disabled={restOfProps.mainScripts.length === 0 || restOfProps.originalScripts.length === 0} subText={(restOfProps.mainScripts.length === 0 || restOfProps.originalScripts.length === 0) ? "Load at least one main and one original script." : "View original and edited text side-by-side."}>
-              <input type="checkbox" id="comparisonModeEnabled" checked={settings.comparisonModeEnabled} onChange={(e) => onSettingsChange('comparisonModeEnabled', e.target.checked)} className="h-5 w-5 text-[var(--bv-accent-primary)] border-[var(--bv-input-border)] rounded focus:ring-[var(--bv-input-focus-ring)]" disabled={restOfProps.mainScripts.length === 0 || restOfProps.originalScripts.length === 0} />
+              <input type="checkbox" id="comparisonModeEnabled" checked={currentSettings.comparisonModeEnabled} onChange={(e) => currentOnSettingsChange('comparisonModeEnabled', e.target.checked)} className="h-5 w-5 text-[var(--bv-accent-primary)] border-[var(--bv-input-border)] rounded focus:ring-[var(--bv-input-focus-ring)]" disabled={restOfProps.mainScripts.length === 0 || restOfProps.originalScripts.length === 0} />
             </LabelInputContainer>
             <div className="mt-3 pt-3 border-t border-[var(--bv-border-color-light)]">
               <LabelInputContainer label="View Mode" htmlFor="viewModeDropdown" disabled={restOfProps.mainScripts.length === 0} subText={restOfProps.mainScripts.length === 0 ? "Load a script to change view mode." : "Choose how to display blocks for the active script."}>
@@ -871,13 +891,13 @@ export const ControlsPanel: React.FC<ControlsPanelProps> = (props) => {
       {
         id: 'preview-area-settings-section', title: 'Preview Area', defaultOpen: false, content: (
           <>
-            <InputWithSlider label="Width" unit="px" id="previewWidth" value={settings.previewWidth} onChange={(val) => onSettingsChange('previewWidth', val)} min={0} max={1280} step={10} subText={settings.previewWidth === 0 ? "Width auto (overflow based on content)" : undefined} />
-            <InputWithSlider label="Height" unit="px" id="previewHeight" value={settings.previewHeight} onChange={(val) => onSettingsChange('previewHeight', val)} min={0} max={1024} step={10} subText={settings.previewHeight === 0 ? "Height auto (overflow based on content or Max Content Height)" : undefined} />
-            <InputWithSlider label="Preview Zoom" unit="x" id="previewZoom" value={settings.previewZoom} onChange={(val) => onSettingsChange('previewZoom', val)} min={0.25} max={4} step={0.05} subText="Visually scales the entire preview area." />
-            <LabelInputContainer label="Background Color" htmlFor="bgColor"><TextInput type="color" id="bgColor" value={settings.backgroundColor} onChange={(e) => onSettingsChange('backgroundColor', e.target.value)} className="h-10 w-full" /></LabelInputContainer>
-            <LabelInputContainer label="Primary Background Image"><FileInput accept="image/*" onChange={handlePrimaryBgImageUpload} />{settings.backgroundImageUrl && (<button onClick={() => onSettingsChange('backgroundImageUrl', null)} className="mt-1 text-xs text-red-500 hover:text-red-700">Remove Primary Image</button>)}</LabelInputContainer>
-            <LabelInputContainer label="Secondary Background Image"><FileInput accept="image/*" onChange={handleSecondaryBgImageUpload} />{settings.secondaryBackgroundImageUrl && (<button onClick={() => onSettingsChange('secondaryBackgroundImageUrl', null)} className="mt-1 text-xs text-red-500 hover:text-red-700">Remove Secondary Image</button>)}</LabelInputContainer>
-            <LabelInputContainer label="Show Secondary Background" htmlFor="showSecondaryBg" inline disabled={!settings.secondaryBackgroundImageUrl} subText={!settings.secondaryBackgroundImageUrl ? "Load a secondary image first." : ""}><input type="checkbox" id="showSecondaryBg" checked={settings.showSecondaryBackgroundImage} onChange={(e) => onSettingsChange('showSecondaryBackgroundImage', e.target.checked)} className="h-5 w-5 text-[var(--bv-accent-primary)] border-[var(--bv-input-border)] rounded focus:ring-[var(--bv-input-focus-ring)]" disabled={!settings.secondaryBackgroundImageUrl} /></LabelInputContainer>
+            <InputWithSlider label="Width" unit="px" id="previewWidth" value={currentSettings.previewWidth} onChange={(val) => currentOnSettingsChange('previewWidth', val)} min={0} max={1280} step={10} subText={currentSettings.previewWidth === 0 ? "Width auto (overflow based on content)" : undefined} />
+            <InputWithSlider label="Height" unit="px" id="previewHeight" value={currentSettings.previewHeight} onChange={(val) => currentOnSettingsChange('previewHeight', val)} min={0} max={1024} step={10} subText={currentSettings.previewHeight === 0 ? "Height auto (overflow based on content or Max Content Height)" : undefined} />
+            <InputWithSlider label="Preview Zoom" unit="x" id="previewZoom" value={currentSettings.previewZoom} onChange={(val) => currentOnSettingsChange('previewZoom', val)} min={0.25} max={4} step={0.05} subText="Visually scales the entire preview area." />
+            <LabelInputContainer label="Background Color" htmlFor="bgColor"><TextInput type="color" id="bgColor" value={currentSettings.backgroundColor} onChange={(e) => currentOnSettingsChange('backgroundColor', e.target.value)} className="h-10 w-full" /></LabelInputContainer>
+            <LabelInputContainer label="Primary Background Image"><FileInput accept="image/*" onChange={handlePrimaryBgImageUpload} />{currentSettings.backgroundImageUrl && (<button onClick={() => currentOnSettingsChange('backgroundImageUrl', null)} className="mt-1 text-xs text-red-500 hover:text-red-700">Remove Primary Image</button>)}</LabelInputContainer>
+            <LabelInputContainer label="Secondary Background Image"><FileInput accept="image/*" onChange={handleSecondaryBgImageUpload} />{currentSettings.secondaryBackgroundImageUrl && (<button onClick={() => currentOnSettingsChange('secondaryBackgroundImageUrl', null)} className="mt-1 text-xs text-red-500 hover:text-red-700">Remove Secondary Image</button>)}</LabelInputContainer>
+            <LabelInputContainer label="Show Secondary Background" htmlFor="showSecondaryBg" inline disabled={!currentSettings.secondaryBackgroundImageUrl} subText={!currentSettings.secondaryBackgroundImageUrl ? "Load a secondary image first." : ""}><input type="checkbox" id="showSecondaryBg" checked={currentSettings.showSecondaryBackgroundImage} onChange={(e) => currentOnSettingsChange('showSecondaryBackgroundImage', e.target.checked)} className="h-5 w-5 text-[var(--bv-accent-primary)] border-[var(--bv-input-border)] rounded focus:ring-[var(--bv-input-focus-ring)]" disabled={!currentSettings.secondaryBackgroundImageUrl} /></LabelInputContainer>
           </>
         )
       },
@@ -986,23 +1006,23 @@ export const ControlsPanel: React.FC<ControlsPanelProps> = (props) => {
         )
       },
       {
-        id: 'overflow-settings-section', title: 'Overflow Settings', defaultOpen: currentProps.overflowSettingsPanelOpen, content: (
+        id: 'overflow-settings-section', title: 'Overflow Settings', defaultOpen: restOfProps.overflowSettingsPanelOpen, content: (
           <>
             <LabelInputContainer label="Overflow Detection Method" htmlFor="overflowDetectionMode">
-              <SelectInput id="overflowDetectionMode" value={settings.overflowDetectionMode} onChange={(e) => onSettingsChange('overflowDetectionMode', e.target.value as 'pixel' | 'character')}>
+              <SelectInput id="overflowDetectionMode" value={currentSettings.overflowDetectionMode} onChange={(e) => currentOnSettingsChange('overflowDetectionMode', e.target.value as 'pixel' | 'character')}>
                 <option value="pixel">Pixel Based</option>
                 <option value="character">Character Based</option>
               </SelectInput>
             </LabelInputContainer>
-            {settings.overflowDetectionMode === 'pixel' && (
+            {currentSettings.overflowDetectionMode === 'pixel' && (
               <>
-                <LabelInputContainer label="Use Margin-Based Overflow" htmlFor="enablePixelMargins" inline><input type="checkbox" id="enablePixelMargins" checked={settings.pixelOverflowMargins.enabled} onChange={(e) => onNestedSettingsChange('pixelOverflowMargins', 'enabled', e.target.checked)} className="h-5 w-5 text-[var(--bv-accent-primary)] border-[var(--bv-input-border)] rounded focus:ring-[var(--bv-input-focus-ring)]" /></LabelInputContainer>
-                <InputWithSlider label="Max Content Height (for Auto Preview)" unit="px" id="maxPixelHeight" value={settings.maxPixelHeight} onChange={(val) => onSettingsChange('maxPixelHeight', val)} min={0} max={2048} step={1} subText={settings.pixelOverflowMargins.enabled ? "Disabled when Margin-Based Overflow is active." : "Used if 'Preview Height' is 0 (auto) and Margin-Based is off."} disabled={settings.pixelOverflowMargins.enabled} />
-                {settings.pixelOverflowMargins.enabled && (
+                <LabelInputContainer label="Use Margin-Based Overflow" htmlFor="enablePixelMargins" inline><input type="checkbox" id="enablePixelMargins" checked={currentSettings.pixelOverflowMargins.enabled} onChange={(e) => currentOnNestedSettingsChange('pixelOverflowMargins', 'enabled', e.target.checked)} className="h-5 w-5 text-[var(--bv-accent-primary)] border-[var(--bv-input-border)] rounded focus:ring-[var(--bv-input-focus-ring)]" /></LabelInputContainer>
+                <InputWithSlider label="Max Content Height (for Auto Preview)" unit="px" id="maxPixelHeight" value={currentSettings.maxPixelHeight} onChange={(val) => currentOnSettingsChange('maxPixelHeight', val)} min={0} max={2048} step={1} subText={currentSettings.pixelOverflowMargins.enabled ? "Disabled when Margin-Based Overflow is active." : "Used if 'Preview Height' is 0 (auto) and Margin-Based is off."} disabled={currentSettings.pixelOverflowMargins.enabled} />
+                {currentSettings.pixelOverflowMargins.enabled && (
                   <div className="mt-2 pt-2 border-t border-[var(--bv-border-color-light)]">
                     {(['top', 'right', 'bottom', 'left'] as const).map(marginKey => {
-                      const currentMargin = settings.pixelOverflowMargins[marginKey];
-                      const isDimensionAuto = (marginKey === 'top' || marginKey === 'bottom') ? settings.previewHeight === 0 : settings.previewWidth === 0;
+                      const currentMargin = currentSettings.pixelOverflowMargins[marginKey];
+                      const isDimensionAuto = (marginKey === 'top' || marginKey === 'bottom') ? currentSettings.previewHeight === 0 : currentSettings.previewWidth === 0;
                       const subTextBase = isDimensionAuto 
                         ? `Preview ${marginKey === 'top' || marginKey === 'bottom' ? 'Height' : 'Width'} is auto, ${marginKey.charAt(0).toUpperCase() + marginKey.slice(1)} Margin ignored.`
                         : `From ${marginKey} edge.`;
@@ -1045,8 +1065,8 @@ export const ControlsPanel: React.FC<ControlsPanelProps> = (props) => {
                 )}
               </>
             )}
-            {settings.overflowDetectionMode === 'character' && (
-              <InputWithSlider label="Max Characters Per Line" unit="chars" id="maxCharacters" value={settings.maxCharacters} onChange={(val) => onSettingsChange('maxCharacters', val)} min={0} max={10000} step={1} subText={settings.maxCharacters === 0 ? "No character limit." : "Applies to the longest line. Tags & block separators are not counted."} />
+            {currentSettings.overflowDetectionMode === 'character' && (
+              <InputWithSlider label="Max Characters Per Line" unit="chars" id="maxCharacters" value={currentSettings.maxCharacters} onChange={(val) => currentOnSettingsChange('maxCharacters', val)} min={0} max={10000} step={1} subText={currentSettings.maxCharacters === 0 ? "No character limit." : "Applies to the longest line. Tags & block separators are not counted."} />
             )}
           </>
         )
@@ -1054,21 +1074,21 @@ export const ControlsPanel: React.FC<ControlsPanelProps> = (props) => {
       {
         id: 'text-position-scale-section', title: 'Text Position & Scale', defaultOpen: true, content: (
           <>
-            <InputWithSlider label="Text X Position" unit="px" id="textPositionX" value={settings.transform.positionX} onChange={(val) => onNestedSettingsChange('transform', 'positionX', val)} min={-500} max={500} step={1} />
-            <InputWithSlider label="Text Y Position" unit="px" id="textPositionY" value={settings.transform.positionY} onChange={(val) => onNestedSettingsChange('transform', 'positionY', val)} min={-500} max={500} step={1} />
-            <InputWithSlider label="Scale X" unit="x" id="textScaleX" value={settings.transform.scaleX} onChange={(val) => onNestedSettingsChange('transform', 'scaleX', val)} min={0.1} max={10} step={0.05} />
-            <InputWithSlider label="Scale Y" unit="x" id="textScaleY" value={settings.transform.scaleY} onChange={(val) => onNestedSettingsChange('transform', 'scaleY', val)} min={0.1} max={10} step={0.05} />
+            <InputWithSlider label="Text X Position" unit="px" id="textPositionX" value={currentSettings.transform.positionX} onChange={(val) => currentOnNestedSettingsChange('transform', 'positionX', val)} min={-500} max={500} step={1} />
+            <InputWithSlider label="Text Y Position" unit="px" id="textPositionY" value={currentSettings.transform.positionY} onChange={(val) => currentOnNestedSettingsChange('transform', 'positionY', val)} min={-500} max={500} step={1} />
+            <InputWithSlider label="Scale X" unit="x" id="textScaleX" value={currentSettings.transform.scaleX} onChange={(val) => currentOnNestedSettingsChange('transform', 'scaleX', val)} min={0.1} max={10} step={0.05} />
+            <InputWithSlider label="Scale Y" unit="x" id="textScaleY" value={currentSettings.transform.scaleY} onChange={(val) => currentOnNestedSettingsChange('transform', 'scaleY', val)} min={0.1} max={10} step={0.05} />
             <LabelInputContainer label="Horizontal Align" htmlFor="textAlignHorizontal">
-              <SelectInput id="textAlignHorizontal" value={settings.systemFont.textAlignHorizontal} onChange={(e) => onNestedSettingsChange('systemFont', 'textAlignHorizontal', e.target.value as 'left' | 'center' | 'right')}>
+              <SelectInput id="textAlignHorizontal" value={currentSettings.systemFont.textAlignHorizontal} onChange={(e) => currentOnNestedSettingsChange('systemFont', 'textAlignHorizontal', e.target.value as 'left' | 'center' | 'right')}>
                 <option value="left">Left</option><option value="center">Center</option><option value="right">Right</option>
               </SelectInput>
             </LabelInputContainer>
             <LabelInputContainer label="Vertical Align" htmlFor="textAlignVertical">
-              <SelectInput id="textAlignVertical" value={settings.systemFont.textAlignVertical} onChange={(e) => onNestedSettingsChange('systemFont', 'textAlignVertical', e.target.value as 'top' | 'middle' | 'bottom')}>
+              <SelectInput id="textAlignVertical" value={currentSettings.systemFont.textAlignVertical} onChange={(e) => currentOnNestedSettingsChange('systemFont', 'textAlignVertical', e.target.value as 'top' | 'middle' | 'bottom')}>
                 <option value="top">Top</option><option value="middle">Middle</option><option value="bottom">Bottom</option>
               </SelectInput>
             </LabelInputContainer>
-            <InputWithSlider label="Line Height Factor" unit="factor" id="globalLineHeightFactor" value={settings.globalLineHeightFactor} onChange={(val) => onSettingsChange('globalLineHeightFactor', val)} min={0.5} max={4} step={0.1} subText="Adjusts line spacing for all font types. For bitmap, it's a factor of character height." />
+            <InputWithSlider label="Line Height Factor" unit="factor" id="globalLineHeightFactor" value={currentSettings.globalLineHeightFactor} onChange={(val) => currentOnSettingsChange('globalLineHeightFactor', val)} min={0.5} max={4} step={0.1} subText="Adjusts line spacing for all font types. For bitmap, it's a factor of character height." />
           </>
         )
       },
@@ -1076,15 +1096,15 @@ export const ControlsPanel: React.FC<ControlsPanelProps> = (props) => {
         id: 'font-type-styling-section', title: 'Font Type, Styling & Effects', defaultOpen: true, content: (
           <>
             <LabelInputContainer label="Type" htmlFor="fontType">
-              <SelectInput id="fontType" value={settings.currentFontType} onChange={(e) => onSettingsChange('currentFontType', e.target.value as 'system' | 'bitmap')}>
+              <SelectInput id="fontType" value={currentSettings.currentFontType} onChange={(e) => currentOnSettingsChange('currentFontType', e.target.value as 'system' | 'bitmap')}>
                 <option value="system">System Font</option><option value="bitmap">Bitmap Font</option>
               </SelectInput>
             </LabelInputContainer>
-            {settings.currentFontType === 'system' && (
+            {currentSettings.currentFontType === 'system' && (
               <div className="mt-3 pt-3 border-t border-[var(--bv-border-color-light)]">
                 <h4 className="text-md font-semibold mb-1 text-[var(--bv-accent-primary)]">System Font Specifics</h4>
                 <LabelInputContainer label="Font Family" htmlFor="fontFamily">
-                  <SelectInput id="fontFamily" value={settings.systemFont.fontFamily} onChange={handleFontFamilyChange}>
+                  <SelectInput id="fontFamily" value={currentSettings.systemFont.fontFamily} onChange={handleFontFamilyChange}>
                     {AVAILABLE_FONTS.map(font => <option key={font} value={font}>{font.split(',')[0]}</option>)}
                     {displayCustomFontNameInConfig && !AVAILABLE_FONTS.includes(displayCustomFontNameInConfig) && displayCustomFontNameInConfig !== "Custom..." && (
                       <option value={displayCustomFontNameInConfig}>{displayCustomFontNameInConfig}</option>
@@ -1112,40 +1132,40 @@ export const ControlsPanel: React.FC<ControlsPanelProps> = (props) => {
                     </LabelInputContainer>
                   </div>
                 )}
-                <InputWithSlider label="Font Size" unit="px" id="fontSize" value={settings.systemFont.fontSize} onChange={(val) => onNestedSettingsChange('systemFont', 'fontSize', val)} min={6} max={120} step={1} />
-                <InputWithSlider label="Space Width Override" unit="px" id="systemSpaceWidthOverride" value={settings.systemFont.spaceWidthOverride || 0} onChange={(val) => onNestedSettingsChange('systemFont', 'spaceWidthOverride', val)} min={0} max={Math.max(30, settings.systemFont.fontSize * 1.5)} step={0.5} subText="Custom width for space char. 0 for auto/default." />
-                <LabelInputContainer label="Font Color" htmlFor="fontColor"><TextInput type="color" id="fontColor" value={settings.systemFont.color} onChange={(e) => onNestedSettingsChange('systemFont', 'color', e.target.value)} className="h-10 w-full" /></LabelInputContainer>
-                <InputWithSlider label="Letter Spacing" unit="px" id="letterSpacing" value={settings.systemFont.letterSpacing} onChange={(val) => onNestedSettingsChange('systemFont', 'letterSpacing', val)} min={-10} max={30} step={1} />
-                <LabelInputContainer label="Bold" htmlFor="fontWeight" inline><input type="checkbox" id="fontWeight" checked={settings.systemFont.fontWeight === 'bold'} onChange={(e) => onNestedSettingsChange('systemFont', 'fontWeight', e.target.checked ? 'bold' : 'normal')} className="h-5 w-5 text-[var(--bv-accent-primary)] border-[var(--bv-input-border)] rounded focus:ring-[var(--bv-input-focus-ring)]" /></LabelInputContainer>
+                <InputWithSlider label="Font Size" unit="px" id="fontSize" value={currentSettings.systemFont.fontSize} onChange={(val) => currentOnNestedSettingsChange('systemFont', 'fontSize', val)} min={6} max={120} step={1} />
+                <InputWithSlider label="Space Width Override" unit="px" id="systemSpaceWidthOverride" value={currentSettings.systemFont.spaceWidthOverride || 0} onChange={(val) => currentOnNestedSettingsChange('systemFont', 'spaceWidthOverride', val)} min={0} max={Math.max(30, currentSettings.systemFont.fontSize * 1.5)} step={0.5} subText="Custom width for space char. 0 for auto/default." />
+                <LabelInputContainer label="Font Color" htmlFor="fontColor"><TextInput type="color" id="fontColor" value={currentSettings.systemFont.color} onChange={(e) => currentOnNestedSettingsChange('systemFont', 'color', e.target.value)} className="h-10 w-full" /></LabelInputContainer>
+                <InputWithSlider label="Letter Spacing" unit="px" id="letterSpacing" value={currentSettings.systemFont.letterSpacing} onChange={(val) => currentOnNestedSettingsChange('systemFont', 'letterSpacing', val)} min={-10} max={30} step={1} />
+                <LabelInputContainer label="Bold" htmlFor="fontWeight" inline><input type="checkbox" id="fontWeight" checked={currentSettings.systemFont.fontWeight === 'bold'} onChange={(e) => currentOnNestedSettingsChange('systemFont', 'fontWeight', e.target.checked ? 'bold' : 'normal')} className="h-5 w-5 text-[var(--bv-accent-primary)] border-[var(--bv-input-border)] rounded focus:ring-[var(--bv-input-focus-ring)]" /></LabelInputContainer>
               </div>
             )}
-            {settings.currentFontType === 'bitmap' && (
+            {currentSettings.currentFontType === 'bitmap' && (
               <div className="mt-3 pt-3 border-t border-[var(--bv-border-color-light)]">
                 <h4 className="text-md font-semibold mb-1 text-[var(--bv-accent-primary)]">Bitmap Font Specifics</h4>
-                <LabelInputContainer label="Font Image"><FileInput accept="image/*" onChange={handleBitmapFontImageUpload} />{settings.bitmapFont.imageUrl && (<button onClick={() => onNestedSettingsChange('bitmapFont', 'imageUrl', null)} className="mt-1 text-xs text-red-500 hover:text-red-700">Remove Image</button>)}</LabelInputContainer>
-                <InputWithSlider label="Character Width" unit="px" id="charWidth" value={settings.bitmapFont.charWidth} onChange={(val) => onNestedSettingsChange('bitmapFont', 'charWidth', val)} min={1} max={128} step={1} />
-                <InputWithSlider label="Character Height" unit="px" id="charHeight" value={settings.bitmapFont.charHeight} onChange={(val) => onNestedSettingsChange('bitmapFont', 'charHeight', val)} min={1} max={128} step={1} />
-                <InputWithSlider label="Tile Separation X" unit="px" id="bitmapSeparationX" value={settings.bitmapFont.separationX} onChange={(val) => onNestedSettingsChange('bitmapFont', 'separationX', val)} min={0} max={64} step={1} subText="Horizontal pixels between tiles." />
-                <InputWithSlider label="Tile Separation Y" unit="px" id="bitmapSeparationY" value={settings.bitmapFont.separationY} onChange={(val) => onNestedSettingsChange('bitmapFont', 'separationY', val)} min={0} max={64} step={1} subText="Vertical pixels between tiles." />
-                <LabelInputContainer label="Character Map" htmlFor="charMap"><TextInput type="text" id="charMap" value={settings.bitmapFont.charMap} onChange={(e) => onNestedSettingsChange('bitmapFont', 'charMap', e.target.value)} /></LabelInputContainer>
-                <InputWithSlider label="Spacing" unit="px" id="bitmapSpacing" value={settings.bitmapFont.spacing} onChange={(val) => onNestedSettingsChange('bitmapFont', 'spacing', val)} min={-10} max={50} step={1} />
-                <InputWithSlider label="Zoom" unit="x" id="bitmapZoom" value={settings.bitmapFont.zoom} onChange={(val) => onNestedSettingsChange('bitmapFont', 'zoom', val)} min={0.1} max={16} step={0.1} />
-                <InputWithSlider label="Space Width Override" unit="px" id="bitmapSpaceWidthOverride" value={settings.bitmapFont.spaceWidthOverride} onChange={(val) => onNestedSettingsChange('bitmapFont', 'spaceWidthOverride', val)} min={0} max={Math.max(32, settings.bitmapFont.charWidth * 2)} step={1} subText="Custom width for space char. 0 for auto (pixel scan: ~charWidth/4, normal: full charWidth)." disabled={!(settings.currentFontType === 'bitmap' && settings.bitmapFont.enabled)} />
-                <LabelInputContainer label="Enable Pixel Scanning" htmlFor="bitmapEnablePixelScanning" inline><input type="checkbox" id="bitmapEnablePixelScanning" checked={settings.bitmapFont.enablePixelScanning} onChange={(e) => onNestedSettingsChange('bitmapFont', 'enablePixelScanning', e.target.checked)} className="h-5 w-5 text-[var(--bv-accent-primary)] border-[var(--bv-input-border)] rounded focus:ring-[var(--bv-input-focus-ring)]" /></LabelInputContainer>
-                {settings.bitmapFont.enablePixelScanning && (<p className="text-xs text-[var(--bv-text-secondary)] mb-1">Adjusts character width based on content. Space characters use approx. 1/4 of Character Width unless overridden.</p>)}
-                <LabelInputContainer label="Enable Color Removal" htmlFor="bitmapEnableColorRemoval" inline><input type="checkbox" id="bitmapEnableColorRemoval" checked={settings.bitmapFont.enableColorRemoval} onChange={(e) => onNestedSettingsChange('bitmapFont', 'enableColorRemoval', e.target.checked)} className="h-5 w-5 text-[var(--bv-accent-primary)] border-[var(--bv-input-border)] rounded focus:ring-[var(--bv-input-focus-ring)]" /></LabelInputContainer>
-                {settings.bitmapFont.enableColorRemoval && (<><LabelInputContainer label="Color to Remove" htmlFor="bitmapColorToRemove"><TextInput type="color" id="bitmapColorToRemove" value={settings.bitmapFont.colorToRemove} onChange={(e) => onNestedSettingsChange('bitmapFont', 'colorToRemove', e.target.value)} className="h-10 w-full" /></LabelInputContainer><InputWithSlider label="Removal Tolerance" id="bitmapColorRemovalTolerance" value={settings.bitmapFont.colorRemovalTolerance} onChange={(val) => onNestedSettingsChange('bitmapFont', 'colorRemovalTolerance', val)} min={0} max={75} step={1} unit="level" /></>)}
-                <LabelInputContainer label="Enable Tint Color" htmlFor="bitmapEnableTintColor" inline><input type="checkbox" id="bitmapEnableTintColor" checked={settings.bitmapFont.enableTintColor} onChange={(e) => onNestedSettingsChange('bitmapFont', 'enableTintColor', e.target.checked)} className="h-5 w-5 text-[var(--bv-accent-primary)] border-[var(--bv-input-border)] rounded focus:ring-[var(--bv-input-focus-ring)]" /></LabelInputContainer>
-                {settings.bitmapFont.enableTintColor && (<LabelInputContainer label="Tint Color" htmlFor="bitmapColor"><TextInput type="color" id="bitmapColor" value={settings.bitmapFont.color} onChange={(e) => onNestedSettingsChange('bitmapFont', 'color', e.target.value)} className="h-10 w-full" /></LabelInputContainer>)}
-                <LabelInputContainer label="Enabled" htmlFor="bitmapEnabled" inline><input type="checkbox" id="bitmapEnabled" checked={settings.bitmapFont.enabled} onChange={(e) => onNestedSettingsChange('bitmapFont', 'enabled', e.target.checked)} className="h-5 w-5 text-[var(--bv-accent-primary)] border-[var(--bv-input-border)] rounded focus:ring-[var(--bv-input-focus-ring)]" /></LabelInputContainer>
+                <LabelInputContainer label="Font Image"><FileInput accept="image/*" onChange={handleBitmapFontImageUpload} />{currentSettings.bitmapFont.imageUrl && (<button onClick={() => currentOnNestedSettingsChange('bitmapFont', 'imageUrl', null)} className="mt-1 text-xs text-red-500 hover:text-red-700">Remove Image</button>)}</LabelInputContainer>
+                <InputWithSlider label="Character Width" unit="px" id="charWidth" value={currentSettings.bitmapFont.charWidth} onChange={(val) => currentOnNestedSettingsChange('bitmapFont', 'charWidth', val)} min={1} max={128} step={1} />
+                <InputWithSlider label="Character Height" unit="px" id="charHeight" value={currentSettings.bitmapFont.charHeight} onChange={(val) => currentOnNestedSettingsChange('bitmapFont', 'charHeight', val)} min={1} max={128} step={1} />
+                <InputWithSlider label="Tile Separation X" unit="px" id="bitmapSeparationX" value={currentSettings.bitmapFont.separationX} onChange={(val) => currentOnNestedSettingsChange('bitmapFont', 'separationX', val)} min={0} max={64} step={1} subText="Horizontal pixels between tiles." />
+                <InputWithSlider label="Tile Separation Y" unit="px" id="bitmapSeparationY" value={currentSettings.bitmapFont.separationY} onChange={(val) => currentOnNestedSettingsChange('bitmapFont', 'separationY', val)} min={0} max={64} step={1} subText="Vertical pixels between tiles." />
+                <LabelInputContainer label="Character Map" htmlFor="charMap"><TextInput type="text" id="charMap" value={currentSettings.bitmapFont.charMap} onChange={(e) => currentOnNestedSettingsChange('bitmapFont', 'charMap', e.target.value)} /></LabelInputContainer>
+                <InputWithSlider label="Spacing" unit="px" id="bitmapSpacing" value={currentSettings.bitmapFont.spacing} onChange={(val) => currentOnNestedSettingsChange('bitmapFont', 'spacing', val)} min={-10} max={50} step={1} />
+                <InputWithSlider label="Zoom" unit="x" id="bitmapZoom" value={currentSettings.bitmapFont.zoom} onChange={(val) => currentOnNestedSettingsChange('bitmapFont', 'zoom', val)} min={0.1} max={16} step={0.1} />
+                <InputWithSlider label="Space Width Override" unit="px" id="bitmapSpaceWidthOverride" value={currentSettings.bitmapFont.spaceWidthOverride} onChange={(val) => currentOnNestedSettingsChange('bitmapFont', 'spaceWidthOverride', val)} min={0} max={Math.max(32, currentSettings.bitmapFont.charWidth * 2)} step={1} subText="Custom width for space char. 0 for auto (pixel scan: ~charWidth/4, normal: full charWidth)." disabled={!(currentSettings.currentFontType === 'bitmap' && currentSettings.bitmapFont.enabled)} />
+                <LabelInputContainer label="Enable Pixel Scanning" htmlFor="bitmapEnablePixelScanning" inline><input type="checkbox" id="bitmapEnablePixelScanning" checked={currentSettings.bitmapFont.enablePixelScanning} onChange={(e) => currentOnNestedSettingsChange('bitmapFont', 'enablePixelScanning', e.target.checked)} className="h-5 w-5 text-[var(--bv-accent-primary)] border-[var(--bv-input-border)] rounded focus:ring-[var(--bv-input-focus-ring)]" /></LabelInputContainer>
+                {currentSettings.bitmapFont.enablePixelScanning && (<p className="text-xs text-[var(--bv-text-secondary)] mb-1">Adjusts character width based on content. Space characters use approx. 1/4 of Character Width unless overridden.</p>)}
+                <LabelInputContainer label="Enable Color Removal" htmlFor="bitmapEnableColorRemoval" inline><input type="checkbox" id="bitmapEnableColorRemoval" checked={currentSettings.bitmapFont.enableColorRemoval} onChange={(e) => currentOnNestedSettingsChange('bitmapFont', 'enableColorRemoval', e.target.checked)} className="h-5 w-5 text-[var(--bv-accent-primary)] border-[var(--bv-input-border)] rounded focus:ring-[var(--bv-input-focus-ring)]" /></LabelInputContainer>
+                {currentSettings.bitmapFont.enableColorRemoval && (<><LabelInputContainer label="Color to Remove" htmlFor="bitmapColorToRemove"><TextInput type="color" id="bitmapColorToRemove" value={currentSettings.bitmapFont.colorToRemove} onChange={(e) => currentOnNestedSettingsChange('bitmapFont', 'colorToRemove', e.target.value)} className="h-10 w-full" /></LabelInputContainer><InputWithSlider label="Removal Tolerance" id="bitmapColorRemovalTolerance" value={currentSettings.bitmapFont.colorRemovalTolerance} onChange={(val) => currentOnNestedSettingsChange('bitmapFont', 'colorRemovalTolerance', val)} min={0} max={75} step={1} unit="level" /></>)}
+                <LabelInputContainer label="Enable Tint Color" htmlFor="bitmapEnableTintColor" inline><input type="checkbox" id="bitmapEnableTintColor" checked={currentSettings.bitmapFont.enableTintColor} onChange={(e) => currentOnNestedSettingsChange('bitmapFont', 'enableTintColor', e.target.checked)} className="h-5 w-5 text-[var(--bv-accent-primary)] border-[var(--bv-input-border)] rounded focus:ring-[var(--bv-input-focus-ring)]" /></LabelInputContainer>
+                {currentSettings.bitmapFont.enableTintColor && (<LabelInputContainer label="Tint Color" htmlFor="bitmapColor"><TextInput type="color" id="bitmapColor" value={currentSettings.bitmapFont.color} onChange={(e) => currentOnNestedSettingsChange('bitmapFont', 'color', e.target.value)} className="h-10 w-full" /></LabelInputContainer>)}
+                <LabelInputContainer label="Enabled" htmlFor="bitmapEnabled" inline><input type="checkbox" id="bitmapEnabled" checked={currentSettings.bitmapFont.enabled} onChange={(e) => currentOnNestedSettingsChange('bitmapFont', 'enabled', e.target.checked)} className="h-5 w-5 text-[var(--bv-accent-primary)] border-[var(--bv-input-border)] rounded focus:ring-[var(--bv-input-focus-ring)]" /></LabelInputContainer>
               </div>
             )}
             <div className="mt-4 pt-4 border-t border-[var(--bv-border-color-light)]">
               <h4 className="text-md font-semibold mb-1 text-[var(--bv-accent-primary)]">Effects</h4>
-              <LabelInputContainer label="Shadow Enabled" htmlFor="shadowEnabled" inline><input type="checkbox" id="shadowEnabled" checked={settings.shadowEffect.enabled} onChange={(e) => onNestedSettingsChange('shadowEffect', 'enabled', e.target.checked)} className="h-5 w-5 text-[var(--bv-accent-primary)] border-[var(--bv-input-border)] rounded focus:ring-[var(--bv-input-focus-ring)]" /></LabelInputContainer>
-              {settings.shadowEffect.enabled && (<><InputWithSlider label="Shadow Offset X" unit="px" id="shadowOffsetX" value={settings.shadowEffect.offsetX} onChange={(val) => onNestedSettingsChange('shadowEffect', 'offsetX', val)} min={-50} max={50} step={1} /><InputWithSlider label="Shadow Offset Y" unit="px" id="shadowOffsetY" value={settings.shadowEffect.offsetY} onChange={(val) => onNestedSettingsChange('shadowEffect', 'offsetY', val)} min={-50} max={50} step={1} /><InputWithSlider label="Shadow Blur" unit="px" id="shadowBlur" value={settings.shadowEffect.blur} onChange={(val) => onNestedSettingsChange('shadowEffect', 'blur', val)} min={0} max={100} step={1} /><LabelInputContainer label="Shadow Color" htmlFor="shadowColor"><TextInput type="color" id="shadowColor" value={settings.shadowEffect.color} onChange={(e) => onNestedSettingsChange('shadowEffect', 'color', e.target.value)} className="h-10 w-full" /></LabelInputContainer></>)}
-              <LabelInputContainer label="Outline Enabled" htmlFor="outlineEnabled" inline><input type="checkbox" id="outlineEnabled" checked={settings.outlineEffect.enabled} onChange={(e) => onNestedSettingsChange('outlineEffect', 'enabled', e.target.checked)} className="h-5 w-5 text-[var(--bv-accent-primary)] border-[var(--bv-input-border)] rounded focus:ring-[var(--bv-input-focus-ring)]" /></LabelInputContainer>
-              {settings.outlineEffect.enabled && (<><InputWithSlider label="Outline Width" unit="px" id="outlineWidth" value={settings.outlineEffect.width} onChange={(val) => onNestedSettingsChange('outlineEffect', 'width', val)} min={0} max={30} step={1} /><LabelInputContainer label="Outline Color" htmlFor="outlineColor"><TextInput type="color" id="outlineColor" value={settings.outlineEffect.color} onChange={(e) => onNestedSettingsChange('outlineEffect', 'color', e.target.value)} className="h-10 w-full"/></LabelInputContainer></>)}
+              <LabelInputContainer label="Shadow Enabled" htmlFor="shadowEnabled" inline><input type="checkbox" id="shadowEnabled" checked={currentSettings.shadowEffect.enabled} onChange={(e) => currentOnNestedSettingsChange('shadowEffect', 'enabled', e.target.checked)} className="h-5 w-5 text-[var(--bv-accent-primary)] border-[var(--bv-input-border)] rounded focus:ring-[var(--bv-input-focus-ring)]" /></LabelInputContainer>
+              {currentSettings.shadowEffect.enabled && (<><InputWithSlider label="Shadow Offset X" unit="px" id="shadowOffsetX" value={currentSettings.shadowEffect.offsetX} onChange={(val) => currentOnNestedSettingsChange('shadowEffect', 'offsetX', val)} min={-50} max={50} step={1} /><InputWithSlider label="Shadow Offset Y" unit="px" id="shadowOffsetY" value={currentSettings.shadowEffect.offsetY} onChange={(val) => currentOnNestedSettingsChange('shadowEffect', 'offsetY', val)} min={-50} max={50} step={1} /><InputWithSlider label="Shadow Blur" unit="px" id="shadowBlur" value={currentSettings.shadowEffect.blur} onChange={(val) => currentOnNestedSettingsChange('shadowEffect', 'blur', val)} min={0} max={100} step={1} /><LabelInputContainer label="Shadow Color" htmlFor="shadowColor"><TextInput type="color" id="shadowColor" value={currentSettings.shadowEffect.color} onChange={(e) => currentOnNestedSettingsChange('shadowEffect', 'color', e.target.value)} className="h-10 w-full" /></LabelInputContainer></>)}
+              <LabelInputContainer label="Outline Enabled" htmlFor="outlineEnabled" inline><input type="checkbox" id="outlineEnabled" checked={currentSettings.outlineEffect.enabled} onChange={(e) => currentOnNestedSettingsChange('outlineEffect', 'enabled', e.target.checked)} className="h-5 w-5 text-[var(--bv-accent-primary)] border-[var(--bv-input-border)] rounded focus:ring-[var(--bv-input-focus-ring)]" /></LabelInputContainer>
+              {currentSettings.outlineEffect.enabled && (<><InputWithSlider label="Outline Width" unit="px" id="outlineWidth" value={currentSettings.outlineEffect.width} onChange={(val) => currentOnNestedSettingsChange('outlineEffect', 'width', val)} min={0} max={30} step={1} /><LabelInputContainer label="Outline Color" htmlFor="outlineColor"><TextInput type="color" id="outlineColor" value={currentSettings.outlineEffect.color} onChange={(e) => currentOnNestedSettingsChange('outlineEffect', 'color', e.target.value)} className="h-10 w-full"/></LabelInputContainer></>)}
             </div>
           </>
         )
@@ -1155,10 +1175,10 @@ export const ControlsPanel: React.FC<ControlsPanelProps> = (props) => {
           <>
             
             <LabelInputContainer label="Hide General Tags in Preview" htmlFor="hideTagsInPreview" inline>
-              <input type="checkbox" id="hideTagsInPreview" checked={settings.hideTagsInPreview} onChange={(e) => onSettingsChange('hideTagsInPreview', e.target.checked)} className="h-5 w-5 text-[var(--bv-accent-primary)] border-[var(--bv-input-border)] rounded focus:ring-[var(--bv-input-focus-ring)]" />
+              <input type="checkbox" id="hideTagsInPreview" checked={currentSettings.hideTagsInPreview} onChange={(e) => currentOnSettingsChange('hideTagsInPreview', e.target.checked)} className="h-5 w-5 text-[var(--bv-accent-primary)] border-[var(--bv-input-border)] rounded focus:ring-[var(--bv-input-focus-ring)]" />
             </LabelInputContainer>
             <LabelInputContainer label="General Tag Patterns to Hide:" htmlFor="tagPatternsToHide" subText="Enter RegEx patterns, one per line. Applied if 'Hide Tags' is enabled. These are for non-coloring, non-image tags.">
-              <TextAreaInput id="tagPatternsToHide" value={settings.tagPatternsToHide.join('\n')} onChange={(e) => handleTagPatternsChange(e.target.value)} rows={3} placeholder="e.g. <[^>]*>\n\\[[^\\]]*\\]" />
+              <TextAreaInput id="tagPatternsToHide" value={currentSettings.tagPatternsToHide.join('\n')} onChange={(e) => handleTagPatternsChange(e.target.value)} rows={3} placeholder="e.g. <[^>]*>\n\\[[^\\]]*\\]" />
             </LabelInputContainer>
 
              {/* AI Tag Pattern Suggester */}
@@ -1227,12 +1247,12 @@ export const ControlsPanel: React.FC<ControlsPanelProps> = (props) => {
                 <Button onClick={handleStartAddNewColorTag} className="w-full mb-3">Add New Color Tag</Button>
               )}
 
-              {settings.customColorTags.length === 0 && !isEditingColorTag && (
+              {currentSettings.customColorTags.length === 0 && !isEditingColorTag && (
                 <p className="text-xs text-[var(--bv-text-secondary)]">No custom color tags defined.</p>
               )}
-              {settings.customColorTags.length > 0 && (
+              {currentSettings.customColorTags.length > 0 && (
                 <div className="space-y-2 max-h-60 overflow-y-auto pr-1">
-                  {settings.customColorTags.map(tag => (
+                  {currentSettings.customColorTags.map(tag => (
                     <div key={tag.id} className="p-2 border border-[var(--bv-border-color-light)] rounded-md bg-[var(--bv-element-background)] flex items-center justify-between gap-2">
                       <div className="flex items-center gap-2 flex-grow">
                         <input type="checkbox" checked={tag.enabled} onChange={e => handleToggleColorTagEnabled(tag.id, e.target.checked)} className="h-4 w-4 text-[var(--bv-accent-primary)] border-[var(--bv-input-border)] rounded focus:ring-[var(--bv-input-focus-ring)] flex-shrink-0" title={tag.enabled ? 'Disable Tag' : 'Enable Tag'} />
@@ -1280,12 +1300,12 @@ export const ControlsPanel: React.FC<ControlsPanelProps> = (props) => {
               ) : (
                 <Button onClick={handleStartAddNewImageTag} className="w-full mb-3">Add New Image Tag</Button>
               )}
-               {settings.imageTags.length === 0 && !isEditingImageTag && (
+               {currentSettings.imageTags.length === 0 && !isEditingImageTag && (
                 <p className="text-xs text-[var(--bv-text-secondary)]">No image tags defined.</p>
               )}
-              {settings.imageTags.length > 0 && (
+              {currentSettings.imageTags.length > 0 && (
                 <div className="space-y-2 max-h-60 overflow-y-auto pr-1">
-                  {settings.imageTags.map(tag => (
+                  {currentSettings.imageTags.map(tag => (
                     <div key={tag.id} className="p-2 border border-[var(--bv-border-color-light)] rounded-md bg-[var(--bv-element-background)] flex items-center justify-between gap-2">
                       <div className="flex items-center gap-2 flex-grow">
                         <input type="checkbox" checked={tag.enabled} onChange={e => handleToggleImageTagEnabled(tag.id, e.target.checked)} className="h-4 w-4 text-[var(--bv-accent-primary)] border-[var(--bv-input-border)] rounded focus:ring-[var(--bv-input-focus-ring)] flex-shrink-0" title={tag.enabled ? 'Disable Tag' : 'Enable Tag'} />
@@ -1312,15 +1332,15 @@ export const ControlsPanel: React.FC<ControlsPanelProps> = (props) => {
             <LabelInputContainer label="Custom Character Byte Map" htmlFor="customByteMapString" subText="Define byte values for characters/tags (e.g., A=1, €=2, [ICON]=0). One per line. Lines starting with # are comments. Tags go in [brackets].">
                 <TextAreaInput 
                     id="customByteMapString"
-                    value={settings.customByteMapString}
-                    onChange={(e) => onSettingsChange('customByteMapString', e.target.value)}
+                    value={currentSettings.customByteMapString}
+                    onChange={(e) => currentOnSettingsChange('customByteMapString', e.target.value)}
                     rows={6}
                     placeholder={`# Example:\nA=1\nB=1\n…\nЯ=2\n€=3\n[ICON_SMILE]=0`}
                 />
             </LabelInputContainer>
-            <InputWithSlider label="Default Byte Value" unit="bytes" id="defaultCharacterByteValue" value={settings.defaultCharacterByteValue} onChange={(val) => onSettingsChange('defaultCharacterByteValue', val)} min={0} max={8} step={1} subText="For characters not in the custom map." />
-            <LabelInputContainer label="Enable Byte Restriction in Comparison Mode" htmlFor="enableByteRestriction" inline disabled={!settings.comparisonModeEnabled} subText={!settings.comparisonModeEnabled ? "Enable Comparison Mode first." : "Prevents edited lines from exceeding original line byte counts."}>
-                <input type="checkbox" id="enableByteRestriction" checked={settings.enableByteRestrictionInComparisonMode} onChange={(e) => onSettingsChange('enableByteRestrictionInComparisonMode', e.target.checked)} className="h-5 w-5 text-[var(--bv-accent-primary)] border-[var(--bv-input-border)] rounded focus:ring-[var(--bv-input-focus-ring)]" disabled={!settings.comparisonModeEnabled} />
+            <InputWithSlider label="Default Byte Value" unit="bytes" id="defaultCharacterByteValue" value={currentSettings.defaultCharacterByteValue} onChange={(val) => currentOnSettingsChange('defaultCharacterByteValue', val)} min={0} max={8} step={1} subText="For characters not in the custom map." />
+            <LabelInputContainer label="Enable Byte Restriction in Comparison Mode" htmlFor="enableByteRestriction" inline disabled={!currentSettings.comparisonModeEnabled} subText={!currentSettings.comparisonModeEnabled ? "Enable Comparison Mode first." : "Prevents edited lines from exceeding original line byte counts."}>
+                <input type="checkbox" id="enableByteRestriction" checked={currentSettings.enableByteRestrictionInComparisonMode} onChange={(e) => currentOnSettingsChange('enableByteRestrictionInComparisonMode', e.target.checked)} className="h-5 w-5 text-[var(--bv-accent-primary)] border-[var(--bv-input-border)] rounded focus:ring-[var(--bv-input-focus-ring)]" disabled={!currentSettings.comparisonModeEnabled} />
             </LabelInputContainer>
            </>
         )
@@ -1365,7 +1385,7 @@ export const ControlsPanel: React.FC<ControlsPanelProps> = (props) => {
                                         </div>
                                         <div className="flex gap-1 flex-shrink-0">
                                             <Button onClick={() => handleStartEditGlossaryItem(item)} className="!p-0.5 !text-xs !bg-blue-500 hover:!bg-blue-600">Edit</Button>
-                                            <Button onClick={() => onDeleteGlossaryTerm(item.id)} className="!p-0.5 !text-xs !bg-red-500 hover:!bg-red-600">Del</Button>
+                                            <Button onClick={() => restOfProps.onDeleteGlossaryTerm(item.id)} className="!p-0.5 !text-xs !bg-red-500 hover:!bg-red-600">Del</Button>
                                         </div>
                                     </div>
                                 ))}
@@ -1425,9 +1445,27 @@ export const ControlsPanel: React.FC<ControlsPanelProps> = (props) => {
       },
     ];
   }, [
-    settings, onSettingsChange, onNestedSettingsChange, props, // Main props object for all restOfProps
+    // Props directly from ControlsPanelProps (settings, onSettingsChange, onNestedSettingsChange are from props destructured at top)
+    settings, onSettingsChange, onNestedSettingsChange,
+    onTextFileUpload, mainScripts, activeMainScriptId, onSetActiveMainScriptId, onClearMainScripts,
+    activeScriptBlocks, currentBlockIndex, onSetCurrentBlockIndex, showOnlyOverflowingBlocks,
+    onShowOnlyOverflowingBlocksChange, displayedBlocksForView, onLoadCustomFont,
+    loadedCustomFontName, overflowSettingsPanelOpen, originalScripts, onOriginalScriptUpload,
+    matchedOriginalScriptName, onClearOriginalScripts, viewMode, onViewModeChange,
+    findText, onFindTextChange, replaceText, onReplaceTextChange,
+    findIsCaseSensitive, onFindIsCaseSensitiveChange, findMatchWholeWord,
+    onFindMatchWholeWordChange, findScope, onFindScopeChange, onFindNext,
+    onReplace, onReplaceAll, findResultsMessage, isFindCurrentBlockDisabled,
+    findResultSummary, onNavigateToFindResult, gitHubSettings, onGitHubSettingsChange,
+    onLoadFileFromGitHub, onSaveFileToGitHub, onLoadAllFromGitHubFolder,
+    onSaveAllToGitHubFolder, onLoadFileFromGitHubForOriginal,
+    onLoadAllFromGitHubFolderForOriginal, isGitHubLoading, gitHubStatusMessage,
+    activeThemeKey, glossaryTerms, onAddGlossaryTerm, onUpdateGlossaryTerm, onDeleteGlossaryTerm,
+    aiTagPatternExamples, onAiTagPatternExamplesChange, aiTagPatternSuggestion,
+    onAiSuggestTagPatterns, aiTagPatternLoading, aiTagPatternError,
+    // Local state and callbacks that are used to render the content of sections:
     blockSeparatorsInputText, handleBlockSeparatorsInputChange, handleBlockSeparatorsInputBlur,
-    handleFontFamilyChange, handleFontFileSelected, loadedCustomFontName, customFontFilePickerRef,
+    handleFontFamilyChange, handleFontFileSelected, customFontFilePickerRef,
     isEditingColorTag, editingColorTag, editingColorTagId,
     handleStartAddNewColorTag, handleStartEditColorTag, handleSaveColorTag, handleDeleteColorTag,
     handleToggleColorTagEnabled, handleEditingColorTagChange,
@@ -1435,14 +1473,11 @@ export const ControlsPanel: React.FC<ControlsPanelProps> = (props) => {
     handleStartAddNewImageTag, handleStartEditImageTag, handleImageTagFileSelected,
     handleEditingImageTagFieldChange, handleSaveImageTag, handleDeleteImageTag, handleToggleImageTagEnabled,
     handleTagPatternsChange, handleCustomLineBreakTagsChange, handlePixelMarginChange,
-    activeNavigationTab, setActiveNavigationTab, // For Script & Block Navigation
-    handlePrimaryBgImageUpload, handleSecondaryBgImageUpload, handleBitmapFontImageUpload, // For file inputs
-    glossaryTerms, // From props
-    glossaryTermInput, glossaryTranslationInput, editingGlossaryItemId, editingGlossaryItemCategory, showGlossaryFormFor, // Glossary local state
-    handleShowAddGlossaryItemForm, handleSaveGlossaryItem, handleStartEditGlossaryItem, handleCancelEditOrAddGlossaryItem, // Glossary handlers
-    aiTagPatternExamples, aiTagPatternSuggestion, aiTagPatternLoading, aiTagPatternError, // AI state from props
-    onAiTagPatternExamplesChange, onAiSuggestTagPatterns, // AI handlers from props
-    handleCopyAiSuggestion // Local AI handler
+    activeNavigationTab, setActiveNavigationTab, 
+    handlePrimaryBgImageUpload, handleSecondaryBgImageUpload, handleBitmapFontImageUpload, 
+    glossaryTermInput, glossaryTranslationInput, editingGlossaryItemId, editingGlossaryItemCategory, showGlossaryFormFor, 
+    handleShowAddGlossaryItemForm, handleSaveGlossaryItem, handleStartEditGlossaryItem, handleCancelEditOrAddGlossaryItem, 
+    handleCopyAiSuggestion
   ]);
 
 
@@ -1520,7 +1555,7 @@ export const ControlsPanel: React.FC<ControlsPanelProps> = (props) => {
         });
         return newOpenState;
     });
-  }, [props, getPanelSectionsConfig]);
+  }, [getPanelSectionsConfig, props]); // Depend on getPanelSectionsConfig and props to re-evaluate when config logic or its inputs change.
 
 
   useEffect(() => {

@@ -226,10 +226,14 @@ export interface CustomThemeColors {
   
 }
 
+export interface ApiSettings {
+  geminiApiKey: string;
+}
+
 export interface AppThemeSettings {
   activeThemeKey: ThemeKey;
-  customColors: CustomThemeColors; 
-  
+  customColors: CustomThemeColors;
+  apiSettings: ApiSettings;
 }
 
 

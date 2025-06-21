@@ -5,11 +5,11 @@ import { Octokit } from '@octokit/rest';
 import { GoogleGenAI, GenerateContentResponse } from "@google/genai";
 import { 
   AppSettings, Block, NestedAppSettingsObjectKeys, ScriptFile, GitHubSettings, Profile, MainViewMode,
-  ThemeKey, CustomThemeColors, AppThemeSettings, BlockMetrics, LineMetricDetail, CharacterByteMapEntry, LineMetrics,
+  ThemeKey, CustomThemeColors, AppThemeSettings, ApiSettings, BlockMetrics, LineMetricDetail, CharacterByteMapEntry, LineMetrics,
   GlossaryTerm, GlossaryCategory
 } from './types';
 import { DEFAULT_SETTINGS, DEFAULT_GITHUB_SETTINGS, ALL_THEME_DEFINITIONS, DEFAULT_CUSTOM_THEME_TEMPLATE, DEFAULT_GLOSSARY_TERMS } from './constants';
-import { ControlsPanel, Button, LabelInputContainer, TextAreaInput } from './components/ControlsPanel'; // Import Button, LabelInputContainer, TextAreaInput
+import { ControlsPanel, Button } from './components/ControlsPanel'; // Import Button, LabelInputContainer, TextAreaInput
 import PreviewArea, { PreviewAreaProps } from './components/PreviewArea';
 import Toolbar from './components/Toolbar';
 import ProfilesGalleryPage from './components/ProfilesGalleryPage';
@@ -536,13 +536,14 @@ const App: React.FC = () => {
 
 
   useEffect(() => {
-    if (process.env.GEMINI_API_KEY) {
-      aiInstanceRef.current = new GoogleGenAI({ apiKey: process.env.GEMINI_API_KEY });
+    const apiKey = appThemeSettings.apiSettings.geminiApiKey || process.env.GEMINI_API_KEY;
+    if (apiKey) {
+      aiInstanceRef.current = new GoogleGenAI({ apiKey });
     } else {
       console.error("Gemini API Key not found. AI features will be disabled.");
-      // Potentially set a state here to disable AI buttons globally
+      aiInstanceRef.current = null;
     }
-  }, []);
+  }, [appThemeSettings.apiSettings.geminiApiKey]);
 
   const openAiSuggestionsPopup = useCallback((text: string, onApply: (suggestion: string) => void) => {
     setAiPopupState({
@@ -581,8 +582,8 @@ const App: React.FC = () => {
         model: 'gemini-2.5-flash-preview-04-17',
         contents: prompt,
       });
-      if (forPopup) setAiPopupState(prev => ({ ...prev, isLoading: false, suggestions: response.text }));
-      else { setAiTagPatternLoading(false); setAiTagPatternSuggestion(response.text); }
+      if (forPopup) setAiPopupState(prev => ({ ...prev, isLoading: false, suggestions: response.text || null }));
+      else { setAiTagPatternLoading(false); setAiTagPatternSuggestion(response.text ?? ''); }
       return response.text;
     } catch (err: any) {
       console.error("Gemini API call failed:", err);
@@ -946,6 +947,15 @@ const App: React.FC = () => {
         themeService.saveThemeSettings({ ...appThemeSettings, customColors: { ...DEFAULT_CUSTOM_THEME_TEMPLATE } });
     }
   }, [appThemeSettings, handleThemeSettingsChange]);
+
+  const handleApiSettingsChange = useCallback((newApiSettings: Partial<ApiSettings>) => {
+    setAppThemeSettings(prev => {
+      const updatedApiSettings = { ...prev.apiSettings, ...newApiSettings };
+      const updatedSettings = { ...prev, apiSettings: updatedApiSettings };
+      themeService.saveThemeSettings(updatedSettings);
+      return updatedSettings;
+    });
+  }, []);
 
   const toggleSpecialSettingsMenu = () => setIsSpecialSettingsMenuOpen(prev => !prev);
 
@@ -1749,9 +1759,10 @@ const handleCurrentBlockContentChangeInSingleView = useCallback((newContent: str
       activeMainScript.blocks.forEach(block => {
         const blockRegex = new RegExp(regex); 
         
-        let match;
         let countInBlock = 0;
-        while ((match = blockRegex.exec(block.content)) !== null) {
+        while (true) {
+          const match = blockRegex.exec(block.content);
+          if (match === null) break;
           countInBlock++;
         }
         if (countInBlock > 0) {
@@ -1772,8 +1783,9 @@ const handleCurrentBlockContentChangeInSingleView = useCallback((newContent: str
         script.blocks.forEach(block => {
           const blockRegex = new RegExp(regex); 
           
-          let match;
-          while ((match = blockRegex.exec(block.content)) !== null) {
+          while (true) {
+            const match = blockRegex.exec(block.content);
+            if (match === null) break;
             countInScript++;
           }
         });
@@ -3156,6 +3168,7 @@ const handleSaveAllToGitHubFolder = useCallback(async () => {
         onSaveCustomTheme={saveCustomTheme}
         onResetCustomTheme={resetCustomTheme}
         allThemeDefinitions={ALL_THEME_DEFINITIONS}
+        onApiSettingsChange={handleApiSettingsChange}
       />
       <TutorialModal
         isOpen={showTutorial}
