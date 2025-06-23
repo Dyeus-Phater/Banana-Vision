@@ -728,7 +728,7 @@ const PreviewAreaInner = forwardRef<HTMLDivElement, PreviewAreaProps>(({
         display: 'block',
         textShadow: textShadowValue !== 'none' ? textShadowValue : undefined,
     };
-
+    
     if (useHorizontalBreakLine) {
         baseTextSpanStyle.wordBreak = 'break-word';
     } else {
@@ -745,8 +745,22 @@ const PreviewAreaInner = forwardRef<HTMLDivElement, PreviewAreaProps>(({
                   return <div key={lineIdx} style={{ height: '0px', overflow: 'hidden' }} aria-hidden="true" />;
               }
               
+              const lineDivActualStyle: CSSProperties = {
+                minHeight: `${settings.systemFont.fontSize * settings.globalLineHeightFactor}px`,
+              };
+
+              if (!useHorizontalBreakLine) {
+                // Original behavior if not using horizontal breakLine margins (e.g., character overflow)
+                // or if pixelOverflowMargins is disabled entirely.
+                lineDivActualStyle.display = 'flex';
+                lineDivActualStyle.flexWrap = 'nowrap';
+                lineDivActualStyle.alignItems = 'baseline';
+              }
+              // When useHorizontalBreakLine is true, lineDivActualStyle remains basic (effectively display: block implicitly by being a div),
+              // allowing parent's pre-wrap to control flow of inline/inline-block children.
+              
               return (
-              <div key={lineIdx} style={{ minHeight: `${settings.systemFont.fontSize * settings.globalLineHeightFactor}px`, display: 'flex', flexWrap: 'nowrap', alignItems: 'baseline' }}>
+              <div key={lineIdx} style={lineDivActualStyle}>
                 {lineContentSegments.map((segment, segIdx) => {
                   if (segment.type === 'image') {
                     return <img key={`${lineIdx}-${segIdx}-img`} src={segment.imageUrl} alt={segment.altText} style={{ width: `${segment.width}px`, height: `${segment.height}px`, display: 'inline-block', verticalAlign: 'middle', margin: '0 1px', imageRendering: 'pixelated' }} />;
