@@ -1,4 +1,5 @@
 
+
 import { AppSettings, Profile, GitHubSettings } from '../types';
 import { DEFAULT_GITHUB_SETTINGS } from '../constants';
 
@@ -10,9 +11,15 @@ export const getProfiles = (): Profile[] => {
     if (storedProfiles) {
       const parsedProfiles = JSON.parse(storedProfiles) as Profile[];
       // Ensure older profiles without gitHubSettings get a default
+      // and newer profiles have secondaryOriginalFilePath if it was missing.
       return parsedProfiles.map(profile => ({
         ...profile,
-        gitHubSettings: profile.gitHubSettings || { ...DEFAULT_GITHUB_SETTINGS }
+        gitHubSettings: {
+          ...DEFAULT_GITHUB_SETTINGS, // Start with defaults to ensure all fields are present
+          ...(profile.gitHubSettings || {}), // Spread existing GitHub settings
+          // Explicitly ensure secondaryOriginalFilePath, even if profile.gitHubSettings exists but lacks it
+          secondaryOriginalFilePath: profile.gitHubSettings?.secondaryOriginalFilePath || DEFAULT_GITHUB_SETTINGS.secondaryOriginalFilePath,
+        }
       }));
     }
     return [];
@@ -32,7 +39,10 @@ export const saveProfile = (name: string, settingsToSave: AppSettings, gitHubSet
     name: name.trim(),
     coverImageUrl: settingsToSave.backgroundImageUrl,
     settings: { ...settingsToSave }, // Deep copy settings
-    gitHubSettings: { ...gitHubSettingsToSave }, // Deep copy GitHub settings
+    gitHubSettings: { 
+      ...DEFAULT_GITHUB_SETTINGS, // Ensure all fields, including new ones, are present
+      ...gitHubSettingsToSave 
+    }, 
   };
 
   const updatedProfiles = [...profiles, newProfile];
@@ -60,9 +70,16 @@ export const deleteProfile = (profileId: string): Profile[] => {
 export const getProfileById = (profileId: string): Profile | undefined => {
   const profiles = getProfiles();
   const profile = profiles.find(p => p.id === profileId);
-  if (profile && !profile.gitHubSettings) {
-    // Ensure older profiles get a default if somehow missed by getProfiles map
-    return { ...profile, gitHubSettings: { ...DEFAULT_GITHUB_SETTINGS } };
+  if (profile) {
+    // Ensure the profile's gitHubSettings is complete, especially for older profiles
+    return {
+      ...profile,
+      gitHubSettings: {
+        ...DEFAULT_GITHUB_SETTINGS,
+        ...(profile.gitHubSettings || {}),
+        secondaryOriginalFilePath: profile.gitHubSettings?.secondaryOriginalFilePath || DEFAULT_GITHUB_SETTINGS.secondaryOriginalFilePath,
+      }
+    };
   }
-  return profile;
+  return undefined;
 };

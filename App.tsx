@@ -1,17 +1,4 @@
 
-
-
-
-
-
-
-
-
-
-
-
-
-
 import React, { useState, useCallback, useRef, useEffect, useLayoutEffect, useMemo } from 'react';
 import JSZip from 'jszip';
 import { Octokit } from '@octokit/rest';
@@ -78,6 +65,7 @@ interface BlockCellProps {
   onBlockOverflowChange: (blockOriginalIndex: number, isOverflowing: boolean) => void;
   onNestedSettingsChange: PreviewAreaProps['onNestedSettingsChange'];
   comparisonOriginalContent: string | null;
+  comparisonSecondaryOriginalContent: string | null; // New prop for second original
   overflowSettingsPanelOpen: boolean;
   simplifiedRender: boolean;
   onVisibilityChange: (blockOriginalIndex: number, isVisible: boolean) => void;
@@ -103,6 +91,7 @@ const BlockCell: React.FC<BlockCellProps> = ({
   onBlockOverflowChange,
   onNestedSettingsChange,
   comparisonOriginalContent,
+  comparisonSecondaryOriginalContent, // Destructure new prop
   overflowSettingsPanelOpen,
   simplifiedRender,
   onVisibilityChange,
@@ -295,7 +284,7 @@ const BlockCell: React.FC<BlockCellProps> = ({
       </div>
        {activeComparisonMode && enableByteRestrictionInComparisonMode && lineMetricDetailsForDisplay.length > 0 && (
         <div className="mt-1 text-xs text-[var(--bv-text-secondary)] max-h-20 overflow-y-auto border border-[var(--bv-border-color-light)] p-1 rounded">
-          <p className="font-semibold text-[var(--bv-text-primary)]">Line Byte Limits (Current/Original):</p>
+          <p className="font-semibold text-[var(--bv-text-primary)]">Line Byte Limits (Current/Original 1):</p>
           {lineMetricDetailsForDisplay.map((line, idx) => (
             <div key={idx} className={`${line.isOverLimit ? 'text-red-500 font-bold' : ''}`}>
               Line {idx + 1}: {line.currentBytes} / {line.originalBytes !== undefined ? line.originalBytes : '-'} bytes
@@ -305,13 +294,26 @@ const BlockCell: React.FC<BlockCellProps> = ({
       )}
       {appSettings.comparisonModeEnabled && comparisonOriginalContent !== null && (
         <div className="mt-2">
-          <h4 className="text-sm font-medium mb-1 text-[var(--bv-text-secondary)] truncate" title={`Original Text (Block ${block.index + 1})`}>Original Text (Block {block.index + 1})</h4>
+          <h4 className="text-sm font-medium mb-1 text-[var(--bv-text-secondary)] truncate" title={`Original Text 1 (Block ${block.index + 1})`}>Original Text 1 (Block ${block.index + 1})</h4>
           <textarea
-            aria-label={`Original content for block ${block.index + 1}`}
+            aria-label={`Original content 1 for block ${block.index + 1}`}
             readOnly
             value={comparisonOriginalContent}
             className="w-full p-2 border rounded-md shadow-sm sm:text-sm resize-y min-h-[100px]
                        bg-[var(--bv-accent-secondary)] border-[var(--bv-border-color)] text-[var(--bv-accent-secondary-content)]
+                       cursor-not-allowed"
+          />
+        </div>
+      )}
+      {appSettings.comparisonModeEnabled && comparisonSecondaryOriginalContent !== null && (
+        <div className="mt-2">
+          <h4 className="text-sm font-medium mb-1 text-[var(--bv-text-secondary)] truncate" title={`Original Text 2 (Block ${block.index + 1})`}>Original Text 2 (Block ${block.index + 1})</h4>
+          <textarea
+            aria-label={`Original content 2 for block ${block.index + 1}`}
+            readOnly
+            value={comparisonSecondaryOriginalContent}
+            className="w-full p-2 border rounded-md shadow-sm sm:text-sm resize-y min-h-[100px]
+                       bg-indigo-300 dark:bg-indigo-700 border-[var(--bv-border-color)] text-indigo-900 dark:text-indigo-100
                        cursor-not-allowed"
           />
         </div>
@@ -440,15 +442,21 @@ const App: React.FC = () => {
   const previewRef = useRef<HTMLDivElement>(null);
   const previewContainerRef = useRef<HTMLDivElement>(null);
   const mainTextAreaRef = useRef<HTMLTextAreaElement>(null);
+  const originalTextAreaRef = useRef<HTMLTextAreaElement>(null);
+  const secondaryOriginalTextAreaRef = useRef<HTMLTextAreaElement>(null);
   const [selectedTextLengthMain, setSelectedTextLengthMain] = useState<number>(0);
   const [selectedTextLengthOriginal, setSelectedTextLengthOriginal] = useState<number>(0);
+  const [selectedTextLengthSecondaryOriginal, setSelectedTextLengthSecondaryOriginal] = useState<number>(0);
+
 
   const [appThemeSettings, setAppThemeSettings] = useState<AppThemeSettings>(themeService.loadThemeSettings());
   const [isSpecialSettingsMenuOpen, setIsSpecialSettingsMenuOpen] = useState<boolean>(false);
 
   const [mainScripts, setMainScripts] = useState<ScriptFile[]>([]);
   const [activeMainScriptId, setActiveMainScriptId] = useState<string | null>(null);
-  const [originalScripts, setOriginalScripts] = useState<ScriptFile[]>([]);
+  
+  const [originalScripts, setOriginalScripts] = useState<ScriptFile[]>([]); // First original scripts
+  const [secondaryOriginalScripts, setSecondaryOriginalScripts] = useState<ScriptFile[]>([]); // Second original scripts
 
   const [currentBlockIndex, setCurrentBlockIndex] = useState<number | null>(0);
   const [showOnlyOverflowingBlocks, setShowOnlyOverflowingBlocks] = useState<boolean>(false);
@@ -457,6 +465,8 @@ const App: React.FC = () => {
   const [overflowSettingsPanelOpen, setOverflowSettingsPanelOpen] = useState(true);
 
   const [matchedOriginalScript, setMatchedOriginalScript] = useState<ScriptFile | null>(null);
+  const [matchedSecondaryOriginalScript, setMatchedSecondaryOriginalScript] = useState<ScriptFile | null>(null);
+
 
   const [viewMode, setViewMode] = useState<ViewMode>('single');
   const [currentMainView, setCurrentMainView] = useState<MainViewMode>('editor');
@@ -495,6 +505,7 @@ const App: React.FC = () => {
   const [mainEditorMetrics, setMainEditorMetrics] = useState<BlockMetrics | null>(null);
   const [mainEditorLineMetricDetails, setMainEditorLineMetricDetails] = useState<LineMetricDetail[]>([]);
   const [originalBlockMetrics, setOriginalBlockMetrics] = useState<BlockMetrics | null>(null);
+  const [secondaryOriginalBlockMetrics, setSecondaryOriginalBlockMetrics] = useState<BlockMetrics | null>(null);
   const [byteRestrictionWarning, setByteRestrictionWarning] = useState<string | null>(null);
   const [activeLineIndexMain, setActiveLineIndexMain] = useState<number | null>(null);
 
@@ -551,6 +562,11 @@ const App: React.FC = () => {
   const handleTextSelectOriginal = (event: React.SyntheticEvent<HTMLTextAreaElement>) => {
     const textarea = event.currentTarget;
     setSelectedTextLengthOriginal(textarea.selectionEnd - textarea.selectionStart);
+  };
+  
+  const handleTextSelectSecondaryOriginal = (event: React.SyntheticEvent<HTMLTextAreaElement>) => {
+    const textarea = event.currentTarget;
+    setSelectedTextLengthSecondaryOriginal(textarea.selectionEnd - textarea.selectionStart);
   };
 
   useEffect(() => {
@@ -931,7 +947,9 @@ const App: React.FC = () => {
     setMainScripts([]);
     setActiveMainScriptId(null);
     setOriginalScripts([]);
+    setSecondaryOriginalScripts([]); // Reset second original scripts
     setMatchedOriginalScript(null);
+    setMatchedSecondaryOriginalScript(null); // Reset matched second original script
     setCurrentBlockIndex(null);
     setFullyVisibleBlockOriginalIndices(new Set());
     setFindText("");
@@ -1032,19 +1050,31 @@ const App: React.FC = () => {
 
   useEffect(() => {
     if (activeMainScript && settings.comparisonModeEnabled) {
-      let match: ScriptFile | null = null;
-      match = originalScripts.find(os => os.name === activeMainScript.name) || null;
-      if (!match) {
+      let match1: ScriptFile | null = null;
+      match1 = originalScripts.find(os => os.name === activeMainScript.name) || null;
+      if (!match1) {
         const activeMainIndex = mainScripts.findIndex(ms => ms.id === activeMainScript.id);
         if (activeMainIndex !== -1 && originalScripts[activeMainIndex]) {
-          match = originalScripts[activeMainIndex];
+          match1 = originalScripts[activeMainIndex];
         }
       }
-      setMatchedOriginalScript(match);
+      setMatchedOriginalScript(match1);
+
+      let match2: ScriptFile | null = null;
+      match2 = secondaryOriginalScripts.find(sos => sos.name === activeMainScript.name) || null;
+      if (!match2) {
+          const activeMainIndex = mainScripts.findIndex(ms => ms.id === activeMainScript.id);
+          if (activeMainIndex !== -1 && secondaryOriginalScripts[activeMainIndex]) {
+              match2 = secondaryOriginalScripts[activeMainIndex];
+          }
+      }
+      setMatchedSecondaryOriginalScript(match2);
+
     } else {
       setMatchedOriginalScript(null);
+      setMatchedSecondaryOriginalScript(null);
     }
-  }, [activeMainScript, originalScripts, settings.comparisonModeEnabled, mainScripts]);
+  }, [activeMainScript, originalScripts, secondaryOriginalScripts, settings.comparisonModeEnabled, mainScripts]);
 
 
   const handleBlockVisibilityChange = useCallback((blockOriginalIndex: number, isVisible: boolean) => {
@@ -1130,6 +1160,13 @@ const App: React.FC = () => {
           content: currentEditableBlockForSingleView.originalContent,
       };
   }
+  
+  let secondaryOriginalBlockForSingleViewComparison: Block | null = null;
+    if (currentMainView === 'editor' && viewMode === 'single' && settings.comparisonModeEnabled && currentEditableBlockForSingleView && matchedSecondaryOriginalScript) {
+        if (matchedSecondaryOriginalScript.blocks[currentEditableBlockForSingleView.index]) {
+            secondaryOriginalBlockForSingleViewComparison = matchedSecondaryOriginalScript.blocks[currentEditableBlockForSingleView.index];
+        }
+    }
 
   useEffect(() => {
     if (viewMode === 'single' && settings.comparisonModeEnabled && originalBlockForSingleViewComparison) {
@@ -1138,7 +1175,59 @@ const App: React.FC = () => {
     } else {
       setOriginalBlockMetrics(null);
     }
-  }, [originalBlockForSingleViewComparison, parsedCustomByteMap, settings.defaultCharacterByteValue, viewMode, settings.comparisonModeEnabled]);
+
+    if (viewMode === 'single' && settings.comparisonModeEnabled && secondaryOriginalBlockForSingleViewComparison) {
+        const metrics = textMetricsService.calculateBlockMetrics(secondaryOriginalBlockForSingleViewComparison.content, parsedCustomByteMap, settings.defaultCharacterByteValue);
+        setSecondaryOriginalBlockMetrics(metrics);
+    } else {
+        setSecondaryOriginalBlockMetrics(null);
+    }
+  }, [originalBlockForSingleViewComparison, secondaryOriginalBlockForSingleViewComparison, parsedCustomByteMap, settings.defaultCharacterByteValue, viewMode, settings.comparisonModeEnabled]);
+
+
+  useLayoutEffect(() => {
+    if (currentMainView !== 'editor' || viewMode !== 'single') {
+        return;
+    }
+
+    const textareas = [
+        mainTextAreaRef.current,
+        originalTextAreaRef.current,
+        secondaryOriginalTextAreaRef.current
+    ].filter(Boolean) as HTMLTextAreaElement[];
+
+    if (textareas.length < 1) {
+        return;
+    }
+
+    // Reset heights to auto to get the natural scrollHeight
+    textareas.forEach(ta => {
+        ta.style.height = 'auto';
+    });
+    
+    // Defer measurement to allow browser to re-render with 'auto' height
+    requestAnimationFrame(() => {
+        if(textareas.some(ta => !ta.isConnected)) return; // Ensure elements are still in DOM
+
+        // Find the max scrollHeight
+        const maxHeight = Math.max(...textareas.map(ta => ta.scrollHeight));
+        const finalHeight = Math.max(100, maxHeight); // Enforce min height
+
+        // Apply the max height to all textareas
+        textareas.forEach(ta => {
+            ta.style.height = `${finalHeight}px`;
+        });
+    });
+
+  }, [
+    settings.text, // Content of main textarea
+    originalBlockForSingleViewComparison?.content,
+    secondaryOriginalBlockForSingleViewComparison?.content,
+    viewMode,
+    currentMainView,
+    settings.comparisonModeEnabled,
+    isControlsPanelCollapsed // Re-run when sidebar collapses/expands
+  ]);
 
 
   const handleNestedSettingsChange = useCallback(<
@@ -1320,8 +1409,8 @@ const App: React.FC = () => {
   };
 
   const processAndAddFiles = async (
-    files: FileList, // Changed FileList | null to FileList for strictness, ensure calls pass non-null
-    isMainScript: boolean,
+    files: FileList, 
+    scriptSetTarget: 'main' | 'original1' | 'original2',
     sourceNamePrefix: string = ""
   ): Promise<void> => {
     const currentUseCustomSep = settings.useCustomBlockSeparator;
@@ -1362,28 +1451,35 @@ const App: React.FC = () => {
     const newScriptFiles = results.filter(script => script !== null) as ScriptFile[];
 
     if (newScriptFiles.length > 0) {
-      if (isMainScript) {
+      if (scriptSetTarget === 'main') {
         setMainScripts(prev => [...prev, ...newScriptFiles]);
         if (!activeMainScriptId && newScriptFiles.length > 0) {
           setActiveMainScriptId(newScriptFiles[0].id);
           setCurrentBlockIndex(newScriptFiles[0].blocks.length > 0 ? 0 : null);
         }
-      } else {
+      } else if (scriptSetTarget === 'original1') {
         setOriginalScripts(prev => [...prev, ...newScriptFiles]);
+      } else if (scriptSetTarget === 'original2') {
+        setSecondaryOriginalScripts(prev => [...prev, ...newScriptFiles]);
       }
       setFullyVisibleBlockOriginalIndices(new Set()); 
     }
   };
 
 
-  const handleTextFileUpload = useCallback(async (files: FileList | null) => { // Keep null check here for FileInput component
+  const handleTextFileUpload = useCallback(async (files: FileList | null) => { 
     if (!files) return;
-    await processAndAddFiles(files, true);
+    await processAndAddFiles(files, 'main');
   }, [settings.useCustomBlockSeparator, settings.treatEachLineAsBlock, settings.useEmptyLinesAsSeparator, settings.blockSeparators, activeMainScriptId, parseTextToBlocksInternal]); 
 
-  const handleOriginalScriptUpload = useCallback(async (files: FileList | null) => { // Keep null check here
+  const handleOriginalScriptUpload = useCallback(async (files: FileList | null) => { 
     if (!files) return;
-    await processAndAddFiles(files, false);
+    await processAndAddFiles(files, 'original1');
+  }, [settings.useCustomBlockSeparator, settings.treatEachLineAsBlock, settings.useEmptyLinesAsSeparator, settings.blockSeparators, parseTextToBlocksInternal]);
+
+  const handleSecondaryOriginalScriptUpload = useCallback(async (files: FileList | null) => {
+    if (!files) return;
+    await processAndAddFiles(files, 'original2');
   }, [settings.useCustomBlockSeparator, settings.treatEachLineAsBlock, settings.useEmptyLinesAsSeparator, settings.blockSeparators, parseTextToBlocksInternal]);
 
 
@@ -1403,6 +1499,11 @@ const App: React.FC = () => {
     setOriginalScripts([]);
     setMatchedOriginalScript(null);
     setByteRestrictionWarning(null);
+  }, []);
+  
+  const handleClearSecondaryOriginalScripts = useCallback(() => {
+    setSecondaryOriginalScripts([]);
+    setMatchedSecondaryOriginalScript(null);
   }, []);
 
 
@@ -2130,14 +2231,18 @@ const handleCurrentBlockContentChangeInSingleView = useCallback((newContent: str
     setGitHubStatusMessage("");
   }, []);
 
-  const handleLoadFileFromGitHubInternal = useCallback(async (isForOriginal: boolean) => {
-    const currentPath = isForOriginal ? gitHubSettings.originalFilePath : gitHubSettings.filePath;
+  const handleLoadFileFromGitHubInternal = useCallback(async (scriptSet: 'main' | 'original1' | 'original2') => {
+    let currentPath = "";
+    if (scriptSet === 'main') currentPath = gitHubSettings.filePath;
+    else if (scriptSet === 'original1') currentPath = gitHubSettings.originalFilePath;
+    else if (scriptSet === 'original2') currentPath = gitHubSettings.secondaryOriginalFilePath;
+    
     if (!gitHubSettings.pat || !gitHubSettings.repoFullName || !currentPath) {
-      setGitHubStatusMessage(`Error: PAT, Repository, and File Path are required for ${isForOriginal ? 'original' : 'main'} file load.`);
+      setGitHubStatusMessage(`Error: PAT, Repository, and File Path for ${scriptSet} are required.`);
       return;
     }
     setIsGitHubLoading(true);
-    setGitHubStatusMessage(`Loading ${isForOriginal ? 'original' : 'main'} file from GitHub...`);
+    setGitHubStatusMessage(`Loading ${scriptSet} file from GitHub...`);
 
     const [owner, repo] = gitHubSettings.repoFullName.split('/');
     if (!owner || !repo) {
@@ -2160,34 +2265,39 @@ const handleCurrentBlockContentChangeInSingleView = useCallback((newContent: str
         
         await processAndAddFiles(
           new FileListLike([{ name: currentPath.split('/').pop() || currentPath, content: rawText }]),
-          !isForOriginal,
+          scriptSet,
           `GitHub: (${owner}/${repo}) `
         );
 
-        setGitHubStatusMessage(`Successfully loaded ${isForOriginal ? 'original' : 'main'} file: ${currentPath.split('/').pop()}.`);
+        setGitHubStatusMessage(`Successfully loaded ${scriptSet} file: ${currentPath.split('/').pop()}.`);
       } else {
         setGitHubStatusMessage("Error: Could not decode file content from GitHub or content not found.");
       }
     } catch (error: any) {
-      console.error(`Error loading ${isForOriginal ? 'original' : 'main'} file from GitHub:`, error);
-      setGitHubStatusMessage(`Error: ${error.message || `Failed to load ${isForOriginal ? 'original' : 'main'} file from GitHub.`}`);
+      console.error(`Error loading ${scriptSet} file from GitHub:`, error);
+      setGitHubStatusMessage(`Error: ${error.message || `Failed to load ${scriptSet} file from GitHub.`}`);
     } finally {
       setIsGitHubLoading(false);
     }
   }, [gitHubSettings, processAndAddFiles]);
 
-  const handleLoadFileFromGitHub = useCallback(() => handleLoadFileFromGitHubInternal(false), [handleLoadFileFromGitHubInternal]);
-  const handleLoadFileFromGitHubForOriginal = useCallback(() => handleLoadFileFromGitHubInternal(true), [handleLoadFileFromGitHubInternal]);
+  const handleLoadFileFromGitHub = useCallback(() => handleLoadFileFromGitHubInternal('main'), [handleLoadFileFromGitHubInternal]);
+  const handleLoadFileFromGitHubForOriginal = useCallback(() => handleLoadFileFromGitHubInternal('original1'), [handleLoadFileFromGitHubInternal]);
+  const handleLoadFileFromGitHubForSecondaryOriginal = useCallback(() => handleLoadFileFromGitHubInternal('original2'), [handleLoadFileFromGitHubInternal]);
 
 
-  const handleLoadAllFromGitHubFolderInternal = useCallback(async (isForOriginal: boolean) => {
-    const currentPath = isForOriginal ? gitHubSettings.originalFilePath : gitHubSettings.filePath;
+  const handleLoadAllFromGitHubFolderInternal = useCallback(async (scriptSet: 'main' | 'original1' | 'original2') => {
+    let currentPath = "";
+    if (scriptSet === 'main') currentPath = gitHubSettings.filePath;
+    else if (scriptSet === 'original1') currentPath = gitHubSettings.originalFilePath;
+    else if (scriptSet === 'original2') currentPath = gitHubSettings.secondaryOriginalFilePath;
+
     if (!gitHubSettings.pat || !gitHubSettings.repoFullName || !currentPath) {
-      setGitHubStatusMessage(`Error: PAT, Repository, and Folder Path are required for ${isForOriginal ? 'original' : 'main'} folder load.`);
+      setGitHubStatusMessage(`Error: PAT, Repository, and Folder Path for ${scriptSet} are required.`);
       return;
     }
     setIsGitHubLoading(true);
-    setGitHubStatusMessage(`Loading ${isForOriginal ? 'original' : 'main'} scripts from GitHub folder...`);
+    setGitHubStatusMessage(`Loading ${scriptSet} scripts from GitHub folder...`);
     let loadedCount = 0;
     let skippedCount = 0;
     let errorCount = 0;
@@ -2254,23 +2364,24 @@ const handleCurrentBlockContentChangeInSingleView = useCallback((newContent: str
         }
         
         if (filesToProcess.length > 0) {
-            await processAndAddFiles(new FileListLike(filesToProcess), !isForOriginal, `GitHub: (${owner}/${repo}${currentPath ? '/' + currentPath : ''}) `);
+            await processAndAddFiles(new FileListLike(filesToProcess), scriptSet, `GitHub: (${owner}/${repo}${currentPath ? '/' + currentPath : ''}) `);
         }
-        setGitHubStatusMessage(`Folder load complete. Loaded: ${loadedCount}, Skipped: ${skippedCount}, Errors: ${errorCount}. Details: ${statusMessages.slice(0,3).join(' ')}${statusMessages.length > 3 ? '...' : ''}`);
+        setGitHubStatusMessage(`Folder load complete for ${scriptSet}. Loaded: ${loadedCount}, Skipped: ${skippedCount}, Errors: ${errorCount}. Details: ${statusMessages.slice(0,3).join(' ')}${statusMessages.length > 3 ? '...' : ''}`);
 
       } else {
         setGitHubStatusMessage("Error: The specified path is not a folder or is empty.");
       }
     } catch (error: any) { 
-      console.error(`Error loading from GitHub folder (for ${isForOriginal ? 'original' : 'main'}):`, error);
+      console.error(`Error loading from GitHub folder (for ${scriptSet}):`, error);
       setGitHubStatusMessage(`Error: ${error.message || `Failed to load from GitHub folder.`}`);
     } finally {
       setIsGitHubLoading(false);
     }
   }, [gitHubSettings, processAndAddFiles]);
 
-  const handleLoadAllFromGitHubFolder = useCallback(() => handleLoadAllFromGitHubFolderInternal(false), [handleLoadAllFromGitHubFolderInternal]);
-  const handleLoadAllFromGitHubFolderForOriginal = useCallback(() => handleLoadAllFromGitHubFolderInternal(true), [handleLoadAllFromGitHubFolderInternal]);
+  const handleLoadAllFromGitHubFolder = useCallback(() => handleLoadAllFromGitHubFolderInternal('main'), [handleLoadAllFromGitHubFolderInternal]);
+  const handleLoadAllFromGitHubFolderForOriginal = useCallback(() => handleLoadAllFromGitHubFolderInternal('original1'), [handleLoadAllFromGitHubFolderInternal]);
+  const handleLoadAllFromGitHubFolderForSecondaryOriginal = useCallback(() => handleLoadAllFromGitHubFolderInternal('original2'), [handleLoadAllFromGitHubFolderInternal]);
 
 
   const sanitizeFilename = (name: string): string => {
@@ -2505,136 +2616,90 @@ const handleSaveAllToGitHubFolder = useCallback(async () => {
       if (settings.systemFont.fontFamily !== cssFontName) {
          handleNestedSettingsChange('systemFont', 'fontFamily', cssFontName);
       }
-    } else {
-      if (loadedCustomFontInfo?.styleElement) {
-        document.head.removeChild(loadedCustomFontInfo.styleElement);
-        setLoadedCustomFontInfo(null);
-        if (settings.systemFont.fontFamily === loadedCustomFontInfo.name) {
-            handleNestedSettingsChange('systemFont', 'fontFamily', DEFAULT_SETTINGS.systemFont.fontFamily);
-        }
+    } else if (loadedCustomFontInfo?.styleElement) {
+      // Clean up if custom font is no longer active (e.g., switched to bitmap, or cleared custom font)
+      // And also if settings.systemFont.fontFamily is not the loaded custom font.
+      const isStillUsingThisCustomFont = settings.currentFontType === 'system' && 
+                                          settings.systemFont.fontFamily === loadedCustomFontInfo.name &&
+                                          customFontBase64 && customFontFileName;
+
+      if (!isStillUsingThisCustomFont) {
+          document.head.removeChild(loadedCustomFontInfo.styleElement);
+          setLoadedCustomFontInfo(null);
+          // If the font family was set to the custom font's name but the base64/filename is gone,
+          // it might be good to revert to a default system font, or handle this state.
+          // For now, removing the style is the main action. The select dropdown will show the name
+          // but it won't be backed by a @font-face rule.
       }
     }
-    return () => {
-      // Intentionally left blank for this version of the effect based on previous thoughts,
-      // removal is handled by the main logic. If issues persist, re-evaluate cleanup.
-    };
-  }, [
-    settings.systemFont.customFontBase64, 
-    settings.systemFont.customFontFileName, 
-    settings.currentFontType, 
-    settings.systemFont.fontFamily, // Added to ensure effect re-evaluates if fontFamily changes
-    handleNestedSettingsChange, 
-    loadedCustomFontInfo // State used for managing the style tag itself
-  ]);
+  }, [settings.systemFont.customFontBase64, settings.systemFont.customFontFileName, settings.currentFontType, loadedCustomFontInfo, settings.systemFont.fontFamily, handleNestedSettingsChange]);
+
+  const toggleControlsPanel = () => {
+    setIsControlsPanelCollapsed(!isControlsPanelCollapsed);
+  };
 
 
-  useLayoutEffect(() => {
-    if (currentMainView === 'editor' && viewMode === 'single' && previewRef.current && previewContainerRef.current) {
-      const scaledHeight = previewRef.current.getBoundingClientRect().height;
-      previewContainerRef.current.style.height = `${scaledHeight}px`;
-    } else if (previewContainerRef.current) {
-      previewContainerRef.current.style.height = 'auto';
-    }
-  }, [settings, currentBlockIndex, viewMode, activeMainScriptId, currentMainView]); 
-
-
-  let originalSourceInfoForSingleView = "";
-  if (currentMainView === 'editor' && viewMode === 'single' && settings.comparisonModeEnabled && currentEditableBlockForSingleView && matchedOriginalScript) {
-    if (matchedOriginalScript.blocks[currentEditableBlockForSingleView.index]) {
-        originalSourceInfoForSingleView = `(File: ${matchedOriginalScript.name})`;
-    }
-  } else if (currentMainView === 'editor' && viewMode === 'single' && settings.comparisonModeEnabled && currentEditableBlockForSingleView) {
-      originalSourceInfoForSingleView = "(Initial Load of Active Script)";
-  }
-
-
-  const handleToggleMainView = useCallback(() => {
-    setCurrentMainView(prev => prev === 'editor' ? 'profilesGallery' : 'editor');
+  const handleAddGlossaryTerm = useCallback((term: string, translation: string, category: GlossaryCategory) => {
+    setGlossaryTerms(prev => [...prev, { id: `glossary-${Date.now()}-${Math.random().toString(36).substring(2,7)}`, term, translation, category }]);
   }, []);
 
-  const showControlsPanel = currentMainView === 'editor';
+  const handleUpdateGlossaryTerm = useCallback((id: string, term: string, translation: string, category: GlossaryCategory) => {
+    setGlossaryTerms(prev => prev.map(item => item.id === id ? { ...item, term, translation, category } : item));
+  }, []);
 
-  const lineMetricsForActiveIndexMain: LineMetrics | null = useMemo(() => {
+  const handleDeleteGlossaryTerm = useCallback((id: string) => {
+    if (window.confirm("Are you sure you want to delete this glossary item?")) {
+        setGlossaryTerms(prev => prev.filter(item => item.id !== id));
+    }
+  }, []);
+
+  const lineMetricsForActiveIndexMain = useMemo(() => {
     if (activeLineIndexMain !== null && mainEditorMetrics?.lineDetails && mainEditorMetrics.lineDetails[activeLineIndexMain]) {
       return mainEditorMetrics.lineDetails[activeLineIndexMain];
     }
     return null;
   }, [activeLineIndexMain, mainEditorMetrics]);
-
-  let asideClasses = `
-    flex-shrink-0 rounded-lg shadow-lg overflow-y-auto
-    transition-all duration-300 ease-in-out
-    bg-[var(--bv-element-background)] text-[var(--bv-text-primary)] backdrop-blur-sm
-  `;
-  const asideStyle: React.CSSProperties = {};
-
-  if (isControlsPanelCollapsed) {
-    asideClasses += ' w-0 p-0 opacity-0 -mr-4 lg:-mr-0';
-  } else {
-    asideClasses += ` w-full ${viewMode === 'all' ? 'lg:w-1/5' : 'lg:w-1/3'} p-4`;
-    if (currentMainView === 'editor' && viewMode === 'all' && showControlsPanel) {
-      asideClasses += ' lg:sticky lg:align-self-start'; 
-      if (headerHeight > 0) {
-        asideStyle.top = `${headerHeight + 16}px`; // header height + 1rem (16px) padding of the parent container
-        asideStyle.maxHeight = `calc(100vh - ${headerHeight}px - 2rem)`; 
-      } else {
-        asideStyle.top = `calc(env(safe-area-inset-top, 0px) + 16px + 60px)`; 
-        asideStyle.maxHeight = 'calc(100vh - 150px)'; 
-      }
-    } else {
-      asideStyle.maxHeight = 'calc(100vh - 150px)'; 
+  
+  const handlePrevBlock = () => {
+    if (currentBlockIndex !== null && currentBlockIndex > 0) {
+      handleSetCurrentBlockIndex(currentBlockIndex - 1);
     }
-  }
+  };
 
-  // Glossary Handlers
-  const handleAddGlossaryTerm = useCallback((term: string, translation: string, category: GlossaryCategory) => {
-    if (!term.trim()) {
-      alert("Term cannot be empty.");
-      return;
+  const handleNextBlock = () => {
+    if (currentBlockIndex !== null && currentBlockIndex < activeScriptBlocks.length - 1) {
+      handleSetCurrentBlockIndex(currentBlockIndex + 1);
     }
-    const newTerm: GlossaryTerm = {
-      id: `glossary-${Date.now()}-${Math.random().toString(36).substring(2, 7)}`,
-      term: term.trim(),
-      translation: translation.trim(),
-      category,
-    };
-    setGlossaryTerms(prev => [...prev, newTerm]);
-  }, []);
+  };
 
-  const handleUpdateGlossaryTerm = useCallback((id: string, term: string, translation: string, category: GlossaryCategory) => {
-    if (!term.trim()) {
-      alert("Term cannot be empty.");
-      return;
+  const zoomMargin = useMemo(() => {
+    if (viewMode !== 'single' || settings.previewHeight <= 0 || settings.previewZoom <= 1) {
+        return 0;
     }
-    setGlossaryTerms(prev => prev.map(gt => 
-      gt.id === id ? { ...gt, term: term.trim(), translation: translation.trim(), category } : gt
-    ));
-  }, []);
+    return (settings.previewHeight * (settings.previewZoom - 1)) / 2;
+  }, [viewMode, settings.previewHeight, settings.previewZoom]);
 
-  const handleDeleteGlossaryTerm = useCallback((id: string) => {
-    if (window.confirm("Are you sure you want to delete this glossary item?")) {
-      setGlossaryTerms(prev => prev.filter(gt => gt.id !== id));
-    }
-  }, []);
-
+  const baseMargin = 16;
+  const dynamicTopMargin = `${baseMargin + zoomMargin}px`;
+  const dynamicBottomMargin = `${baseMargin + zoomMargin}px`;
 
   return (
-    <div className="min-h-screen flex flex-col transition-colors duration-300 bg-[var(--bv-page-background)]">
-      <header ref={headerRef} className="p-4 shadow-md bg-[var(--bv-toolbar-background)] text-[var(--bv-toolbar-text)]">
-        <div className="container mx-auto flex justify-between items-center">
-          <div className="flex items-center gap-3">
-            <h1 className="text-3xl font-bold">🍌 Banana Vision</h1>
-            <button
-              onClick={toggleSpecialSettingsMenu}
-              title="Special Settings"
-              className="p-1.5 rounded-full hover:bg-[var(--bv-toolbar-button-hover-background)] text-[var(--bv-toolbar-text)] focus:outline-none focus:ring-2 focus:ring-[var(--bv-accent-primary)]"
-              aria-label="Open Special Settings Menu"
-            >
-              <svg xmlns="http://www.w3.org/2000/svg" className="h-6 w-6" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
-  <path strokeLinecap="round" strokeLinejoin="round" d="M10.325 4.317c.426-1.756 2.924-1.756 3.35 0a1.724 1.724 0 002.573 1.066c1.543-.94 3.31.826 2.37 2.37a1.724 1.724 0 001.065 2.572c1.756.426 1.756 2.924 0 3.35a1.724 1.724 0 00-1.066 2.573c.94 1.543-.826 3.31-2.37 2.37a1.724 1.724 0 00-2.572 1.065c-.426 1.756-2.924 1.756-3.35 0a1.724 1.724 0 00-2.573-1.066c-1.543.94-3.31-.826-2.37-2.37a1.724 1.724 0 00-1.065-2.572c-1.756-.426-1.756-2.924 0-3.35a1.724 1.724 0 001.066-2.573c-.94-1.543.826-3.31 2.37-2.37a1.724 1.724 0 002.572-1.065z" />
-  <path strokeLinecap="round" strokeLinejoin="round" d="M15 12a3 3 0 11-6 0 3 3 0 016 0z" />
-              </svg>
-            </button>
+    <>
+      <div className={`app-container flex flex-col h-screen overflow-hidden ${isSpecialSettingsMenuOpen || showTutorial ? 'blur-sm' : ''} font-sans`} style={{paddingTop: `${headerHeight}px`}}>
+        <header ref={headerRef} className="fixed top-0 left-0 right-0 z-40 bg-[var(--bv-toolbar-background)] text-[var(--bv-toolbar-text)] p-3 shadow-md flex justify-between items-center flex-wrap gap-2">
+          <div className="flex items-center gap-2">
+              <h1 className="text-xl font-bold">🍌 Banana Vision</h1>
+              <button 
+                  onClick={toggleSpecialSettingsMenu} 
+                  className="p-2 rounded-full hover:bg-[var(--bv-element-background-secondary)]" 
+                  aria-label="Open Special Settings"
+                  title="Open Special Settings"
+              >
+                  <svg xmlns="http://www.w3.org/2000/svg" className="h-6 w-6" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
+                      <path strokeLinecap="round" strokeLinejoin="round" d="M10.325 4.317c.426-1.756 2.924-1.756 3.35 0a1.724 1.724 0 002.573 1.066c1.543-.94 3.31.826 2.37 2.37a1.724 1.724 0 001.065 2.572c1.756.426 1.756 2.924 0 3.35a1.724 1.724 0 00-1.066 2.573c.94 1.543-.826 3.31-2.37 2.37a1.724 1.724 0 00-2.572 1.065c-.426 1.756-2.924 1.756-3.35 0a1.724 1.724 0 00-2.573-1.066c-1.543.94-3.31-.826-2.37-2.37a1.724 1.724 0 00-1.065-2.572c-1.756-.426-1.756-2.924 0-3.35a1.724 1.724 0 001.066-2.573c-.94-1.543.826-3.31 2.37-2.37.996.608 2.296.07 2.572-1.065z" />
+                      <path strokeLinecap="round" strokeLinejoin="round" d="M15 12a3 3 0 11-6 0 3 3 0 016 0z" />
+                  </svg>
+              </button>
           </div>
           <Toolbar
             onExportJson={handleExportJson}
@@ -2643,373 +2708,385 @@ const handleSaveAllToGitHubFolder = useCallback(async () => {
             onToggleLegacyTheme={toggleLegacyTheme}
             currentActiveThemeKey={appThemeSettings.activeThemeKey}
             currentMainView={currentMainView}
-            onToggleMainView={handleToggleMainView}
+            onToggleMainView={() => setCurrentMainView(prev => prev === 'editor' ? 'profilesGallery' : 'editor')}
             onSaveScript={handleSaveScript}
             onSaveAllChangedScripts={handleSaveAllChangedScripts}
             onShowTutorial={handleStartTutorial}
           />
-        </div>
-      </header>
-
-      <div className="flex-grow container mx-auto p-4 flex lg:flex-row gap-4 relative">
-        {showControlsPanel && (
-          <button
-            onClick={() => setIsControlsPanelCollapsed(!isControlsPanelCollapsed)}
-            title={isControlsPanelCollapsed ? 'Expand Controls' : 'Collapse Controls'}
-            aria-expanded={!isControlsPanelCollapsed}
-            aria-controls="controls-panel-aside"
-            className={`
-              fixed top-24 left-4 z-40
-              lg:absolute lg:top-0
-              p-2 rounded-full shadow-lg
-              transition-all duration-300 ease-in-out
-              bg-[var(--bv-accent-secondary)] text-[var(--bv-accent-secondary-content)] hover:opacity-80
-              ${isControlsPanelCollapsed ? 
-                'lg:left-4' 
-                : 
-                (viewMode === 'all' ? 'lg:left-1/5' : 'lg:left-1/3') + ' lg:ml-2' 
-              }
-            `}
-          >
-            {isControlsPanelCollapsed ? (
-               <svg xmlns="http://www.w3.org/2000/svg" className="h-6 w-6" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}><path strokeLinecap="round" strokeLinejoin="round" d="M4 6h16M4 12h16M4 18h7" /></svg>
-            ) : (
-              <svg xmlns="http://www.w3.org/2000/svg" className="h-6 w-6" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}><path strokeLinecap="round" strokeLinejoin="round" d="M15 19l-7-7 7-7" /></svg>
-            )}
-          </button>
-        )}
-
-        {showControlsPanel && (
-          <aside
-            id="controls-panel-aside"
-            className={asideClasses}
-            style={asideStyle}
-          >
-            {!isControlsPanelCollapsed && (
-              <ControlsPanel
-                settings={settings}
-                onSettingsChange={handleSettingsChange}
-                onNestedSettingsChange={handleNestedSettingsChange}
-                onTextFileUpload={handleTextFileUpload}
-
-                mainScripts={mainScripts}
-                activeMainScriptId={activeMainScriptId}
-                onSetActiveMainScriptId={handleSetActiveMainScriptId}
-                onClearMainScripts={handleClearMainScripts}
-
-                activeScriptBlocks={activeScriptBlocks}
-                currentBlockIndex={currentBlockIndex}
-                onSetCurrentBlockIndex={handleSetCurrentBlockIndex}
-
-                showOnlyOverflowingBlocks={showOnlyOverflowingBlocks}
-                onShowOnlyOverflowingBlocksChange={setShowOnlyOverflowingBlocks}
-                displayedBlocksForView={displayedBlocksForView} 
-
-                onLoadCustomFont={handleLoadCustomFont}
-                loadedCustomFontName={loadedCustomFontInfo?.name || settings.systemFont.customFontFileName || null}
-                overflowSettingsPanelOpen={overflowSettingsPanelOpen}
-                onToggleOverflowSettingsPanel={() => setOverflowSettingsPanelOpen(prev => !prev)}
-
-                originalScripts={originalScripts}
-                onOriginalScriptUpload={handleOriginalScriptUpload}
-                matchedOriginalScriptName={matchedOriginalScript?.name || null}
-                onClearOriginalScripts={handleClearOriginalScripts}
-
-                viewMode={viewMode}
-                onViewModeChange={setViewMode}
-
-                findText={findText}
-                onFindTextChange={onFindTextChange}
-                replaceText={replaceText}
-                onReplaceTextChange={onReplaceTextChange}
-                findIsCaseSensitive={findIsCaseSensitive}
-                onFindIsCaseSensitiveChange={onFindIsCaseSensitiveChange}
-                findMatchWholeWord={findMatchWholeWord}
-                onFindMatchWholeWordChange={onFindMatchWholeWordChange}
-                findScope={findScope}
-                onFindScopeChange={onFindScopeChange}
-                onFindNext={handleFindNext}
-                onReplace={handleReplace}
-                onReplaceAll={handleReplaceAll}
-                findResultsMessage={findResultsMessage}
-                isFindCurrentBlockDisabled={!(viewMode === 'single' && activeMainScriptId && currentBlockIndex !== null)}
-                findResultSummary={findResultSummary}
-                onNavigateToFindResult={handleNavigateToFindResult}
-
-                gitHubSettings={gitHubSettings}
-                onGitHubSettingsChange={handleGitHubSettingsChange}
-                onLoadFileFromGitHub={handleLoadFileFromGitHub}
-                onSaveFileToGitHub={handleSaveFileToGitHub}
-                onLoadAllFromGitHubFolder={handleLoadAllFromGitHubFolder}
-                onSaveAllToGitHubFolder={handleSaveAllToGitHubFolder}
-                onLoadFileFromGitHubForOriginal={handleLoadFileFromGitHubForOriginal}
-                onLoadAllFromGitHubFolderForOriginal={handleLoadAllFromGitHubFolderForOriginal}
-                isGitHubLoading={isGitHubLoading}
-                gitHubStatusMessage={gitHubStatusMessage}
+        </header>
+        
+        {currentMainView === 'profilesGallery' ? (
+          <div className="flex-grow overflow-auto">
+              <ProfilesGalleryPage
+                profiles={profiles}
+                onLoadProfile={handleLoadProfile}
+                onDeleteProfile={handleDeleteProfile}
                 activeThemeKey={appThemeSettings.activeThemeKey}
-                // Glossary Props
-                glossaryTerms={glossaryTerms}
-                onAddGlossaryTerm={handleAddGlossaryTerm}
-                onUpdateGlossaryTerm={handleUpdateGlossaryTerm}
-                onDeleteGlossaryTerm={handleDeleteGlossaryTerm}
+                currentEditorSettings={settings}
+                onSaveCurrentSettingsAsProfile={handleSaveProfile}
               />
-            )}
-          </aside>
-        )}
-        <main className={`
-          flex-grow flex flex-col p-4 rounded-lg shadow-lg relative
-          transition-all duration-300 ease-in-out
-          bg-[var(--bv-element-background)] text-[var(--bv-text-primary)] backdrop-blur-sm
-          ${!showControlsPanel || isControlsPanelCollapsed ? 'w-full ml-0' : `w-full ${viewMode === 'all' ? 'lg:w-4/5' : 'lg:w-2/3'} ${isControlsPanelCollapsed ? 'ml-0' : 'ml-0 lg:ml-0'}`} 
-        `}>
-          {currentMainView === 'editor' ? (
-            <>
+          </div>
+        ) : (
+          <main className="flex-grow flex overflow-hidden">
+            <div className={`transition-all duration-300 ease-in-out ${isControlsPanelCollapsed ? 'w-12 hover:w-16' : 'w-1/3 min-w-[380px] max-w-[500px]'} relative bg-[var(--bv-element-background)] border-r border-[var(--bv-border-color)] shadow-lg`}>
+              <button 
+                onClick={toggleControlsPanel} 
+                className="absolute top-1/2 -right-3.5 z-30 p-1.5 bg-[var(--bv-accent-primary)] text-[var(--bv-accent-primary-content)] rounded-full shadow-md hover:opacity-80 focus:outline-none focus:ring-2 focus:ring-[var(--bv-input-focus-ring)]"
+                style={{transform: 'translateY(-50%)'}}
+                aria-label={isControlsPanelCollapsed ? "Expand controls panel" : "Collapse controls panel"}
+                title={isControlsPanelCollapsed ? "Expand controls panel" : "Collapse controls panel"}
+              >
+                {isControlsPanelCollapsed ? '▶' : '◀'}
+              </button>
+              {!isControlsPanelCollapsed && (
+                <ControlsPanel
+                  settings={settings}
+                  onSettingsChange={handleSettingsChange}
+                  onNestedSettingsChange={handleNestedSettingsChange}
+                  onTextFileUpload={handleTextFileUpload}
+                  mainScripts={mainScripts}
+                  activeMainScriptId={activeMainScriptId}
+                  onSetActiveMainScriptId={handleSetActiveMainScriptId}
+                  onClearMainScripts={handleClearMainScripts}
+                  activeScriptBlocks={activeScriptBlocks}
+                  currentBlockIndex={currentBlockIndex}
+                  onSetCurrentBlockIndex={handleSetCurrentBlockIndex}
+                  showOnlyOverflowingBlocks={showOnlyOverflowingBlocks}
+                  onShowOnlyOverflowingBlocksChange={setShowOnlyOverflowingBlocks}
+                  displayedBlocksForView={displayedBlocksForView}
+                  onLoadCustomFont={handleLoadCustomFont}
+                  loadedCustomFontName={loadedCustomFontInfo?.name || null}
+                  overflowSettingsPanelOpen={overflowSettingsPanelOpen}
+                  onToggleOverflowSettingsPanel={() => setOverflowSettingsPanelOpen(prev => !prev)}
+                  // Original Script 1 Props
+                  originalScripts={originalScripts}
+                  onOriginalScriptUpload={handleOriginalScriptUpload}
+                  matchedOriginalScriptName={matchedOriginalScript?.name || null}
+                  onClearOriginalScripts={handleClearOriginalScripts}
+                  onLoadFileFromGitHubForOriginal={handleLoadFileFromGitHubForOriginal}
+                  onLoadAllFromGitHubFolderForOriginal={handleLoadAllFromGitHubFolderForOriginal}
+                  // Original Script 2 Props
+                  secondaryOriginalScripts={secondaryOriginalScripts}
+                  onSecondaryOriginalScriptUpload={handleSecondaryOriginalScriptUpload}
+                  matchedSecondaryOriginalScriptName={matchedSecondaryOriginalScript?.name || null}
+                  onClearSecondaryOriginalScripts={handleClearSecondaryOriginalScripts}
+                  onLoadFileFromGitHubForSecondaryOriginal={handleLoadFileFromGitHubForSecondaryOriginal}
+                  onLoadAllFromGitHubFolderForSecondaryOriginal={handleLoadAllFromGitHubFolderForSecondaryOriginal}
+                  viewMode={viewMode}
+                  onViewModeChange={setViewMode}
+                  findText={findText} onFindTextChange={onFindTextChange}
+                  replaceText={replaceText} onReplaceTextChange={onReplaceTextChange}
+                  findIsCaseSensitive={findIsCaseSensitive} onFindIsCaseSensitiveChange={onFindIsCaseSensitiveChange}
+                  findMatchWholeWord={findMatchWholeWord} onFindMatchWholeWordChange={onFindMatchWholeWordChange}
+                  findScope={findScope} onFindScopeChange={onFindScopeChange}
+                  onFindNext={handleFindNext} onReplace={handleReplace} onReplaceAll={handleReplaceAll}
+                  findResultsMessage={findResultsMessage}
+                  isFindCurrentBlockDisabled={viewMode !== 'single' || !activeMainScript || currentBlockIndex === null}
+                  findResultSummary={findResultSummary}
+                  onNavigateToFindResult={handleNavigateToFindResult}
+                  gitHubSettings={gitHubSettings}
+                  onGitHubSettingsChange={handleGitHubSettingsChange}
+                  onLoadFileFromGitHub={handleLoadFileFromGitHub}
+                  onSaveFileToGitHub={handleSaveFileToGitHub}
+                  onLoadAllFromGitHubFolder={handleLoadAllFromGitHubFolder}
+                  onSaveAllToGitHubFolder={handleSaveAllToGitHubFolder}
+                  isGitHubLoading={isGitHubLoading}
+                  gitHubStatusMessage={gitHubStatusMessage}
+                  activeThemeKey={appThemeSettings.activeThemeKey}
+                  // Glossary Props
+                  glossaryTerms={glossaryTerms}
+                  onAddGlossaryTerm={handleAddGlossaryTerm}
+                  onUpdateGlossaryTerm={handleUpdateGlossaryTerm}
+                  onDeleteGlossaryTerm={handleDeleteGlossaryTerm}
+                />
+              )}
+              {isControlsPanelCollapsed && (
+                 <div className="flex items-center justify-center h-full">
+                    <span className="transform -rotate-90 whitespace-nowrap text-sm text-[var(--bv-text-secondary)]">Controls</span>
+                  </div>
+              )}
+            </div>
+            <div ref={previewContainerRef} className="flex-grow p-4 overflow-auto bg-[var(--bv-page-background)] flex flex-col items-center">
               {viewMode === 'single' ? (
-                <>
-                  <div
-                    ref={previewContainerRef}
-                    className="flex flex-col items-center justify-center w-full relative p-4 overflow-hidden"
-                  >
-                    {settings.comparisonModeEnabled && currentEditableBlockForSingleView ? (
-                      <div className="flex flex-row w-full gap-4">
-                        <div className="w-1/2 flex flex-col items-center justify-center relative">
+                <div className="w-full h-full flex flex-col">
+                  <div className="flex-grow w-full flex flex-row items-stretch justify-center gap-4">
+                    
+                    {/* --- Card 1: Editable --- */}
+                    <div className="bg-[var(--bv-element-background)] p-4 rounded-lg shadow-md border border-[var(--bv-border-color)] flex flex-col gap-3 flex-1 min-w-[320px]">
+                      <h3 className="text-center font-semibold text-[var(--bv-text-primary)] truncate" title={activeMainScript ? `Current Block Content (Editable)(Block ${currentBlockIndex !== null ? currentBlockIndex + 1 : '-'} of Script: ${activeMainScript.name})` : 'Current Block Content (Editable)'}>
+                          Current Block Content (Editable)
+                      </h3>
+
+                      <div className="relative flex justify-center">
+                        <div className="preview-component-wrapper flex justify-center items-center" 
+                            style={{ 
+                                    width: settings.previewWidth > 0 ? `${settings.previewWidth}px` : 'auto', 
+                                    height: settings.previewHeight > 0 ? `${settings.previewHeight}px` : 'auto',
+                                    minWidth: settings.previewWidth === 0 ? '150px' : undefined,
+                                    minHeight: settings.previewHeight === 0 ? '100px' : undefined,
+                                    marginTop: dynamicTopMargin,
+                                    marginBottom: dynamicBottomMargin,
+                            }}
+                        >
                           <PreviewArea
-                            key={`original-preview-single-${activeMainScriptId}-${currentEditableBlockForSingleView.index}-${globalBitmapCacheId}`}
-                            baseSettings={settings}
-                            textOverride={originalBlockForSingleViewComparison ? originalBlockForSingleViewComparison.content : "Original content not available."}
-                            setIsOverflowing={() => {}}
-                            onNestedSettingsChange={() => {}} 
-                            showPixelMarginGuides={false}
-                            isReadOnlyPreview={true}
-                            simplifiedRender={false}
-                            activeThemeKey={appThemeSettings.activeThemeKey}
-                            bitmapCharCache={globalBitmapCharCache}
-                            bitmapCacheId={globalBitmapCacheId}
+                              ref={previewRef}
+                              key={`preview-main-${globalBitmapCacheId}`} 
+                              baseSettings={settings}
+                              textOverride={settings.text}
+                              setIsOverflowing={handleMainPreviewOverflowStatusChange}
+                              onNestedSettingsChange={handleNestedSettingsChange}
+                              showPixelMarginGuides={settings.pixelOverflowMargins.enabled && overflowSettingsPanelOpen}
+                              isReadOnlyPreview={false}
+                              activeThemeKey={appThemeSettings.activeThemeKey}
+                              bitmapCharCache={globalBitmapCharCache} 
+                              bitmapCacheId={globalBitmapCacheId}   
                           />
                         </div>
-                        <div className="w-1/2 flex flex-col items-center justify-center relative">
-                          <PreviewArea
-                            ref={previewRef}
-                            key={`editable-preview-single-${activeMainScriptId}-${currentEditableBlockForSingleView.index}-${globalBitmapCacheId}`}
-                            baseSettings={settings}
-                            setIsOverflowing={handleMainPreviewOverflowStatusChange}
-                            onNestedSettingsChange={handleNestedSettingsChange}
-                            showPixelMarginGuides={overflowSettingsPanelOpen}
-                            isReadOnlyPreview={false}
-                            simplifiedRender={false}
-                            activeThemeKey={appThemeSettings.activeThemeKey}
-                            bitmapCharCache={globalBitmapCharCache}
-                            bitmapCacheId={globalBitmapCacheId}
-                          />
-                          {activeScriptBlocks[currentBlockIndex || 0]?.isOverflowing && (
-                            <div className="absolute top-0 right-1 mt-1 mr-1 bg-red-500 text-white text-xs px-2 py-0.5 rounded-full z-20">
-                              Overflow!
-                            </div>
-                          )}
-                        </div>
-                      </div>
-                    ) : (
-                      <>
-                        <PreviewArea
-                          ref={previewRef}
-                          baseSettings={settings}
-                          setIsOverflowing={handleMainPreviewOverflowStatusChange}
-                          onNestedSettingsChange={handleNestedSettingsChange}
-                          showPixelMarginGuides={overflowSettingsPanelOpen}
-                          isReadOnlyPreview={false}
-                          simplifiedRender={false}
-                          activeThemeKey={appThemeSettings.activeThemeKey}
-                          bitmapCharCache={globalBitmapCharCache}
-                          bitmapCacheId={globalBitmapCacheId}
-                        />
-                        {activeScriptBlocks[currentBlockIndex || 0]?.isOverflowing && (
-                          <div className="absolute top-1 right-1 bg-red-500 text-white text-xs px-2 py-1 rounded z-10">
-                            Overflow!
+                        {activeMainScript && activeMainScript.blocks[currentBlockIndex || 0]?.isOverflowing && (
+                          <div className="absolute top-1 right-1 bg-red-600 text-white rounded-sm w-5 h-5 flex items-center justify-center font-bold text-sm shadow-lg" title="Overflowing Content!">
+                            !
                           </div>
                         )}
-                      </>
-                    )}
-                  </div>
-                  <div className={`mt-4 w-full flex-grow flex flex-col ${settings.comparisonModeEnabled && currentEditableBlockForSingleView ? 'sm:flex-row gap-4' : ''}`}>
-                    {settings.comparisonModeEnabled && currentEditableBlockForSingleView && (
-                      <div className="w-full sm:w-1/2 flex flex-col">
-                        <h2 className="text-lg font-semibold mb-2 text-[var(--bv-text-primary)] truncate" title={`Original ${originalSourceInfoForSingleView} (Block ${currentEditableBlockForSingleView.index + 1})`}>
-                          Original {originalSourceInfoForSingleView} (Block {currentEditableBlockForSingleView.index + 1})
-                        </h2>
-                        <textarea
-                          id={`original-block-content-single-${activeMainScriptId}-${currentEditableBlockForSingleView.index}`}
-                          aria-label={`Original content of block ${currentEditableBlockForSingleView.index + 1}`}
-                          readOnly
-                          onSelect={handleTextSelectOriginal}
-                          value={originalBlockForSingleViewComparison ? originalBlockForSingleViewComparison.content : "Original content not available."}
-                          className="w-full p-2 border rounded-md shadow-sm sm:text-sm flex-grow resize-y
-                                      bg-[var(--bv-accent-secondary)] border-[var(--bv-border-color)] text-[var(--bv-accent-secondary-content)]
-                                      cursor-not-allowed min-h-[100px]"
-                        />
-                        <div className="text-xs text-[var(--bv-text-secondary)] opacity-80 mt-0.5 mb-1.5 h-auto flex flex-col items-start">
-                          <span>Selected: {selectedTextLengthOriginal} char(s)</span>
-                          {originalBlockMetrics && (
-                              <span>Total: {originalBlockMetrics.totalChars} chars, {originalBlockMetrics.totalBytes} bytes, {originalBlockMetrics.totalBits} bits</span>
-                          )}
-                        </div>
                       </div>
-                    )}
-                    <div className={`flex flex-col ${settings.comparisonModeEnabled && currentEditableBlockForSingleView ? 'w-full sm:w-1/2' : 'w-full flex-grow'}`}>
-                      <h2 className="text-lg font-semibold mb-2 text-[var(--bv-text-primary)] truncate" title={`Current Block Content ${settings.comparisonModeEnabled && currentEditableBlockForSingleView ? '(Editable)' : ''} ${currentBlockIndex !== null && activeScriptBlocks.length > 0 ? `(Block ${currentBlockIndex + 1} of Script: ${activeMainScript?.name || ''})` : ''}`}>
-                        Current Block Content {settings.comparisonModeEnabled && currentEditableBlockForSingleView ? '(Editable)' : ''}
-                        {currentBlockIndex !== null && activeScriptBlocks.length > 0 && `(Block ${currentBlockIndex + 1} of Script: ${activeMainScript?.name || ''})`}
-                      </h2>
-                      <textarea
-                        ref={mainTextAreaRef}
-                        id="current-block-content-main"
-                        aria-label="Current block content"
-                        value={settings.text} 
-                        onChange={(e) => handleCurrentBlockContentChangeInSingleView(e.target.value)}
-                        onSelect={handleMainTextAreaActivity}
-                        onFocus={handleMainTextAreaActivity}
-                        onBlur={() => setActiveLineIndexMain(null)}
-                        onKeyUp={handleMainTextAreaActivity} 
-                        onClick={handleMainTextAreaActivity}
-                        disabled={currentBlockIndex === null && activeScriptBlocks.length > 0 && !!activeMainScriptId}
-                        className="w-full p-2 border rounded-md shadow-sm sm:text-sm flex-grow resize-y min-h-[100px] mb-0.5
-                                   bg-[var(--bv-input-background)] border-[var(--bv-input-border)] text-[var(--bv-input-text)]
-                                   focus:ring-[var(--bv-input-focus-ring)] focus:border-[var(--bv-input-focus-ring)] placeholder:text-[var(--bv-text-secondary)]"
-                        placeholder={activeScriptBlocks.length > 0 && currentBlockIndex === null ? "Select a block from the navigation to edit." : !activeMainScriptId ? "Load a main script to begin..." : "Type here..."}
-                      />
-                      <div className="text-xs text-[var(--bv-text-secondary)] mt-0 mb-1.5 h-auto flex flex-row justify-between items-baseline w-full">
-                        <div className="flex flex-col items-start">
-                          <span>Selected: {selectedTextLengthMain} char(s)</span>
-                          <span>
-                            {activeLineIndexMain !== null && lineMetricsForActiveIndexMain ? (
-                                `Line ${activeLineIndexMain + 1}: ${lineMetricsForActiveIndexMain.chars} chars, ${lineMetricsForActiveIndexMain.bytes} bytes, ${lineMetricsForActiveIndexMain.bytes * 8} bits`
-                            ) : mainEditorMetrics ? (
-                                `Total: ${mainEditorMetrics.totalChars} chars, ${mainEditorMetrics.totalBytes} bytes, ${mainEditorMetrics.totalBits} bits`
-                            ) : (
-                               `Total: 0 chars, 0 bytes, 0 bits`
+                      
+                      <div className="w-full flex flex-col">
+                          <label htmlFor="main-text-area" className="block text-sm font-medium text-[var(--bv-text-primary)] mb-1 truncate" title={activeMainScript && currentBlockIndex !== null ? `Block ${currentBlockIndex + 1} of Script: ${activeMainScript.name}` : "Block Content"}>
+                            {activeMainScript && currentBlockIndex !== null ? `Block ${currentBlockIndex + 1} of Script: ${activeMainScript.name}` : "Block Content"}
+                          </label>
+                          <div className="relative w-full">
+                            <textarea
+                              id="main-text-area"
+                              ref={mainTextAreaRef}
+                              aria-label="Current block content editor"
+                              value={settings.text}
+                              onChange={(e) => handleCurrentBlockContentChangeInSingleView(e.target.value)}
+                              onSelect={handleMainTextAreaActivity}
+                              onFocus={handleMainTextAreaActivity}
+                              onBlur={() => setActiveLineIndexMain(null)}
+                              onKeyUp={handleMainTextAreaActivity}
+                              onClick={handleMainTextAreaActivity}
+                              className="w-full p-2 border rounded-md shadow-sm sm:text-sm resize-y
+                                          bg-[var(--bv-input-background)] border-[var(--bv-input-border)] text-[var(--bv-input-text)]
+                                          focus:ring-[var(--bv-input-focus-ring)] focus:border-[var(--bv-input-focus-ring)] pr-8"
+                              disabled={!activeMainScript || currentBlockIndex === null}
+                            />
+                            {currentEditableBlockForSingleView && (
+                              <div className="absolute bottom-2 right-2 text-blue-500" title="Content is saved">
+                                  <svg xmlns="http://www.w3.org/2000/svg" className="h-5 w-5" viewBox="0 0 20 20" fill="currentColor">
+                                      <path fillRule="evenodd" d="M10 18a8 8 0 100-16 8 8 0 000 16zm3.707-9.293a1 1 0 00-1.414-1.414L9 10.586 7.707 9.293a1 1 0 00-1.414 1.414l2 2a1 1 0 001.414 0l4-4z" clipRule="evenodd" />
+                                  </svg>
+                              </div>
                             )}
-                          </span>
-                        </div>
-                        {settings.comparisonModeEnabled && settings.enableByteRestrictionInComparisonMode && mainEditorLineMetricDetails.length > 0 && (
-                          <div className="text-right ml-4">
-                            <span className="font-semibold text-[var(--bv-text-primary)]">Line Byte Limits (Current/Original):</span>
-                            {mainEditorLineMetricDetails.map((line, idx) => (
-                                <div key={`byte-limit-line-${idx}`} className={`${line.isOverLimit ? 'text-red-500 font-bold' : 'text-[var(--bv-text-secondary)]'}`}>
-                                    Line {idx + 1}: {line.currentBytes} / {line.originalBytes !== undefined ? line.originalBytes : '-'} bytes
-                                </div>
-                            ))}
                           </div>
-                        )}
+                          <div className="text-xs text-[var(--bv-text-secondary)] mt-1 mb-1 h-auto flex flex-col items-start">
+                              <span>Selected: {selectedTextLengthMain} char(s)</span>
+                              {activeLineIndexMain !== null && lineMetricsForActiveIndexMain ? (
+                                <span>Line {activeLineIndexMain + 1}: {lineMetricsForActiveIndexMain.chars} chars, {lineMetricsForActiveIndexMain.bytes} bytes, {lineMetricsForActiveIndexMain.bytes * 8} bits</span>
+                              ) : mainEditorMetrics ? (
+                                <span>Total: {mainEditorMetrics.totalChars} chars, {mainEditorMetrics.totalBytes} bytes, {mainEditorMetrics.totalBits} bits</span>
+                              ) : (
+                                <span>Total: 0 chars, 0 bytes, 0 bits</span>
+                              )}
+                          </div>
+                          {byteRestrictionWarning && (
+                            <span className="my-1 text-red-500 text-xs self-start font-semibold">{byteRestrictionWarning}</span>
+                          )}
+                          {settings.comparisonModeEnabled && settings.enableByteRestrictionInComparisonMode && mainEditorLineMetricDetails.length > 0 && (
+                              <div className="mt-0 text-xs text-[var(--bv-text-secondary)] max-h-20 overflow-y-auto border border-[var(--bv-border-color-light)] p-1 rounded">
+                                <p className="font-semibold text-[var(--bv-text-primary)]">Line Byte Limits (Current/Original 1):</p>
+                                {mainEditorLineMetricDetails.map((line, idx) => (
+                                  <div key={idx} className={`${line.isOverLimit ? 'text-red-500 font-bold' : ''}`}>
+                                    Line {idx + 1}: {line.currentBytes} / {line.originalBytes !== undefined ? line.originalBytes : '-'} bytes
+                                  </div>
+                                ))}
+                              </div>
+                            )}
                       </div>
-                      {byteRestrictionWarning && (
-                        <p className="text-xs text-red-500 mb-1">{byteRestrictionWarning}</p>
-                      )}
                     </div>
+
+                    {/* --- Card 2: Original 1 --- */}
+                    {settings.comparisonModeEnabled && originalBlockForSingleViewComparison && (
+                      <div className="bg-[var(--bv-element-background)] p-4 rounded-lg shadow-md border border-[var(--bv-border-color)] flex flex-col gap-3 flex-1 min-w-[320px]">
+                        <h3 className="text-center font-semibold text-[var(--bv-text-primary)]" title={matchedOriginalScript ? `Original (Initial Load of Active Script) (Block ${originalBlockForSingleViewComparison.index + 1} of Script: ${matchedOriginalScript.name})` : `Original (Initial Load of Active Script)`}>
+                            Original (Initial Load of Active Script)
+                        </h3>
+                        <div className="flex justify-center">
+                            <div className="preview-component-wrapper flex justify-center items-center"
+                                style={{ 
+                                        width: settings.previewWidth > 0 ? `${settings.previewWidth}px` : 'auto', 
+                                        height: settings.previewHeight > 0 ? `${settings.previewHeight}px` : 'auto',
+                                        minWidth: settings.previewWidth === 0 ? '150px' : undefined,
+                                        minHeight: settings.previewHeight === 0 ? '100px' : undefined,
+                                        marginTop: dynamicTopMargin,
+                                        marginBottom: dynamicBottomMargin,
+                                }}
+                            >
+                                <PreviewArea
+                                    key={`preview-orig1-${globalBitmapCacheId}`}
+                                    baseSettings={settings}
+                                    textOverride={originalBlockForSingleViewComparison.content}
+                                    setIsOverflowing={() => {}}
+                                    onNestedSettingsChange={handleNestedSettingsChange}
+                                    showPixelMarginGuides={false}
+                                    isReadOnlyPreview={true}
+                                    activeThemeKey={appThemeSettings.activeThemeKey}
+                                    bitmapCharCache={globalBitmapCharCache}
+                                    bitmapCacheId={globalBitmapCacheId}
+                                />
+                            </div>
+                        </div>
+                        <div className="w-full flex flex-col">
+                          <label htmlFor="original-text-area" className="block text-sm font-medium text-[var(--bv-text-secondary)] mb-1 truncate" title={`Original Text 1 (Block ${originalBlockForSingleViewComparison.index + 1})`}>
+                            Original Text 1 (Block {originalBlockForSingleViewComparison.index + 1})
+                          </label>
+                          <textarea
+                            id="original-text-area"
+                            ref={originalTextAreaRef}
+                            aria-label={`Original content 1 for block ${originalBlockForSingleViewComparison.index + 1}`}
+                            readOnly
+                            value={originalBlockForSingleViewComparison.content}
+                            onSelect={handleTextSelectOriginal}
+                            className="w-full p-2 border rounded-md shadow-sm sm:text-sm resize-y bg-[var(--bv-element-background-secondary)] border-[var(--bv-border-color)] text-[var(--bv-text-secondary)] cursor-not-allowed"
+                          />
+                          <div className="text-xs text-[var(--bv-text-secondary)] mt-1">
+                              Selected: {selectedTextLengthOriginal} char(s). 
+                              {originalBlockMetrics && (
+                                  <> Total: {originalBlockMetrics.totalChars} chars, {originalBlockMetrics.totalBytes} bytes.</>
+                              )}
+                          </div>
+                        </div>
+                      </div>
+                    )}
+                    
+                    {/* --- Card 3: Original 2 --- */}
+                    {settings.comparisonModeEnabled && secondaryOriginalBlockForSingleViewComparison && (
+                      <div className="bg-[var(--bv-element-background)] p-4 rounded-lg shadow-md border border-[var(--bv-border-color)] flex flex-col gap-3 flex-1 min-w-[320px]">
+                        <h3 className="text-center font-semibold text-[var(--bv-text-primary)]" title={matchedSecondaryOriginalScript ? `Original 2 (Block ${secondaryOriginalBlockForSingleViewComparison.index + 1} of Script: ${matchedSecondaryOriginalScript.name})` : `Original 2`}>
+                          Original 2
+                        </h3>
+                        <div className="flex justify-center">
+                            <div className="preview-component-wrapper flex justify-center items-center"
+                                style={{ 
+                                        width: settings.previewWidth > 0 ? `${settings.previewWidth}px` : 'auto', 
+                                        height: settings.previewHeight > 0 ? `${settings.previewHeight}px` : 'auto',
+                                        minWidth: settings.previewWidth === 0 ? '150px' : undefined,
+                                        minHeight: settings.previewHeight === 0 ? '100px' : undefined,
+                                        marginTop: dynamicTopMargin,
+                                        marginBottom: dynamicBottomMargin,
+                                }}
+                            >
+                                <PreviewArea
+                                    key={`preview-orig2-${globalBitmapCacheId}`}
+                                    baseSettings={settings}
+                                    textOverride={secondaryOriginalBlockForSingleViewComparison.content}
+                                    setIsOverflowing={() => {}}
+                                    onNestedSettingsChange={handleNestedSettingsChange}
+                                    showPixelMarginGuides={false}
+                                    isReadOnlyPreview={true}
+                                    activeThemeKey={appThemeSettings.activeThemeKey}
+                                    bitmapCharCache={globalBitmapCharCache}
+                                    bitmapCacheId={globalBitmapCacheId}
+                                />
+                            </div>
+                        </div>
+                        <div className="w-full flex flex-col">
+                          <label htmlFor="secondary-original-text-area" className="block text-sm font-medium text-[var(--bv-text-secondary)] mb-1 truncate" title={`Original Text 2 (Block ${secondaryOriginalBlockForSingleViewComparison.index + 1})`}>
+                              Original Text 2 (Block {secondaryOriginalBlockForSingleViewComparison.index + 1})
+                          </label>
+                          <textarea
+                              id="secondary-original-text-area"
+                              ref={secondaryOriginalTextAreaRef}
+                              aria-label={`Original content 2 for block ${secondaryOriginalBlockForSingleViewComparison.index + 1}`}
+                              readOnly
+                              value={secondaryOriginalBlockForSingleViewComparison.content}
+                              onSelect={handleTextSelectSecondaryOriginal}
+                              className="w-full p-2 border rounded-md shadow-sm sm:text-sm resize-y bg-[var(--bv-element-background-secondary)] border-[var(--bv-border-color)] text-[var(--bv-text-secondary)] cursor-not-allowed"
+                          />
+                          <div className="text-xs text-[var(--bv-text-secondary)] mt-1">
+                              Selected: {selectedTextLengthSecondaryOriginal} char(s).
+                              {secondaryOriginalBlockMetrics && (
+                                  <> Total: {secondaryOriginalBlockMetrics.totalChars} chars, {secondaryOriginalBlockMetrics.totalBytes} bytes.</>
+                              )}
+                          </div>
+                        </div>
+                      </div>
+                    )}
                   </div>
-                  {/* Block Navigation Controls - MOVED HERE for full width centering */}
-                  {currentMainView === 'editor' && viewMode === 'single' && activeMainScriptId && activeScriptBlocks.length > 0 && (
-                    <div className="w-full flex justify-between items-center mt-3 p-2 border-t border-[var(--bv-border-color-light)]">
-                      <Button
-                        onClick={() => handleSetCurrentBlockIndex(currentBlockIndex !== null ? currentBlockIndex - 1 : 0)}
-                        disabled={!activeMainScriptId || currentBlockIndex === null || currentBlockIndex === 0}
-                        className="!px-3 !py-1.5 text-sm"
-                        aria-label="Previous Block"
+                   <div className="w-full flex items-center justify-center gap-4 mt-6 flex-shrink-0">
+                      <Button 
+                        onClick={handlePrevBlock} 
+                        disabled={currentBlockIndex === null || currentBlockIndex <= 0}
+                        className="!px-6 !py-2"
                       >
                         &larr; Previous
                       </Button>
-                      <span className="text-sm font-medium text-[var(--bv-text-primary)]" aria-live="polite">
-                        Block {currentBlockIndex !== null ? currentBlockIndex + 1 : '-'} / {activeScriptBlocks.length}
+                      <span className="font-semibold text-[var(--bv-text-primary)]">
+                          Block {currentBlockIndex !== null ? currentBlockIndex + 1 : '-'} / {activeScriptBlocks.length}
                       </span>
-                      <Button
-                        onClick={() => handleSetCurrentBlockIndex(currentBlockIndex !== null ? currentBlockIndex + 1 : 0)}
-                        disabled={!activeMainScriptId || currentBlockIndex === null || currentBlockIndex >= activeScriptBlocks.length - 1}
-                        className="!px-3 !py-1.5 text-sm"
-                        aria-label="Next Block"
+                      <Button 
+                        onClick={handleNextBlock} 
+                        disabled={currentBlockIndex === null || currentBlockIndex >= activeScriptBlocks.length - 1}
+                        className="!px-6 !py-2"
                       >
                         Next &rarr;
                       </Button>
+                  </div>
+                </div>
+              ) : ( // All Blocks View
+                <div ref={allBlocksScrollContainerRefCallback} className="w-full h-full overflow-y-auto pr-2 pb-4 space-y-4 grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
+                  {activeScriptBlocks.length > 0 ? (
+                    activeScriptBlocks.map(block => {
+                      const originalBlockContentForCell = settings.comparisonModeEnabled && matchedOriginalScript?.blocks[block.index]
+                          ? matchedOriginalScript.blocks[block.index].content
+                          : settings.comparisonModeEnabled ? block.originalContent : null;
+
+                      const secondaryOriginalBlockContentForCell = settings.comparisonModeEnabled && matchedSecondaryOriginalScript?.blocks[block.index]
+                          ? matchedSecondaryOriginalScript.blocks[block.index].content
+                          : null; 
+                      
+                      const isSimplifiedRenderForCell = !fullyVisibleBlockOriginalIndices.has(block.index);
+
+                      return (
+                          <MemoizedBlockCell
+                              key={`${activeMainScriptId}-${block.index}`}
+                              block={block}
+                              activeThemeKey={appThemeSettings.activeThemeKey}
+                              appSettings={settings}
+                              isFullyVisible={fullyVisibleBlockOriginalIndices.has(block.index)}
+                              placeholderHeight={ESTIMATED_BLOCK_CELL_HEIGHT_PX}
+                              placeholderWidth={Math.max(150, (settings.previewWidth > 0 ? settings.previewWidth * settings.previewZoom : 200) * 0.8)}
+                              onBlockContentChange={handleBlockContentChangeForCell}
+                              onBlockOverflowChange={handleBlockCellOverflowChange}
+                              onNestedSettingsChange={handleNestedSettingsChange}
+                              comparisonOriginalContent={originalBlockContentForCell}
+                              comparisonSecondaryOriginalContent={secondaryOriginalBlockContentForCell}
+                              overflowSettingsPanelOpen={overflowSettingsPanelOpen}
+                              simplifiedRender={isSimplifiedRenderForCell}
+                              onVisibilityChange={handleBlockVisibilityChange}
+                              scrollRootElement={scrollRootElement}
+                              observerRootMarginValue={observerRootMarginValue}
+                              globalBitmapCharCache={globalBitmapCharCache} 
+                              globalBitmapCacheId={globalBitmapCacheId} 
+                              parsedCustomByteMap={parsedCustomByteMap}
+                              defaultCharacterByteValue={settings.defaultCharacterByteValue}
+                              enableByteRestrictionInComparisonMode={settings.enableByteRestrictionInComparisonMode}
+                              activeComparisonMode={settings.comparisonModeEnabled}
+                        />
+                      );
+                    })
+                  ) : (
+                    <div className="col-span-full text-center text-lg text-[var(--bv-text-secondary)] mt-10">
+                      <p>No blocks to display. Load a script or check your block separator settings.</p>
+                       <Button onClick={() => setViewMode('single')} className="mt-4">Switch to Single Block View</Button>
                     </div>
-                  )}
-                </>
-              ) : ( 
-                <div
-                  ref={allBlocksScrollContainerRefCallback}
-                  className="all-blocks-scroll-container w-full flex-grow min-h-0 overflow-y-auto space-y-6 pr-2"
-                  aria-label={`Scrollable list of all text blocks for script: ${activeMainScript?.name || 'N/A'}`}
-                >
-                  {activeMainScript && displayedBlocksForView.map((block) => {
-                    const isFullyVisible = fullyVisibleBlockOriginalIndices.has(block.index);
-                    const placeholderHeight = (settings.previewHeight > 0 ? settings.previewHeight : 150) * settings.previewZoom;
-                    const placeholderWidth = (settings.previewWidth > 0 ? settings.previewWidth : 250) * settings.previewZoom;
-
-                    let comparisonContentForCell: string | null = null;
-                    if (settings.comparisonModeEnabled && matchedOriginalScript && matchedOriginalScript.blocks[block.index]) {
-                        comparisonContentForCell = matchedOriginalScript.blocks[block.index].content;
-                    } else if (settings.comparisonModeEnabled) {
-                        comparisonContentForCell = block.originalContent; 
-                    }
-
-                    return (
-                      <MemoizedBlockCell
-                        key={`${activeMainScript.id}-${block.index}-${globalBitmapCacheId}`}
-                        block={block}
-                        activeThemeKey={appThemeSettings.activeThemeKey}
-                        appSettings={settings}
-                        isFullyVisible={isFullyVisible}
-                        placeholderHeight={placeholderHeight}
-                        placeholderWidth={placeholderWidth}
-                        onBlockContentChange={handleBlockContentChangeForCell}
-                        onBlockOverflowChange={handleBlockCellOverflowChange}
-                        onNestedSettingsChange={handleNestedSettingsChange}
-                        comparisonOriginalContent={comparisonContentForCell}
-                        overflowSettingsPanelOpen={overflowSettingsPanelOpen}
-                        simplifiedRender={false} 
-                        onVisibilityChange={handleBlockVisibilityChange}
-                        scrollRootElement={scrollRootElement}
-                        observerRootMarginValue={observerRootMarginValue}
-                        globalBitmapCharCache={globalBitmapCharCache}
-                        globalBitmapCacheId={globalBitmapCacheId}
-                        parsedCustomByteMap={parsedCustomByteMap}
-                        defaultCharacterByteValue={settings.defaultCharacterByteValue}
-                        enableByteRestrictionInComparisonMode={settings.enableByteRestrictionInComparisonMode}
-                        activeComparisonMode={settings.comparisonModeEnabled}
-                      />
-                    );
-                  })}
-                  {activeMainScript && displayedBlocksForView.length === 0 && activeScriptBlocks.length > 0 && (
-                    <p className="text-center italic text-[var(--bv-text-secondary)]">
-                      No blocks match the current filter (e.g., "Show Only Overflowing") for script: {activeMainScript.name}.
-                    </p>
-                  )}
-                   {!activeMainScript && (
-                    <p className="text-center italic text-[var(--bv-text-secondary)]">
-                      No active main script. Load or select a script from the Controls Panel.
-                    </p>
-                  )}
-                   {activeMainScript && activeScriptBlocks.length === 0 && (
-                    <p className="text-center italic text-[var(--bv-text-secondary)]">
-                      Script "{activeMainScript.name}" has no blocks.
-                    </p>
                   )}
                 </div>
               )}
-            </>
-          ) : ( 
-            <ProfilesGalleryPage
-              profiles={profiles}
-              onLoadProfile={handleLoadProfile}
-              onDeleteProfile={handleDeleteProfile}
-              activeThemeKey={appThemeSettings.activeThemeKey}
-              currentEditorSettings={settings}
-              onSaveCurrentSettingsAsProfile={handleSaveProfile}
-            />
-          )}
-        </main>
+            </div>
+          </main>
+        )}
       </div>
-      <footer className="text-center p-4 text-sm text-[var(--bv-text-secondary)]">
-        Banana Vision &copy; {new Date().getFullYear()} - Romhacking Text Preview Tool
-      </footer>
-
-      <SpecialSettingsMenu
+      <SpecialSettingsMenu 
         isOpen={isSpecialSettingsMenuOpen}
         onClose={toggleSpecialSettingsMenu}
         appThemeSettings={appThemeSettings}
@@ -3019,13 +3096,13 @@ const handleSaveAllToGitHubFolder = useCallback(async () => {
         onResetCustomTheme={resetCustomTheme}
         allThemeDefinitions={ALL_THEME_DEFINITIONS}
       />
-      <TutorialModal
+      <TutorialModal 
         isOpen={showTutorial}
         currentStep={currentTutorialStep}
-        onClose={(markCompleted) => handleCloseTutorial(markCompleted)}
+        onClose={handleCloseTutorial}
         onSetStep={setCurrentTutorialStep}
       />
-    </div>
+    </>
   );
 };
 

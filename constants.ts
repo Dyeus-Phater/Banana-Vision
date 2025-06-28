@@ -198,6 +198,7 @@ export const DEFAULT_GITHUB_SETTINGS: GitHubSettings = {
   branch: 'main',
   filePath: 'script.txt',
   originalFilePath: 'original_script.txt',
+  secondaryOriginalFilePath: '', // New field for second original script
 };
 
 export const DEFAULT_GLOSSARY_TERMS: GlossaryTerm[] = [];

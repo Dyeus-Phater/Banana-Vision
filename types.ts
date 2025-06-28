@@ -100,6 +100,7 @@ export interface GitHubSettings {
   branch: string;
   filePath: string; // Path for main scripts
   originalFilePath: string; // Path for original/reference scripts
+  secondaryOriginalFilePath: string; // Path for the second original/reference script
 }
 
 export interface CustomColorTag {

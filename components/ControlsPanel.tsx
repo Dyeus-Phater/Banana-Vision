@@ -1,5 +1,6 @@
 
 
+
 import React, {useState, useEffect, useCallback, useMemo, useRef} from 'react';
 import { AppSettings, Block, NestedAppSettingsObjectKeys, ScriptFile, GitHubSettings, ThemeKey, CustomColorTag, ImageTag, MarginSetting, GlossaryTerm, GlossaryCategory } from '../types';
 import { FindScope, FindResultSummaryItem } from '../App';
@@ -38,10 +39,21 @@ interface ControlsPanelProps {
   loadedCustomFontName: string | null; // This now primarily indicates if a custom font *style* is active
   overflowSettingsPanelOpen: boolean;
   onToggleOverflowSettingsPanel: () => void;
+  // First original script props
   originalScripts: ScriptFile[];
   onOriginalScriptUpload: (files: FileList) => void;
   matchedOriginalScriptName: string | null;
   onClearOriginalScripts: () => void;
+  onLoadFileFromGitHubForOriginal: () => void; 
+  onLoadAllFromGitHubFolderForOriginal: () => void;
+  // Second original script props
+  secondaryOriginalScripts: ScriptFile[];
+  onSecondaryOriginalScriptUpload: (files: FileList) => void;
+  matchedSecondaryOriginalScriptName: string | null;
+  onClearSecondaryOriginalScripts: () => void;
+  onLoadFileFromGitHubForSecondaryOriginal: () => void;
+  onLoadAllFromGitHubFolderForSecondaryOriginal: () => void;
+
   viewMode: ViewMode;
   onViewModeChange: (mode: ViewMode) => void;
   findText: string;
@@ -67,8 +79,6 @@ interface ControlsPanelProps {
   onSaveFileToGitHub: () => void;
   onLoadAllFromGitHubFolder: () => void;
   onSaveAllToGitHubFolder: () => void;
-  onLoadFileFromGitHubForOriginal: () => void; 
-  onLoadAllFromGitHubFolderForOriginal: () => void; 
   isGitHubLoading: boolean;
   gitHubStatusMessage: string;
   activeThemeKey: ThemeKey;
@@ -675,6 +685,8 @@ export const ControlsPanel: React.FC<ControlsPanelProps> = (props) => {
     const githubBaseDisabled = restOfProps.isGitHubLoading || !restOfProps.gitHubSettings.pat || !restOfProps.gitHubSettings.repoFullName;
     const githubMainOpsDisabled = githubBaseDisabled || !restOfProps.gitHubSettings.filePath;
     const githubOriginalOpsDisabled = githubBaseDisabled || !restOfProps.gitHubSettings.originalFilePath;
+    const githubSecondaryOriginalOpsDisabled = githubBaseDisabled || !restOfProps.gitHubSettings.secondaryOriginalFilePath;
+
 
     const namesGlossaryItems = restOfProps.glossaryTerms.filter(gt => gt.category === 'name');
     const termsGlossaryItems = restOfProps.glossaryTerms.filter(gt => gt.category === 'term');
@@ -724,17 +736,18 @@ export const ControlsPanel: React.FC<ControlsPanelProps> = (props) => {
             </div>
 
             <div className="mt-3 pt-3 border-t border-[var(--bv-border-color-light)]">
-              <LabelInputContainer label="Upload Original Script(s) (for Comparison)">
-                <FileInput accept=".txt,.scp,.text,text/plain" onChange={restOfProps.onOriginalScriptUpload} buttonLabel="Load Original Script(s) from Device" multiple />
+              <h4 className="text-md font-semibold mb-1 text-[var(--bv-accent-primary)]">Original Script 1 (Comparison)</h4>
+              <LabelInputContainer label="Upload Original Script 1 (.txt, .scp, etc.)">
+                <FileInput accept=".txt,.scp,.text,text/plain" onChange={restOfProps.onOriginalScriptUpload} buttonLabel="Load Original Script(s) 1" multiple />
               </LabelInputContainer>
                {restOfProps.originalScripts.length > 0 && (
                 <Button onClick={restOfProps.onClearOriginalScripts} className="text-xs mt-1 !py-1 !px-2 !bg-red-500 hover:!bg-red-600 w-full">
-                  Clear All Original Scripts ({restOfProps.originalScripts.length} loaded)
+                  Clear All Original Scripts 1 ({restOfProps.originalScripts.length} loaded)
                 </Button>
               )}
               {restOfProps.matchedOriginalScriptName && (
                 <p className="text-xs text-[var(--bv-text-secondary)] mt-1">
-                  Comparing with: <span className="font-semibold">{restOfProps.matchedOriginalScriptName}</span>
+                  Comparing with (Original 1): <span className="font-semibold">{restOfProps.matchedOriginalScriptName}</span>
                 </p>
               )}
               <div className="mt-2 grid grid-cols-2 gap-2">
@@ -742,17 +755,52 @@ export const ControlsPanel: React.FC<ControlsPanelProps> = (props) => {
                     onClick={restOfProps.onLoadFileFromGitHubForOriginal} 
                     disabled={githubOriginalOpsDisabled} 
                     className="!bg-purple-600 hover:!bg-purple-700 text-xs !py-1"
-                    title="Load single file from Original Script GitHub path"
+                    title="Load single file from Original Script 1 GitHub path"
                 >
-                    Load File from Path (Original)
+                    Load File from Path (Orig 1)
                 </Button>
                 <Button 
                     onClick={restOfProps.onLoadAllFromGitHubFolderForOriginal} 
                     disabled={githubOriginalOpsDisabled} 
                     className="!bg-purple-500 hover:!bg-purple-600 text-xs !py-1"
-                    title="Load all text files from Original Script GitHub folder path"
+                    title="Load all text files from Original Script 1 GitHub folder path"
                 >
-                    Load All from Folder (Original)
+                    Load All from Folder (Orig 1)
+                </Button>
+              </div>
+            </div>
+
+            <div className="mt-3 pt-3 border-t border-[var(--bv-border-color-light)]">
+              <h4 className="text-md font-semibold mb-1 text-[var(--bv-accent-primary)]">Original Script 2 (Optional Comparison)</h4>
+              <LabelInputContainer label="Upload Original Script 2 (.txt, .scp, etc.)">
+                <FileInput accept=".txt,.scp,.text,text/plain" onChange={restOfProps.onSecondaryOriginalScriptUpload} buttonLabel="Load Original Script(s) 2" multiple />
+              </LabelInputContainer>
+               {restOfProps.secondaryOriginalScripts.length > 0 && (
+                <Button onClick={restOfProps.onClearSecondaryOriginalScripts} className="text-xs mt-1 !py-1 !px-2 !bg-red-500 hover:!bg-red-600 w-full">
+                  Clear All Original Scripts 2 ({restOfProps.secondaryOriginalScripts.length} loaded)
+                </Button>
+              )}
+              {restOfProps.matchedSecondaryOriginalScriptName && (
+                <p className="text-xs text-[var(--bv-text-secondary)] mt-1">
+                  Comparing with (Original 2): <span className="font-semibold">{restOfProps.matchedSecondaryOriginalScriptName}</span>
+                </p>
+              )}
+              <div className="mt-2 grid grid-cols-2 gap-2">
+                <Button 
+                    onClick={restOfProps.onLoadFileFromGitHubForSecondaryOriginal} 
+                    disabled={githubSecondaryOriginalOpsDisabled} 
+                    className="!bg-indigo-600 hover:!bg-indigo-700 text-xs !py-1"
+                    title="Load single file from Original Script 2 GitHub path"
+                >
+                    Load File from Path (Orig 2)
+                </Button>
+                <Button 
+                    onClick={restOfProps.onLoadAllFromGitHubFolderForSecondaryOriginal} 
+                    disabled={githubSecondaryOriginalOpsDisabled} 
+                    className="!bg-indigo-500 hover:!bg-indigo-600 text-xs !py-1"
+                    title="Load all text files from Original Script 2 GitHub folder path"
+                >
+                    Load All from Folder (Orig 2)
                 </Button>
               </div>
             </div>
@@ -829,8 +877,23 @@ export const ControlsPanel: React.FC<ControlsPanelProps> = (props) => {
               )}
             </div>
             
-            <LabelInputContainer label="Enable Comparison Mode" htmlFor="comparisonModeEnabled" inline disabled={restOfProps.mainScripts.length === 0 || restOfProps.originalScripts.length === 0} subText={(restOfProps.mainScripts.length === 0 || restOfProps.originalScripts.length === 0) ? "Load at least one main and one original script." : "View original and edited text side-by-side."}>
-              <input type="checkbox" id="comparisonModeEnabled" checked={settings.comparisonModeEnabled} onChange={(e) => onSettingsChange('comparisonModeEnabled', e.target.checked)} className="h-5 w-5 text-[var(--bv-accent-primary)] border-[var(--bv-input-border)] rounded focus:ring-[var(--bv-input-focus-ring)]" disabled={restOfProps.mainScripts.length === 0 || restOfProps.originalScripts.length === 0} />
+            <LabelInputContainer 
+              label="Enable Comparison Mode" 
+              htmlFor="comparisonModeEnabled" 
+              inline 
+              disabled={restOfProps.mainScripts.length === 0 || restOfProps.originalScripts.length === 0} 
+              subText={(restOfProps.mainScripts.length === 0 || restOfProps.originalScripts.length === 0) 
+                        ? "Load at least one main and one original script 1." 
+                        : "View original(s) and edited text side-by-side."}
+            >
+              <input 
+                type="checkbox" 
+                id="comparisonModeEnabled" 
+                checked={settings.comparisonModeEnabled} 
+                onChange={(e) => onSettingsChange('comparisonModeEnabled', e.target.checked)} 
+                className="h-5 w-5 text-[var(--bv-accent-primary)] border-[var(--bv-input-border)] rounded focus:ring-[var(--bv-input-focus-ring)]" 
+                disabled={restOfProps.mainScripts.length === 0 || restOfProps.originalScripts.length === 0} 
+              />
             </LabelInputContainer>
             <div className="mt-3 pt-3 border-t border-[var(--bv-border-color-light)]">
               <LabelInputContainer label="View Mode" htmlFor="viewModeDropdown" disabled={restOfProps.mainScripts.length === 0} subText={restOfProps.mainScripts.length === 0 ? "Load a script to change view mode." : "Choose how to display blocks for the active script."}>
@@ -1374,7 +1437,7 @@ export const ControlsPanel: React.FC<ControlsPanelProps> = (props) => {
               htmlFor="enableByteRestriction" 
               inline
               disabled={!settings.comparisonModeEnabled}
-              subText={!settings.comparisonModeEnabled ? "Enable Comparison Mode first." : "Prevent lines in edited script from exceeding original's byte count."}
+              subText={!settings.comparisonModeEnabled ? "Enable Comparison Mode first (with Original Script 1)." : "Prevent lines in edited script from exceeding Original Script 1's byte count."}
             >
               <input 
                 type="checkbox" 
@@ -1403,7 +1466,7 @@ export const ControlsPanel: React.FC<ControlsPanelProps> = (props) => {
 
             <div className="mt-3 pt-3 border-t border-[var(--bv-border-color-light)]">
                 <h4 className="text-md font-semibold text-[var(--bv-text-primary)] mb-1">Main Script Paths</h4>
-                <LabelInputContainer label="File Path (for single file ops)" htmlFor="githubFilePathMain" subText="e.g., scripts/chapter1.txt">
+                <LabelInputContainer label="File Path (for Main Script - single file ops)" htmlFor="githubFilePathMain" subText="e.g., scripts/chapter1.txt">
                     <TextInput id="githubFilePathMain" value={restOfProps.gitHubSettings.filePath} onChange={(e) => restOfProps.onGitHubSettingsChange('filePath', e.target.value)} placeholder="path/to/your/main_script.txt" />
                 </LabelInputContainer>
                 <div className="grid grid-cols-2 gap-2 mt-1">
@@ -1413,11 +1476,19 @@ export const ControlsPanel: React.FC<ControlsPanelProps> = (props) => {
             </div>
 
             <div className="mt-3 pt-3 border-t border-[var(--bv-border-color-light)]">
-                <h4 className="text-md font-semibold text-[var(--bv-text-primary)] mb-1">Original Script Paths (for Comparison)</h4>
-                <LabelInputContainer label="File Path (for single file ops)" htmlFor="githubFilePathOriginal" subText="e.g., original_scripts/chapter1.txt">
-                    <TextInput id="githubFilePathOriginal" value={restOfProps.gitHubSettings.originalFilePath} onChange={(e) => restOfProps.onGitHubSettingsChange('originalFilePath', e.target.value)} placeholder="path/to/your/original_script.txt" />
+                <h4 className="text-md font-semibold text-[var(--bv-text-primary)] mb-1">Original Script 1 Paths (for Comparison)</h4>
+                <LabelInputContainer label="File Path (for Original Script 1 - single file ops)" htmlFor="githubFilePathOriginal" subText="e.g., original_scripts/chapter1.txt">
+                    <TextInput id="githubFilePathOriginal" value={restOfProps.gitHubSettings.originalFilePath} onChange={(e) => restOfProps.onGitHubSettingsChange('originalFilePath', e.target.value)} placeholder="path/to/your/original_script_1.txt" />
                 </LabelInputContainer>
             </div>
+            
+            <div className="mt-3 pt-3 border-t border-[var(--bv-border-color-light)]">
+                <h4 className="text-md font-semibold text-[var(--bv-text-primary)] mb-1">Original Script 2 Paths (Optional Comparison)</h4>
+                <LabelInputContainer label="File Path (for Original Script 2 - single file ops)" htmlFor="githubFilePathSecondaryOriginal" subText="e.g., original_scripts/chapter1_alt.txt">
+                    <TextInput id="githubFilePathSecondaryOriginal" value={restOfProps.gitHubSettings.secondaryOriginalFilePath} onChange={(e) => restOfProps.onGitHubSettingsChange('secondaryOriginalFilePath', e.target.value)} placeholder="path/to/your/original_script_2.txt" />
+                </LabelInputContainer>
+            </div>
+
             {restOfProps.isGitHubLoading && <p className="text-sm text-yellow-500 mt-2 animate-pulse">{restOfProps.gitHubStatusMessage || "Loading from GitHub..."}</p>}
             {!restOfProps.isGitHubLoading && restOfProps.gitHubStatusMessage && <p className={`text-sm mt-2 ${restOfProps.gitHubStatusMessage.startsWith("Error:") ? 'text-red-500' : 'text-green-500'}`}>{restOfProps.gitHubStatusMessage}</p>}
            </>

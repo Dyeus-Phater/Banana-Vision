@@ -168,6 +168,9 @@ export const importSettingsFromJson = (file: File): Promise<{
           originalFilePath: typeof importedGitHubSettings.originalFilePath === 'string'
             ? importedGitHubSettings.originalFilePath
             : DEFAULT_GITHUB_SETTINGS.originalFilePath,
+          secondaryOriginalFilePath: typeof importedGitHubSettings.secondaryOriginalFilePath === 'string'
+            ? importedGitHubSettings.secondaryOriginalFilePath
+            : DEFAULT_GITHUB_SETTINGS.secondaryOriginalFilePath,
         };
 
         const validatedGlossaryTerms: GlossaryTerm[] = importedGlossaryTerms.map((term: any) => ({
