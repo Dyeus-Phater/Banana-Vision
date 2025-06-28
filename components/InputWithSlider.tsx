@@ -74,6 +74,7 @@ const InputWithSlider: React.FC<InputWithSliderProps> = ({
         />
         <input
           type="range"
+          id={`${id}-slider`}
           aria-label={`${label} slider`}
           value={internalValue}
           onChange={(e) => handleValueChange(e.target.value)}
