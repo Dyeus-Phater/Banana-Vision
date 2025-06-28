@@ -260,6 +260,7 @@ const BlockCell: React.FC<BlockCellProps> = ({
         )}
       </div>
       <textarea
+        id={`block-cell-content-${blockOriginalIndex}`}
         aria-label={`Content for block ${block.index + 1}`}
         value={block.content}
         onChange={(e) => onBlockContentChange(blockOriginalIndex, e.target.value)}
@@ -296,6 +297,7 @@ const BlockCell: React.FC<BlockCellProps> = ({
         <div className="mt-2">
           <h4 className="text-sm font-medium mb-1 text-[var(--bv-text-secondary)] truncate" title={`Original Text 1 (Block ${block.index + 1})`}>Original Text 1 (Block ${block.index + 1})</h4>
           <textarea
+            id={`block-cell-original1-${blockOriginalIndex}`}
             aria-label={`Original content 1 for block ${block.index + 1}`}
             readOnly
             value={comparisonOriginalContent}
@@ -309,6 +311,7 @@ const BlockCell: React.FC<BlockCellProps> = ({
         <div className="mt-2">
           <h4 className="text-sm font-medium mb-1 text-[var(--bv-text-secondary)] truncate" title={`Original Text 2 (Block ${block.index + 1})`}>Original Text 2 (Block ${block.index + 1})</h4>
           <textarea
+            id={`block-cell-original2-${blockOriginalIndex}`}
             aria-label={`Original content 2 for block ${block.index + 1}`}
             readOnly
             value={comparisonSecondaryOriginalContent}
